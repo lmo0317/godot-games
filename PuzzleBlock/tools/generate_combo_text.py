@@ -9,6 +9,7 @@ a soft drop shadow. Pieces are drawn at 2x and saved at 1x into assets/sprites/c
   score_plus.png, score_0..9.png   white digits for the points
   praise_<tier>.png     Good! .. Unbelievable!
   rays.png              soft light rays shown behind the words
+  big_0..9.png, big_comma.png      large white digits for the score at the top
 
 Usage: python tools/generate_combo_text.py
 """
@@ -174,6 +175,9 @@ def main():
         save(glyph_layers(dgt, 92, GOLD, GOLD_OUTLINE), f"gold_{dgt}.png")
         save(glyph_layers(dgt, 44, SCORE, SCORE_OUTLINE, 0.06, 0.13), f"score_{dgt}.png")
     save(glyph_layers("+", 44, SCORE, SCORE_OUTLINE, 0.06, 0.13), "score_plus.png")
+    for dgt in "0123456789":
+        save(glyph_layers(dgt, 70, SCORE, SCORE_OUTLINE, 0.05, 0.11), f"big_{dgt}.png")
+    save(glyph_layers(",", 70, SCORE, SCORE_OUTLINE, 0.05, 0.11), "big_comma.png")
     for i, (text, grad, outline) in enumerate(PRAISE):
         save(glyph_layers(text, 58, grad, outline), f"praise_{i + 1}.png")
     rays()

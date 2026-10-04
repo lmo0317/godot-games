@@ -88,6 +88,7 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `settings_modal.gd` | 게임/프로필/업적 탭: 옵션 토글·스킨, 프로필 편집·초기화, 업적 목록 |
 | `drag_scroll.gd` (`DragScroll`) | 버튼이 가득한 스크롤 영역을 끌어서 스크롤. 일정 거리 이상 끌면 눌린 버튼을 취소해 클릭으로 처리되지 않음 |
 | `profile_setup_modal.gd`, `revive_modal.gd` | 첫 실행 프로필 설정, 5초 부활 팝업 |
+| `score_counter.gd` (`ScoreCounter`) | 게임 화면 위쪽 가운데의 큰 점수. 광택 숫자 그림으로 그리고 새 점수까지 굴러 올라감(놓기는 짧게, 콤보는 길게 크게, 퍼펙트 클리어는 가장 길게 금빛). 최고 점수는 그 위 금색 한 줄(왕관·점수·신기록까지 남은 점수) |
 | `combo_popup.gd` (`ComboPopup`) | 줄을 지울 때 뜨는 칭찬 문구·`Combo N`·점수. `assets/sprites/combo/`의 글자 그림을 조합하고 빛줄기·반짝이를 뒤에 깔아 차례로 튀어나옴 |
 | `cell_blast.gd`, `floating_text.gd` | 단발성 이펙트. 지운 블록은 클리어 중심에서 바깥으로 회전하며 커지면서 날아감(줄 수·콤보가 클수록 멀리) |
 

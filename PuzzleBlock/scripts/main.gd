@@ -61,7 +61,7 @@ var deal_index: int = 0
 
 # Record chase: the best score when this game started, and the progress bar in the BEST box
 var run_start_best: int = 0
-var best_progress: ProgressBar
+var score_counter: ScoreCounter
 
 # Combo fever state (combo_count >= FEVER_COMBO) and its looping board glow
 var fever_active: bool = false
@@ -142,12 +142,9 @@ func _ready() -> void:
 	combo_fx = ComboFx.new()
 	add_child(combo_fx)
 	combo_fx.setup_embers(Rect2(board.to_global(Vector2.ZERO), Vector2(Board.BOARD_WIDTH, Board.BOARD_HEIGHT)))
-	# Score boxes show information, so they sit sunk in like the home screen's record panel
-	for box_path in ["UI/Header/ScoreBox", "UI/Header/BestBox"]:
-		get_node(box_path).add_theme_stylebox_override("panel", UIKit.inset(20))
+	_build_score_header()
 	for plate in $TrayPlates.get_children():
 		plate.add_theme_stylebox_override("panel", UIKit.tray_plate())
-	_build_best_progress()
 	_load_best_score()
 	_update_ui()
 	SettingsManager.init_settings()
@@ -352,6 +349,7 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 		header_title.text = "퍼즐블록"
 
 	score = 0
+	score_counter.reset(0)
 	combo_count = 0
 	combo_grace_moves = 0
 	_update_fever()
@@ -539,7 +537,7 @@ func _on_pointer_up(_screen_pos: Vector2, touch_id: int) -> void:
 		
 		# (1) Placement Score: N points (1 per placed tile)
 		var cell_count = piece.shape_data["cells"].size()
-		_add_score(cell_count)
+		_add_score(cell_count, "place")
 		
 		piece.snap_to_board()
 		
@@ -626,7 +624,7 @@ func _process_line_clears(lines: int, _cells: int, center_pos: Vector2) -> void:
 	var total_gain: int = int(base_line_score * combo_mult) + combo_bonus
 	if combo_count >= FEVER_COMBO:
 		total_gain = int(total_gain * FEVER_MULTIPLIER)
-	_add_score(total_gain)
+	_add_score(total_gain, "combo" if combo_count >= 2 else "clear")
 	
 	if combo_count >= 1:
 		_show_combo_banner(combo_count, combo_grace_moves)
@@ -641,7 +639,7 @@ func _process_line_clears(lines: int, _cells: int, center_pos: Vector2) -> void:
 
 func _process_perfect_clear() -> void:
 	var gain: int = roundi(PERFECT_CLEAR_BASE * (1.0 + COMBO_ALPHA * combo_count))
-	_add_score(gain)
+	_add_score(gain, "perfect")
 	
 	SoundManager.play_perfect_clear()
 	SettingsManager.vibrate(160)
@@ -1281,7 +1279,7 @@ func _on_leaderboard_score_submitted(res: Dictionary) -> void:
 	else:
 		go_rank_status.text = "실시간 랭킹 확인 가능"
 
-func _add_score(amount: int) -> void:
+func _add_score(amount: int, kind: String = "place") -> void:
 	score += amount
 	if game_mode == "adventure":
 		pass # Stage scores never touch classic/daily records
@@ -1295,10 +1293,7 @@ func _add_score(amount: int) -> void:
 		_on_record_passed()
 		_save_best_score()
 	_update_ui()
-	
-	score_label.scale = Vector2.ONE * 1.25
-	var tw = create_tween()
-	tw.tween_property(score_label, "scale", Vector2.ONE, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	score_counter.roll_to(score, kind)
 
 func _on_record_passed() -> void:
 	if new_best_achieved:
@@ -1310,30 +1305,56 @@ func _on_record_passed() -> void:
 	_spawn_floating_text("NEW BEST!", center, UIKit.GOLD, 1.5)
 	SoundManager.play_record()
 	SettingsManager.vibrate(80)
+	best_label.pivot_offset = best_label.size * 0.5
 	best_label.scale = Vector2.ONE * 1.3
 	var tw = create_tween()
 	tw.tween_property(best_label, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
-func _build_best_progress() -> void:
-	# Thin bar along the bottom of the BEST box: how close this game is to the record
-	best_progress = ProgressBar.new()
-	best_progress.show_percentage = false
-	best_progress.min_value = 0
-	best_progress.max_value = 100
-	best_progress.position = Vector2(18, 92)
-	best_progress.size = Vector2(267, 7)
-	best_progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	best_progress.add_theme_stylebox_override("background", UIKit.box(UIKit.SURFACE_HI, UIKit.SURFACE_HI, 4, 0))
-	var fill := UIKit.box(UIKit.GOLD, UIKit.GOLD, 4, 0)
-	fill.content_margin_top = 0
-	fill.content_margin_bottom = 0
-	best_progress.add_theme_stylebox_override("fill", fill)
-	$UI/Header/BestBox.add_child(best_progress)
-	best_progress.visible = false
+func _build_score_header() -> void:
+	# Block Blast style: the record as a small gold line under the top buttons and the score
+	# as big rolling digits in the middle (ScoreCounter). The old boxes become plain layout.
+	var empty := StyleBoxEmpty.new()
+	var score_box: Panel = $UI/Header/ScoreBox
+	var best_box: Panel = $UI/Header/BestBox
+	for box in [score_box, best_box]:
+		box.add_theme_stylebox_override("panel", empty)
+	best_box.position = Vector2(42, 96)
+	best_box.size = Vector2(636, 36)
+	var row: HBoxContainer = $UI/Header/BestBox/BestHeader
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	var crown: TextureRect = $UI/Header/BestBox/BestHeader/CrownIcon
+	crown.custom_minimum_size = Vector2(30, 24)
+	best_label.reparent(row)
+	row.move_child(best_label, 1)
+	best_label.custom_minimum_size = Vector2.ZERO
+	best_label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	best_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bls := LabelSettings.new()
+	bls.font = UIKit.FONT
+	bls.font_size = 28
+	bls.font_color = UIKit.GOLD
+	bls.outline_size = 6
+	bls.outline_color = Color(0.25, 0.13, 0.0, 0.85)
+	best_label.label_settings = bls
+	var sls := LabelSettings.new()
+	sls.font = UIKit.FONT
+	sls.font_size = UIKit.TYPE_SMALL
+	sls.font_color = UIKit.MUTED
+	best_sub.label_settings = sls
+	best_sub.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	score_box.position = Vector2(42, 126)
+	score_box.size = Vector2(636, 90)
+	for c in score_box.get_children():
+		c.visible = false
+	score_counter = ScoreCounter.new()
+	score_counter.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	score_box.add_child(score_counter)
 
 func _update_ui() -> void:
 	score_label.text = _format_number(score)
-	best_progress.visible = game_mode != "adventure" and run_start_best > 0
+	$UI/Header/BestBox/BestHeader/CrownIcon.visible = game_mode != "adventure"
 	if game_mode == "adventure" and not stage.is_empty():
 		var progress: int = score if stage["goal"]["type"] == "score" else stage_progress
 		best_label.text = AdventureData.goal_text(stage["goal"], progress)
@@ -1345,10 +1366,8 @@ func _update_ui() -> void:
 		best_label.text = _format_number(daily_best if game_mode == "daily" else best_score)
 		if run_start_best > 0 and score < run_start_best:
 			best_sub.text = "신기록까지 %s" % _format_number(run_start_best - score)
-			best_progress.value = 100.0 * score / run_start_best
 		elif run_start_best > 0:
 			best_sub.text = "신기록 경신 중!"
-			best_progress.value = 100.0
 		else:
 			best_sub.text = "BEST"
 
