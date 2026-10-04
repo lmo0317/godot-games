@@ -11,7 +11,7 @@ var perfect_searches := 0
 var perfect_search_total := 0
 var perfect_search_max := 0
 var perfect_deals := 0
-const GAMES: int = 200
+var GAMES: int = int(OS.get_environment("BENCH_GAMES")) if not OS.get_environment("BENCH_GAMES").is_empty() else 200
 const MAX_MOVES: int = 1500
 
 var board: Board
@@ -20,6 +20,10 @@ var bot_rng := RandomNumberGenerator.new()
 var use_pressure: bool = OS.get_environment("BENCH_NO_PRESSURE").is_empty()
 # BENCH_EMPTY_START=1 starts from an empty board instead of the classic start pattern
 var use_start: bool = OS.get_environment("BENCH_EMPTY_START").is_empty()
+# BENCH_SNUG=<weight> sets how much the bot likes snug fits: 3 (default) = careful bot that
+# stacks pieces neatly like a practised player, 0 = greedy bot that only chases clears (beginner)
+var snug_weight: float = float(OS.get_environment("BENCH_SNUG")) if not OS.get_environment("BENCH_SNUG").is_empty() else 3.0
+# BENCH_GAMES=<n> plays fewer or more games
 # BENCH_NO_FUN=1 deals opening sets with the plain generator instead of get_fun_trio
 var use_fun: bool = OS.get_environment("BENCH_NO_FUN").is_empty()
 const EARLY_MOVES: int = 15
@@ -68,7 +72,7 @@ func _run() -> void:
 	moves.sort()
 	scores.sort()
 	combos.sort()
-	print("BENCH games=%d capped=%d" % [GAMES, capped])
+	print("BENCH games=%d capped=%d snug=%.1f" % [GAMES, capped, snug_weight])
 	print("BENCH moves  p25=%d median=%d p75=%d" % [_pct(moves, 25), _pct(moves, 50), _pct(moves, 75)])
 	print("BENCH score  p25=%d median=%d p75=%d p90=%d" % [_pct(scores, 25), _pct(scores, 50), _pct(scores, 75), _pct(scores, 90)])
 	print("BENCH combo  median=%d p90=%d" % [_pct(combos, 50), _pct(combos, 90)])
@@ -221,7 +225,7 @@ func _best_move(grid: PackedByteArray, tray: Array) -> Dictionary:
 				if not ok:
 					continue
 				var after := _count(BlockData.place_and_clear(grid, offsets, x, y))
-				var s: float = (before + offsets.size() - after) * 10.0 + BlockData._snugness(grid, offsets, x, y) * 3.0 + bot_rng.randf()
+				var s: float = (before + offsets.size() - after) * 10.0 + BlockData._snugness(grid, offsets, x, y) * snug_weight + bot_rng.randf()
 				if s > best_s:
 					best_s = s
 					best = {"i": i, "x": x, "y": y}

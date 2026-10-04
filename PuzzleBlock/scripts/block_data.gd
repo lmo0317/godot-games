@@ -273,11 +273,19 @@ static func _pick_weighted_shape(candidate_pool: Array, weights: Dictionary, rng
 
 # Classic difficulty curve: no change below PRESSURE_START points, full pressure at PRESSURE_FULL.
 # Pressure trims the generator's help (line-clearing picks, gap fillers) and lets big pieces in sooner.
+# Past OVERDRIVE_START a second stage (pressure 1..2) is for players who stack neatly and would
+# otherwise never lose: still less help, and sets are no longer always guaranteed to fit together.
 const PRESSURE_START: int = 2000
 const PRESSURE_FULL: int = 12000
+const OVERDRIVE_START: int = 15000
+const OVERDRIVE_FULL: int = 45000
+
+const ASSIST_CUT: float = 0.9
+const UNCHECKED_MAX: float = 0.8
 
 static func pressure_for_score(score: int) -> float:
-	return clampf(float(score - PRESSURE_START) / float(PRESSURE_FULL - PRESSURE_START), 0.0, 1.0)
+	var p: float = clampf(float(score - PRESSURE_START) / float(PRESSURE_FULL - PRESSURE_START), 0.0, 1.0)
+	return p + clampf(float(score - OVERDRIVE_START) / float(OVERDRIVE_FULL - OVERDRIVE_START), 0.0, 1.0)
 
 static func get_adaptive_trio(board, combo_count: int = 0, score: int = 0, combo_grace_moves: int = 3, rng: RandomNumberGenerator = null, pressure: float = 0.0, guarantee_clear: bool = false) -> Array[Dictionary]:
 	if rng == null:
@@ -286,6 +294,8 @@ static func get_adaptive_trio(board, combo_count: int = 0, score: int = 0, combo
 		return get_balanced_trio(rng)
 		
 	var fill: float = board.get_fill_ratio()
+	var overdrive: float = clampf(pressure - 1.0, 0.0, 1.0)
+	pressure = minf(pressure, 1.0)
 	
 	# Calculate affinity and dynamic weight for every shape on this specific board
 	var shape_weights: Dictionary = {}
@@ -313,7 +323,7 @@ static func get_adaptive_trio(board, combo_count: int = 0, score: int = 0, combo
 		
 		var base_w: float = SHAPE_BASE_WEIGHTS.get(id, 1.0)
 		# Multiplier exponentially boosts shapes that clear lines or advance near-complete lines
-		var dyn_w: float = base_w * (1.0 + aff * 0.18 * (1.0 - 0.6 * pressure))
+		var dyn_w: float = base_w * (1.0 + aff * 0.18 * maxf(0.0, 1.0 - 0.6 * pressure - 0.4 * overdrive))
 		shape_weights[id] = dyn_w
 		
 		if aff >= 100.0:
@@ -339,10 +349,12 @@ static func get_adaptive_trio(board, combo_count: int = 0, score: int = 0, combo
 		return [SHAPES[1], SHAPES[2], SHAPES[1]]
 		
 	var is_crisis: bool = (fill >= 0.70 or all_fitting.size() <= 4)
-	var is_comfortable: bool = (fill <= 0.45 + 0.15 * pressure)
-	var assist_chance = (0.95 - 0.3 * pressure) if combo_grace_moves <= 1 else (0.85 - 0.4 * pressure)
-	var near_line_chance: float = 0.75 - 0.35 * pressure
-	var hazard_chance: float = 0.5 + 0.3 * pressure
+	var is_comfortable: bool = (fill <= 0.45 + 0.15 * pressure + 0.1 * overdrive)
+	var assist_chance: float = ((0.95 - 0.3 * pressure) if combo_grace_moves <= 1 else (0.85 - 0.4 * pressure)) * (1.0 - ASSIST_CUT * overdrive)
+	var near_line_chance: float = (0.75 - 0.35 * pressure) * (1.0 - ASSIST_CUT * overdrive)
+	var hazard_chance: float = minf(1.0, 0.5 + 0.3 * pressure + 0.2 * overdrive)
+	# Overdrive: some sets skip the "all three fit in some order" check (each piece still fits now)
+	var unchecked: bool = overdrive > 0.0 and not is_crisis and rng.randf() < UNCHECKED_MAX * overdrive
 
 	# In crisis, large hazards are completely banned from slot C
 	var safe_pool: Array[Dictionary] = []
@@ -361,7 +373,7 @@ static func get_adaptive_trio(board, combo_count: int = 0, score: int = 0, combo
 		# =========================================================
 		var piece_a: Dictionary = {}
 		# Under pressure the "gap filler" slot sometimes becomes an ordinary pick
-		if not solvers.is_empty() and rng.randf() >= 0.5 * pressure:
+		if not solvers.is_empty() and rng.randf() >= 0.5 * pressure + 0.5 * overdrive:
 			piece_a = _pick_weighted_shape(solvers, shape_weights, rng)
 		else:
 			piece_a = _pick_weighted_shape(all_fitting, shape_weights, rng)
@@ -406,8 +418,8 @@ static func get_adaptive_trio(board, combo_count: int = 0, score: int = 0, combo
 		# =========================================================
 		# Solvability Check (죽음 방지 검증): all 3 must be placeable in some order
 		# =========================================================
-		if can_place_all(grid, trio):
-			last_generation_note = "roll_%d" % attempt
+		if unchecked or can_place_all(grid, trio):
+			last_generation_note = ("free_%d" if unchecked else "roll_%d") % attempt
 			# Shuffle order so the user cannot guess which slot corresponds to which role
 			_shuffle(trio, rng)
 			return trio
