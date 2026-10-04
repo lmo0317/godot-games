@@ -32,10 +32,10 @@ def canvas():
     return Image.new("RGBA", (S, S), (0, 0, 0, 0))
 
 
-def finish(img, name):
+def finish(img, name, size=SIZE):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name)
-    img.resize((SIZE, SIZE), Image.Resampling.LANCZOS).save(path, "PNG")
+    img.resize((size, size), Image.Resampling.LANCZOS).save(path, "PNG")
     print(f"Generated: {path}")
 
 
@@ -116,6 +116,30 @@ def lock_icon():
     return img
 
 
+def tap_hand():
+    """Pointing hand for the first-game hint (fingertip at about (30, 6) of 64, drawn 2x size)."""
+    from PIL import ImageFilter
+    mask = Image.new("L", (S, S), 0)
+    d = ImageDraw.Draw(mask)
+    # index finger, palm, folded fingers and thumb
+    d.rounded_rectangle([sc(24), sc(4), sc(36), sc(38)], radius=sc(6), fill=255)
+    d.rounded_rectangle([sc(20), sc(28), sc(52), sc(58)], radius=sc(10), fill=255)
+    for cx in (40.5, 47.5):
+        d.rounded_rectangle([sc(cx - 5), sc(24), sc(cx + 5), sc(40)], radius=sc(5), fill=255)
+    d.polygon([(sc(22), sc(40)), (sc(10), sc(32)), (sc(7), sc(37)), (sc(18), sc(52))], fill=255)
+    d.ellipse([sc(5), sc(30), sc(13), sc(38)], fill=255)
+    img = canvas()
+    outline = mask.filter(ImageFilter.MaxFilter(sc(5) | 1))
+    shadow = outline.filter(ImageFilter.GaussianBlur(sc(1.5)))
+    img.paste((0, 0, 0, 110), (sc(1), sc(3)), shadow)
+    img.paste(INK, (0, 0), outline)
+    img.paste(TEXT, (0, 0), mask)
+    # crease lines between the folded fingers
+    line(ImageDraw.Draw(img), [(37, 28), (37, 36)], fill=(160, 174, 200, 255), width=2)
+    line(ImageDraw.Draw(img), [(44, 28), (44, 36)], fill=(160, 174, 200, 255), width=2)
+    return img
+
+
 if __name__ == "__main__":
     finish(home_icon(), "home_icon.png")
     finish(settings_icon(), "settings_icon.png")
@@ -124,3 +148,4 @@ if __name__ == "__main__":
     finish(sound_icon(True), "sound_off.png")
     finish(close_icon(), "close_icon.png")
     finish(lock_icon(), "lock_icon.png")
+    finish(tap_hand(), "tap_hand.png", 128)

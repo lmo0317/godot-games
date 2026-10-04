@@ -8,6 +8,8 @@ static var screen_shake_enabled: bool = true
 static var ghost_piece_enabled: bool = true
 static var vibration_enabled: bool = true
 static var block_skin: String = "classic"
+# First-game hint: "" never decided (first-time players get it), "pending" show it, "done" seen
+static var tutorial_state: String = ""
 # -1 unknown, 0 no, 1 yes. Browsers without the Vibration API (Safari, Firefox for Android)
 # make Godot log a message on every call, so support is checked once.
 static var _vibration_supported: int = -1
@@ -31,6 +33,7 @@ static func load_settings() -> void:
 				vibration_enabled = bool(data.get("vibration_enabled", true))
 				var skin := str(data.get("block_skin", "classic"))
 				block_skin = skin if BlockSkins.is_valid(skin) else "classic"
+				tutorial_state = str(data.get("tutorial", ""))
 
 static func save_settings() -> void:
 	var file = FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
@@ -40,7 +43,8 @@ static func save_settings() -> void:
 			"screen_shake_enabled": screen_shake_enabled,
 			"ghost_piece_enabled": ghost_piece_enabled,
 			"vibration_enabled": vibration_enabled,
-			"block_skin": block_skin
+			"block_skin": block_skin,
+			"tutorial": tutorial_state
 		}
 		file.store_string(JSON.stringify(data))
 
@@ -59,6 +63,10 @@ static func set_ghost(enabled: bool) -> void:
 
 static func set_vibration(enabled: bool) -> void:
 	vibration_enabled = enabled
+	save_settings()
+
+static func set_tutorial(state: String) -> void:
+	tutorial_state = state
 	save_settings()
 
 static func set_skin(skin: String) -> void:

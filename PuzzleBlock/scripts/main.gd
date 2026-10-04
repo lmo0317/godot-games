@@ -62,6 +62,10 @@ var deal_index: int = 0
 # Record chase: the best score when this game started, and the progress bar in the BEST box
 var run_start_best: int = 0
 var score_counter: ScoreCounter
+# First-game hint (TutorialHint): shown in a player's first classic game until a line is cleared
+var tutorial_active: bool = false
+var tutorial_trays: int = 0
+var tutorial_hint: TutorialHint = null
 
 # Combo fever state (combo_count >= FEVER_COMBO) and its looping board glow
 var fever_active: bool = false
@@ -166,6 +170,10 @@ func _ready() -> void:
 	leaderboard_modal.closed.connect(_on_leaderboard_closed)
 	settings_modal.closed.connect(_on_settings_closed)
 	settings_modal.request_profile_setup.connect(func(): profile_setup_modal.open())
+	settings_modal.request_tutorial.connect(func():
+		SettingsManager.set_tutorial("pending")
+		start_screen.visible = false
+		start_new_game(false, "classic"))
 	profile_setup_modal.setup_completed.connect(_on_profile_setup_completed)
 	LeaderboardManager.profile_updated.connect(func(_n, _a): _update_home_profile_ui())
 	
@@ -350,6 +358,9 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 
 	score = 0
 	score_counter.reset(0)
+	_dismiss_tutorial_hint()
+	tutorial_trays = 0
+	tutorial_active = game_mode == "classic" and (SettingsManager.tutorial_state == "pending" 		or (SettingsManager.tutorial_state == "" and Achievements.get_stat("games_played") == 0))
 	combo_count = 0
 	combo_grace_moves = 0
 	_update_fever()
@@ -459,6 +470,12 @@ func _spawn_new_tray() -> void:
 		tw.tween_property(piece, "scale", Vector2.ONE * piece.tray_scale, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	
 	_check_piece_usability_and_game_over()
+	if tutorial_active:
+		tutorial_trays += 1
+		if tutorial_trays > 3:
+			_finish_tutorial() # they are playing fine without clearing; stop nagging
+		else:
+			_show_tutorial_hint_later(0.45)
 
 func _input(event: InputEvent) -> void:
 	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible:
@@ -502,6 +519,7 @@ func _on_pointer_down(screen_pos: Vector2, touch_id: int) -> void:
 					best_piece = piece
 					
 	if best_piece != null:
+		_dismiss_tutorial_hint()
 		dragging_piece = best_piece
 		drag_touch_id = touch_id
 		dragging_piece.start_drag(screen_pos)
@@ -547,6 +565,11 @@ func _on_pointer_up(_screen_pos: Vector2, touch_id: int) -> void:
 		var lines = clear_info["lines"]
 		var perfect: bool = clear_info["perfect"]
 		
+		if tutorial_active:
+			if lines > 0:
+				_finish_tutorial()
+			elif not _is_tray_empty():
+				_show_tutorial_hint_later(0.5)
 		if lines > 0:
 			combo_count += 1
 			combo_grace_moves = MAX_COMBO_GRACE
@@ -592,6 +615,8 @@ func _on_pointer_up(_screen_pos: Vector2, touch_id: int) -> void:
 			_check_piece_usability_and_game_over()
 	else:
 		piece.return_to_tray()
+		if tutorial_active:
+			_show_tutorial_hint_later(0.4)
 
 func _process_line_clears(lines: int, _cells: int, center_pos: Vector2) -> void:
 	SoundManager.play_lines_clear(lines, combo_count)
@@ -844,6 +869,64 @@ func _spawn_floating_text(text: String, spawn_pos: Vector2, col: Color, scale_mu
 	add_child(ft)
 	ft.setup(text, col, scale_mult)
 
+func _show_tutorial_hint_later(delay: float) -> void:
+	var seq := game_seq
+	get_tree().create_timer(delay).timeout.connect(func():
+		if seq == game_seq:
+			_show_tutorial_hint())
+
+func _show_tutorial_hint() -> void:
+	if not tutorial_active or is_game_over or dragging_piece != null or start_screen.visible:
+		return
+	_dismiss_tutorial_hint()
+	# The tray piece and spot that clear the most cells right now
+	var grid := board.get_occupancy_snapshot()
+	var before := 0
+	for v in grid:
+		before += 1 if v != 0 else 0
+	var best := {}
+	var best_cleared := 0
+	for piece in tray_pieces:
+		if piece == null or not is_instance_valid(piece):
+			continue
+		var offsets: Array[Vector2i] = BlockData.get_offsets(piece.shape_data)
+		var b: Rect2i = BlockData.get_bounds(piece.shape_data["cells"])
+		for y in range(Board.GRID_SIZE - b.size.y + 1):
+			for x in range(Board.GRID_SIZE - b.size.x + 1):
+				var fits := true
+				for o in offsets:
+					if grid[(x + o.x) + (y + o.y) * Board.GRID_SIZE] != 0:
+						fits = false
+						break
+				if not fits:
+					continue
+				var after := 0
+				for v in BlockData.place_and_clear(grid, offsets, x, y):
+					after += 1 if v != 0 else 0
+				var cleared: int = before + offsets.size() - after
+				if cleared > best_cleared:
+					best_cleared = cleared
+					best = {"piece": piece, "x": x, "y": y, "size": b.size}
+	if best.is_empty():
+		return # nothing clears with this set; try again after the next one
+	var size: Vector2 = Vector2(best["size"]) * Board.CELL_SPACING - Vector2.ONE * (Board.CELL_SPACING - Board.CELL_SIZE)
+	var corner: Vector2 = board.get_cell_position(best["x"], best["y"]) - Vector2.ONE * Board.CELL_SIZE * 0.5
+	var target: Vector2 = board.to_global(corner + size * 0.5)
+	var text_pos: Vector2 = board.to_global(Vector2(Board.BOARD_WIDTH * 0.5, Board.BOARD_HEIGHT + 34))
+	tutorial_hint = TutorialHint.new()
+	add_child(tutorial_hint)
+	tutorial_hint.setup(best["piece"], target, text_pos)
+
+func _dismiss_tutorial_hint() -> void:
+	if tutorial_hint != null and is_instance_valid(tutorial_hint):
+		tutorial_hint.dismiss()
+	tutorial_hint = null
+
+func _finish_tutorial() -> void:
+	tutorial_active = false
+	_dismiss_tutorial_hint()
+	SettingsManager.set_tutorial("done")
+
 func _is_tray_empty() -> bool:
 	for p in tray_pieces:
 		if p != null and is_instance_valid(p):
@@ -871,6 +954,7 @@ func _check_piece_usability_and_game_over() -> void:
 			_trigger_game_over()
 
 func _trigger_revive_chance() -> void:
+	_dismiss_tutorial_hint()
 	Analytics.log_event("revive_offer", {
 		"game_id": game_id,
 		"score": score,
@@ -938,6 +1022,7 @@ func _on_profile_setup_completed() -> void:
 	start_screen.visible = true
 
 func _open_home_screen() -> void:
+	_dismiss_tutorial_hint()
 	SoundManager.play_click()
 	if not start_screen.visible and not is_game_over and not game_id.is_empty():
 		# Player left a game in progress
@@ -988,6 +1073,7 @@ func _update_home_profile_ui() -> void:
 	btn_sound.texture_normal = sound_off_tex if SoundManager.is_muted else sound_on_tex
 
 func _trigger_game_over() -> void:
+	_dismiss_tutorial_hint()
 	if is_game_over:
 		return
 	is_game_over = true

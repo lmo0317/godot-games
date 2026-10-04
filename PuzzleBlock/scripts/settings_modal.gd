@@ -3,6 +3,7 @@ extends ColorRect
 
 signal closed
 signal request_profile_setup
+signal request_tutorial
 
 @onready var card: Panel = $Card
 @onready var btn_close: Button = $Card/BtnClose
@@ -229,6 +230,15 @@ func _build_skin_picker() -> void:
 		row.add_child(btn)
 		skin_buttons[skin_id] = btn
 	options_vbox.add_child(row)
+	# Replays the first-game hint in a fresh classic game
+	var btn_tutorial := Button.new()
+	btn_tutorial.text = "게임 방법 다시 보기"
+	btn_tutorial.custom_minimum_size = Vector2(0, 56)
+	UIKit.style_button(btn_tutorial, "secondary", UIKit.TYPE_BODY, 14)
+	btn_tutorial.pressed.connect(func():
+		close()
+		request_tutorial.emit())
+	options_vbox.add_child(btn_tutorial)
 
 func _update_skin_buttons() -> void:
 	for skin_id in skin_buttons:
