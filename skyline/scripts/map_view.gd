@@ -31,6 +31,7 @@ var ghost_cell := -1
 var ghost_radius := 0
 var ghost_roads := {}           # cells drawn as road while a road is being placed
 var handle_cell := -1           # green arrows around this cell: drag here
+var hide_cell := -1             # a building lifted for moving is not drawn in place
 var preview_ok := Color(0.4, 1.0, 0.5, 0.45)
 var overlay := ""               # "", "power", "water", "svc:<bit>" or "land"
 var selected := -1
@@ -283,7 +284,7 @@ func _draw_buildings(ci: CanvasItem) -> void:
 	for s in 2 * n - 1:
 		for x in range(maxi(0, s - n + 1), mini(s, n - 1) + 1):
 			var i := City.idx(x, s - x)
-			var name := sprite_for(i)
+			var name := sprite_for(i) if i != hide_cell else ""
 			if name != "":
 				_spr(ci, name, i, Color.WHITE if city.is_active(i) else LOCKED)
 	if ghost_cell >= 0 and ghost != "":
@@ -383,17 +384,35 @@ func _draw_preview(ci: CanvasItem) -> void:
 		_draw_arrows(ci, handle_cell)
 
 
+const ARROW_DIRS := [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]
+
+
+func _arrow_frame(i: int, d: Vector2) -> Array:
+	## [base point, outward direction] of the arrow past one tile edge.
+	var edge_mid := cell_center(i) + Vector2(d.x * HW * 0.5, d.y * HH * 0.5)
+	var n := Vector2(d.x, d.y * 0.8).normalized()
+	return [edge_mid + n * 9.0, n]
+
+
+func arrow_centers(i: int) -> Array:
+	## Map positions of the four arrows (for touch tests).
+	var out: Array = []
+	for d in ARROW_DIRS:
+		var f := _arrow_frame(i, d)
+		out.append(f[0] + f[1] * 3.0)
+	return out
+
+
 func _draw_arrows(ci: CanvasItem, i: int) -> void:
 	## Four green arrows just outside the tile edges, pointing diagonally away (up-left, up-right,
 	## down-left, down-right) like base-builder games: "drag me".
-	var c := cell_center(i)
-	var push := 3.0 + roundf(sin(time * 6.0) * 1.5)
+	var bob := roundf(sin(time * 6.0) * 1.5)
 	var shape := [Vector2(10, 0), Vector2(3, 7), Vector2(3, 3), Vector2(-4, 3), Vector2(-4, -3), Vector2(3, -3), Vector2(3, -7)]
-	for d in [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]:
-		var edge_mid := c + Vector2(d.x * HW * 0.5, d.y * HH * 0.5)
-		var n := Vector2(d.x, d.y * 0.8).normalized()
+	for d in ARROW_DIRS:
+		var f := _arrow_frame(i, d)
+		var n: Vector2 = f[1]
+		var base: Vector2 = f[0] + n * bob
 		var side := Vector2(-n.y, n.x)
-		var base := edge_mid + n * (push + 6.0)
 		var pts := PackedVector2Array()
 		for q in shape:
 			pts.append(base + n * q.x + side * q.y)
