@@ -26,6 +26,7 @@ const COMBO_BONUS_LINEAR: int = 15
 const COMBO_BONUS_QUADRATIC: int = 5
 # Perfect clear bonus before the combo multiplier
 const PERFECT_CLEAR_BASE: int = 300
+const VERSUS_PRESSURE: float = 0.6
 # Combo fever: from this combo on, line clear points are multiplied
 const FEVER_COMBO: int = 5
 const FEVER_MULTIPLIER: float = 1.5
@@ -66,6 +67,9 @@ var score_counter: ScoreCounter
 var tutorial_active: bool = false
 var tutorial_trays: int = 0
 var tutorial_hint: TutorialHint = null
+# Versus mode (VersusMatch): turns against the computer on one board
+var versus: VersusMatch
+var versus_level: String = "normal"
 
 # Combo fever state (combo_count >= FEVER_COMBO) and its looping board glow
 var fever_active: bool = false
@@ -147,6 +151,9 @@ func _ready() -> void:
 	add_child(combo_fx)
 	combo_fx.setup_embers(Rect2(board.to_global(Vector2.ZERO), Vector2(Board.BOARD_WIDTH, Board.BOARD_HEIGHT)))
 	_build_score_header()
+	versus = VersusMatch.new()
+	$UI/Header.add_child(versus)
+	versus.visible = false
 	for plate in $TrayPlates.get_children():
 		plate.add_theme_stylebox_override("panel", UIKit.tray_plate())
 	_load_best_score()
@@ -185,6 +192,7 @@ func _ready() -> void:
 	start_screen.play_pressed.connect(_on_start_play_pressed)
 	start_screen.daily_pressed.connect(_on_start_daily_pressed)
 	start_screen.adventure_pressed.connect(_open_adventure_select)
+	start_screen.versus_pressed.connect(_start_versus)
 	start_screen.ranking_pressed.connect(_open_leaderboard)
 	start_screen.set_ranking_visible(_has_ranking(), LeaderboardManager.is_online())
 	if Toss.active():
@@ -250,6 +258,8 @@ func _on_back_pressed() -> void:
 		leaderboard_modal.close()
 	elif adventure_select.visible:
 		adventure_select.close()
+	elif start_screen.visible and start_screen.versus_picker.visible:
+		start_screen.versus_picker.visible = false
 	elif start_screen.visible and not profile_setup_modal.visible:
 		if Toss.active():
 			_show_exit_confirm()
@@ -353,11 +363,19 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 	elif game_mode == "adventure":
 		header_title.text = "STAGE %d" % stage["id"]
 		stage_progress = 0
+	elif game_mode == "versus":
+		header_title.text = "대결"
 	else:
 		header_title.text = "퍼즐블록"
 
 	score = 0
 	score_counter.reset(0)
+	var vs_mode: bool = game_mode == "versus"
+	versus.visible = vs_mode
+	$UI/Header/ScoreBox.visible = not vs_mode
+	$UI/Header/BestBox.visible = not vs_mode
+	if vs_mode:
+		versus.begin(versus_level, LeaderboardManager.nickname, LeaderboardManager.get_avatar_texture())
 	_dismiss_tutorial_hint()
 	tutorial_trays = 0
 	tutorial_active = game_mode == "classic" and (SettingsManager.tutorial_state == "pending" 		or (SettingsManager.tutorial_state == "" and Achievements.get_stat("games_played") == 0))
@@ -402,7 +420,7 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 
 	game_seq += 1
 	var seq := game_seq
-	if game_mode == "classic":
+	if game_mode == "classic" or game_mode == "versus":
 		# Classic starts from a few pre-placed pieces (see BlockData.generate_start_pattern);
 		# the first set always includes a piece that clears a line right away
 		var pattern := BlockData.generate_start_pattern()
@@ -435,7 +453,8 @@ func _spawn_new_tray() -> void:
 		shapes = BlockData.get_seeded_trio(challenge_rng)
 	else:
 		# The difficulty curve applies to classic only; adventure stages keep their tuned balance
-		var pressure: float = BlockData.pressure_for_score(score) if game_mode == "classic" else 0.0
+		# Versus deals with a fixed medium pressure for both sides
+		var pressure: float = BlockData.pressure_for_score(score) if game_mode == "classic" else (VERSUS_PRESSURE if game_mode == "versus" else 0.0)
 		if game_mode == "classic" and deal_index < BlockData.FUN_DEALS and score < BlockData.FUN_SCORE_MAX:
 			# Opening sets are chosen for fun moments: snug fits, multi-line clears, a combo that keeps
 			# going, and a set that empties the board whenever one exists
@@ -506,6 +525,8 @@ func _input(event: InputEvent) -> void:
 func _on_pointer_down(screen_pos: Vector2, touch_id: int) -> void:
 	if dragging_piece != null:
 		return
+	if game_mode == "versus" and not versus.is_my_turn():
+		return
 		
 	var best_piece: BlockPiece = null
 	var best_dist: float = 99999.0
@@ -544,79 +565,96 @@ func _on_pointer_up(_screen_pos: Vector2, touch_id: int) -> void:
 	
 	board.hide_ghost_preview()
 	
-	# Attempt placing on the board
-	var success = board.place_piece(piece.shape_data, piece)
-	if success:
-		var slot_idx = piece.slot_index
-		tray_pieces[slot_idx] = null
-		
-		SettingsManager.vibrate(12)
-		play_log.append(["p", piece.shape_data["id"], board.last_origin.x, board.last_origin.y])
-		
-		# (1) Placement Score: N points (1 per placed tile)
-		var cell_count = piece.shape_data["cells"].size()
-		_add_score(cell_count, "place")
-		
-		piece.snap_to_board()
-		
-		# Check lines
-		board.clear_combo = combo_count
-		var clear_info = board.check_and_clear_lines()
-		var lines = clear_info["lines"]
-		var perfect: bool = clear_info["perfect"]
-		
+	if not _commit_placement(piece):
+		piece.return_to_tray()
 		if tutorial_active:
-			if lines > 0:
-				_finish_tutorial()
-			elif not _is_tray_empty():
-				_show_tutorial_hint_later(0.5)
-		if lines > 0:
-			combo_count += 1
-			combo_grace_moves = MAX_COMBO_GRACE
-			_process_line_clears(lines, clear_info["cells"], clear_info["center"])
-			if perfect:
-				_process_perfect_clear()
-		else:
-			if combo_count > 0:
-				combo_grace_moves -= 1
-				if combo_grace_moves <= 0:
-					combo_count = 0
-					_hide_combo_banner()
-					_update_combo_aura()
-				else:
-					# Grace move consumed, combo streak preserved!
-					_show_combo_banner(combo_count, combo_grace_moves)
+			_show_tutorial_hint_later(0.4)
 
-		_update_fever()
-		move_count += 1
-		max_combo = max(max_combo, combo_count)
+# Puts the piece where it is held (the player's drop or the computer's move) and runs the scoring,
+# clears and what comes next. Returns false if it does not fit there.
+func _commit_placement(piece: BlockPiece) -> bool:
+	if not board.place_piece(piece.shape_data, piece):
+		return false
+	var slot_idx = piece.slot_index
+	tray_pieces[slot_idx] = null
+	
+	SettingsManager.vibrate(12)
+	play_log.append(["p", piece.shape_data["id"], board.last_origin.x, board.last_origin.y])
+	# Versus: each side keeps its own combo; load the mover's
+	var players_move: bool = game_mode != "versus" or versus.is_my_turn()
+	if game_mode == "versus":
+		combo_count = versus.combos[versus.turn]
+		combo_grace_moves = versus.graces[versus.turn]
+	
+	# (1) Placement Score: N points (1 per placed tile)
+	var cell_count = piece.shape_data["cells"].size()
+	_add_score(cell_count, "place")
+	
+	piece.snap_to_board()
+	
+	# Check lines
+	board.clear_combo = combo_count
+	var clear_info = board.check_and_clear_lines()
+	var lines = clear_info["lines"]
+	var perfect: bool = clear_info["perfect"]
+	
+	if tutorial_active:
+		if lines > 0:
+			_finish_tutorial()
+		elif not _is_tray_empty():
+			_show_tutorial_hint_later(0.5)
+	if lines > 0:
+		combo_count += 1
+		combo_grace_moves = MAX_COMBO_GRACE
+		_process_line_clears(lines, clear_info["cells"], clear_info["center"])
+		if perfect:
+			_process_perfect_clear()
+	else:
+		if combo_count > 0:
+			combo_grace_moves -= 1
+			if combo_grace_moves <= 0:
+				combo_count = 0
+				_hide_combo_banner()
+				_update_combo_aura()
+			else:
+				# Grace move consumed, combo streak preserved!
+				_show_combo_banner(combo_count, combo_grace_moves)
+
+	_update_fever()
+	move_count += 1
+	max_combo = max(max_combo, combo_count)
+	if players_move:
 		Achievements.add_stat("total_lines", lines)
 		Achievements.max_stat("max_combo", combo_count)
 		if perfect:
 			Achievements.add_stat("perfect_clears", 1)
-		Analytics.log_event("place", {
-			"game_id": game_id,
-			"shape": piece.shape_data["id"],
-			"cells": cell_count,
-			"lines": lines,
-			"perfect": perfect,
-			"combo": combo_count,
-			"fever": fever_active,
-			"grace": combo_grace_moves,
-			"fill_after": snappedf(board.get_fill_ratio(), 0.001)
-		})
+	Analytics.log_event("place", {
+		"game_id": game_id,
+		"shape": piece.shape_data["id"],
+		"cells": cell_count,
+		"lines": lines,
+		"perfect": perfect,
+		"combo": combo_count,
+		"fever": fever_active,
+		"grace": combo_grace_moves,
+		"fill_after": snappedf(board.get_fill_ratio(), 0.001)
+	})
 
-		if game_mode == "adventure" and _update_stage_after_move(lines, clear_info["gems"]):
-			return
+	if game_mode == "adventure" and _update_stage_after_move(lines, clear_info["gems"]):
+		return true
+	if game_mode == "versus":
+		versus.combos[versus.turn] = combo_count
+		versus.graces[versus.turn] = combo_grace_moves
+		versus.end_move()
+		if versus.is_finished_by_turns():
+			_finish_versus("turns")
+			return true
 
-		if _is_tray_empty():
-			_spawn_new_tray()
-		else:
-			_check_piece_usability_and_game_over()
+	if _is_tray_empty():
+		_spawn_new_tray()
 	else:
-		piece.return_to_tray()
-		if tutorial_active:
-			_show_tutorial_hint_later(0.4)
+		_check_piece_usability_and_game_over()
+	return true
 
 func _process_line_clears(lines: int, _cells: int, center_pos: Vector2) -> void:
 	SoundManager.play_lines_clear(lines, combo_count)
@@ -717,7 +755,7 @@ func _set_theme(index: int, animate: bool) -> void:
 		theme_front.modulate.a = 0.0)
 
 func _update_fever() -> void:
-	var should_be_on: bool = combo_count >= FEVER_COMBO
+	var should_be_on: bool = combo_count >= FEVER_COMBO and game_mode != "versus"
 	if should_be_on == fever_active:
 		return
 	fever_active = should_be_on
@@ -783,6 +821,8 @@ func _combo_banner_style(col: Color) -> StyleBoxFlat:
 	return sb
 
 func _show_combo_banner(c: int, grace: int = 3) -> void:
+	if game_mode == "versus":
+		return # each side's combo shows in its clear popups instead
 	if c <= 0:
 		_hide_combo_banner()
 		return
@@ -818,7 +858,7 @@ func _hide_combo_banner() -> void:
 		tw.tween_callback(func(): combo_banner.visible = false)
 
 func _update_combo_aura() -> void:
-	if combo_count < 3:
+	if combo_count < 3 or game_mode == "versus":
 		if combo_aura.visible:
 			var tw = create_tween()
 			tw.tween_property(combo_aura, "modulate:a", 0.0, 0.2)
@@ -934,6 +974,9 @@ func _is_tray_empty() -> bool:
 	return true
 
 func _check_piece_usability_and_game_over() -> void:
+	if game_mode == "versus":
+		_versus_turn_start()
+		return
 	var any_can_fit = false
 	var remaining_pieces: int = 0
 	
@@ -1248,6 +1291,110 @@ func _on_go_secondary_pressed() -> void:
 		_open_home_screen()
 
 # =========================================================
+# Versus mode
+# =========================================================
+
+func _start_versus(level: String) -> void:
+	versus_level = level
+	start_screen.visible = false
+	start_new_game(false, "versus")
+
+func _versus_turn_start() -> void:
+	if is_game_over:
+		return
+	var any_fit := false
+	for p in tray_pieces:
+		if p != null and is_instance_valid(p):
+			var fits: bool = board.can_fit_shape(p.shape_data)
+			any_fit = any_fit or fits
+			# The tray is dimmed while the computer plays
+			p.set_dimmed(not fits or not versus.is_my_turn())
+	if not any_fit:
+		_finish_versus("stuck")
+		return
+	if not versus.is_my_turn():
+		versus.set_thinking(true)
+		var seq := game_seq
+		get_tree().create_timer(0.75).timeout.connect(func():
+			if seq == game_seq:
+				_cpu_move())
+
+func _cpu_move() -> void:
+	if is_game_over or game_mode != "versus" or versus.is_my_turn():
+		return
+	var move: Dictionary = versus.choose_move(board.get_occupancy_snapshot(), tray_pieces)
+	versus.set_thinking(false)
+	if move.is_empty():
+		_finish_versus("stuck")
+		return
+	var piece: BlockPiece = tray_pieces[move["slot"]]
+	var b: Rect2i = BlockData.get_bounds(piece.shape_data["cells"])
+	var half: Vector2 = Vector2(b.size) * Board.CELL_SPACING * 0.5 - Vector2.ONE * Board.CELL_GAP * 0.5
+	var target: Vector2 = board.to_global(Vector2(move["x"], move["y"]) * Board.CELL_SPACING + half)
+	piece.z_index = 50
+	piece.modulate = Color.WHITE
+	var seq := game_seq
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(piece, "global_position", target, 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(piece, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_callback(func():
+		if seq != game_seq or is_game_over or not is_instance_valid(piece):
+			return
+		if not _commit_placement(piece):
+			piece.return_to_tray()
+			_finish_versus("stuck"))
+
+func _finish_versus(reason: String) -> void:
+	if is_game_over:
+		return
+	is_game_over = true
+	last_game_over_msec = Time.get_ticks_msec()
+	# "stuck": the side to move had nothing to place and loses
+	var loser: int = versus.turn if reason == "stuck" else -1
+	var win: int = versus.winner()
+	if loser >= 0:
+		win = VersusMatch.CPU if loser == VersusMatch.ME else VersusMatch.ME
+	Achievements.add_stat("games_played", 1)
+	if win == VersusMatch.ME:
+		Achievements.add_stat("versus_win_" + versus_level, 1)
+	elif win == VersusMatch.CPU:
+		Achievements.add_stat("versus_loss_" + versus_level, 1)
+	Analytics.log_event("versus_result", {
+		"game_id": game_id,
+		"level": versus_level,
+		"result": "win" if win == VersusMatch.ME else ("lose" if win == VersusMatch.CPU else "draw"),
+		"reason": reason,
+		"score": versus.scores[VersusMatch.ME],
+		"cpu_score": versus.scores[VersusMatch.CPU],
+		"moves": move_count
+	})
+	Analytics.flush()
+	if win == VersusMatch.ME:
+		SoundManager.play_record()
+		SettingsManager.vibrate(160)
+	else:
+		SoundManager.play_gameover()
+		SettingsManager.vibrate(120)
+
+	await get_tree().create_timer(0.65).timeout
+
+	_restore_game_over_texts()
+	go_title.text = "WIN!" if win == VersusMatch.ME else ("LOSE" if win == VersusMatch.CPU else "DRAW")
+	go_final_score.text = "%s : %s" % [_format_number(versus.scores[VersusMatch.ME]), _format_number(versus.scores[VersusMatch.CPU])]
+	go_best_score.text = "나 : 컴퓨터(%s)" % VersusMatch.level_name(versus_level)
+	go_new_badge.visible = false
+	if reason == "stuck":
+		go_rank_status.text = "놓을 수 있는 블록이 없어요." if loser == VersusMatch.ME else "컴퓨터가 놓을 블록이 없어요!"
+	else:
+		go_rank_status.text = "각자 %d수를 모두 두었어요." % VersusMatch.TURNS
+	go_btn_view_rank.visible = false
+	go_btn_retry.text = "다시 대결"
+	game_over_panel.visible = true
+	game_over_panel.modulate.a = 0.0
+	var tw = create_tween()
+	tw.tween_property(game_over_panel, "modulate:a", 1.0, 0.25)
+
+# =========================================================
 # Adventure mode
 # =========================================================
 
@@ -1366,6 +1513,9 @@ func _on_leaderboard_score_submitted(res: Dictionary) -> void:
 		go_rank_status.text = "실시간 랭킹 확인 가능"
 
 func _add_score(amount: int, kind: String = "place") -> void:
+	if game_mode == "versus":
+		versus.add_points(amount)
+		return
 	score += amount
 	if game_mode == "adventure":
 		pass # Stage scores never touch classic/daily records
