@@ -384,17 +384,19 @@ func _draw_preview(ci: CanvasItem) -> void:
 
 
 func _draw_arrows(ci: CanvasItem, i: int) -> void:
-	## Four green arrows pointing out of the tile edges, like base-builder games: "drag me".
+	## Four green arrows just outside the tile edges, pointing diagonally away (up-left, up-right,
+	## down-left, down-right) like base-builder games: "drag me".
 	var c := cell_center(i)
-	var push := 5.0 + roundf(sin(time * 6.0) * 1.5)
-	var shape := [Vector2(9, 0), Vector2(2, 7), Vector2(2, 3), Vector2(-6, 3), Vector2(-6, -3), Vector2(2, -3), Vector2(2, -7)]
+	var push := 3.0 + roundf(sin(time * 6.0) * 1.5)
+	var shape := [Vector2(10, 0), Vector2(3, 7), Vector2(3, 3), Vector2(-4, 3), Vector2(-4, -3), Vector2(3, -3), Vector2(3, -7)]
 	for d in [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]:
 		var edge_mid := c + Vector2(d.x * HW * 0.5, d.y * HH * 0.5)
-		var n := Vector2(d.x * HH, d.y * HW).normalized()      # outward normal of that diamond edge
+		var n := Vector2(d.x, d.y * 0.8).normalized()
 		var side := Vector2(-n.y, n.x)
+		var base := edge_mid + n * (push + 6.0)
 		var pts := PackedVector2Array()
 		for q in shape:
-			pts.append(edge_mid + n * (push + 8.0 + q.x * 1.3) + side * q.y * 1.3)
+			pts.append(base + n * q.x + side * q.y)
 		ci.draw_colored_polygon(pts, Color(0.45, 0.95, 0.3))
 		pts.append(pts[0])
-		ci.draw_polyline(pts, Color(0.1, 0.25, 0.05), 1.0)
+		ci.draw_polyline(pts, Color(0.08, 0.3, 0.05), 1.0)
