@@ -145,7 +145,12 @@ func _refresh() -> void:
 # =========================================================
 
 # tray: Array of BlockPiece or null. Returns {"slot", "x", "y"} or {} when nothing fits.
-func choose_move(grid: PackedByteArray, tray: Array) -> Dictionary:
+# state: the match as {scores, combos, graces, left, turn}; defaults to this match with the
+# computer to move (the benchmark passes its own).
+func choose_move(grid: PackedByteArray, tray: Array, state: Dictionary = {}) -> Dictionary:
+	if state.is_empty():
+		state = {"scores": scores.duplicate(), "combos": combos.duplicate(), "graces": graces.duplicate(),
+			"left": moves_left.duplicate(), "turn": turn}
 	var moves: Array = _moves(grid, tray)
 	if moves.is_empty():
 		return {}
@@ -159,39 +164,113 @@ func choose_move(grid: PackedByteArray, tray: Array) -> Dictionary:
 				return moves[0]
 			return moves[rng.randi() % moves.size()]
 		"hard":
-			return _look_ahead(moves, tray)
+			return _search_root(grid, tray, state)
 		_:
 			return moves[0]
 
-# Hard: for the best few moves, also look at the player's best reply with the pieces left,
-# and love a move that leaves the player nothing to place
-func _look_ahead(moves: Array, tray: Array) -> Dictionary:
+# Hard: reads the rest of the tray move by move (computer, player, computer...) with the real
+# scoring, assumes the player answers as well as it can, and picks the move that comes out best.
+# A side with nothing to place on its turn loses, so trapping the player counts as a win.
+# Beam widths keep it to a few thousand placements per choice.
+const WIN: float = 1000000.0
+const BEAM: Array[int] = [16, 10, 6]
+
+func _search_root(grid: PackedByteArray, tray: Array, st: Dictionary) -> Dictionary:
+	var me: int = st["turn"]
+	var moves: Array = _ordered(grid, tray, st)
 	var best: Dictionary = moves[0]
 	var best_v: float = -INF
-	for k in range(mini(moves.size(), 10)):
+	var alpha: float = -INF
+	for k in range(mini(moves.size(), BEAM[0])):
 		var m: Dictionary = moves[k]
-		var rest: Array = tray.duplicate()
-		rest[m["slot"]] = null
-		var v: float = m["value"]
-		var has_rest := false
-		for p in rest:
-			has_rest = has_rest or p != null
-		if has_rest:
-			var replies: Array = _moves(m["grid"], rest)
-			if replies.is_empty():
-				v += 1000.0 # the player is stuck: that wins the match
-			else:
-				var reply_best := 0.0
-				for r in replies:
-					reply_best = maxf(reply_best, r["lines"] * 10.0 + r["snug"] * 3.0)
-				v -= reply_best * 0.8
-		else:
-			# A fresh tray comes next; keep the board roomy for it
-			v += _free(m["grid"]) * 0.15
+		var v: float = _search(m["grid"], _without(tray, m["slot"]), m["state"], me, 1, alpha, INF)
 		if v > best_v:
 			best_v = v
 			best = m
+		alpha = maxf(alpha, v)
 	return best
+
+func _search(grid: PackedByteArray, tray: Array, st: Dictionary, me: int, depth: int, alpha: float, beta: float) -> float:
+	if st["left"][0] <= 0 and st["left"][1] <= 0:
+		return _leaf(st, me, true)
+	if tray.all(func(p): return p == null) or depth >= BEAM.size():
+		return _leaf(st, me, false)
+	var moves: Array = _ordered(grid, tray, st)
+	if moves.is_empty():
+		return -WIN if st["turn"] == me else WIN # the side to move is stuck and loses
+	var maximizing: bool = st["turn"] == me
+	var best: float = -INF if maximizing else INF
+	for k in range(mini(moves.size(), BEAM[depth])):
+		var m: Dictionary = moves[k]
+		var v: float = _search(m["grid"], _without(tray, m["slot"]), m["state"], me, depth + 1, alpha, beta)
+		if maximizing:
+			best = maxf(best, v)
+			alpha = maxf(alpha, v)
+		else:
+			best = minf(best, v)
+			beta = minf(beta, v)
+		if beta <= alpha:
+			break
+	return best
+
+# Score lead for `me`, plus what a live combo is worth on the next clear
+func _leaf(st: Dictionary, me: int, final: bool) -> float:
+	var diff: float = st["scores"][me] - st["scores"][1 - me]
+	if final:
+		return (WIN if diff > 0 else (-WIN if diff < 0 else 0.0)) + diff
+	return diff + _combo_worth(st, me) - _combo_worth(st, 1 - me)
+
+func _combo_worth(st: Dictionary, side: int) -> float:
+	var c: int = st["combos"][side]
+	if c <= 0:
+		return 0.0
+	var n: int = c + 1
+	return (main_combo_bonus(n) + 10.0) * 0.5 * st["graces"][side] / float(MainGame.MAX_COMBO_GRACE)
+
+static func main_combo_bonus(c: int) -> float:
+	return MainGame.COMBO_BONUS_LINEAR * c + MainGame.COMBO_BONUS_QUADRATIC * c * c
+
+# All moves for the side to move with the state after each, best immediate gain first
+func _ordered(grid: PackedByteArray, tray: Array, st: Dictionary) -> Array:
+	var moves: Array = _moves(grid, tray)
+	var side: int = st["turn"]
+	for m in moves:
+		var ns: Dictionary = _apply(st, m)
+		m["state"] = ns
+		m["value"] = (ns["scores"][side] - st["scores"][side]) + m["snug"] * 3.0
+	moves.sort_custom(func(a, b): return a["value"] > b["value"])
+	return moves
+
+# main.gd's scoring for one move: cells placed, clears with the mover's own combo, fever, perfect
+func _apply(st: Dictionary, m: Dictionary) -> Dictionary:
+	var side: int = st["turn"]
+	var sc: Array = st["scores"].duplicate()
+	var co: Array = st["combos"].duplicate()
+	var gr: Array = st["graces"].duplicate()
+	var le: Array = st["left"].duplicate()
+	sc[side] += m["cells"]
+	var lines: int = m["lines"]
+	if lines > 0:
+		co[side] += 1
+		gr[side] = MainGame.MAX_COMBO_GRACE
+		var c: int = co[side]
+		var gain: int = int(MainGame.LINE_SCORE_BASE * lines * lines * (1.0 + MainGame.COMBO_ALPHA * c)) + int(main_combo_bonus(c))
+		if c >= MainGame.FEVER_COMBO:
+			gain = int(gain * MainGame.FEVER_MULTIPLIER)
+		sc[side] += gain
+		if _free(m["grid"]) == 64:
+			sc[side] += roundi(MainGame.PERFECT_CLEAR_BASE * (1.0 + MainGame.COMBO_ALPHA * c))
+	elif co[side] > 0:
+		gr[side] -= 1
+		if gr[side] <= 0:
+			co[side] = 0
+	le[side] -= 1
+	return {"scores": sc, "combos": co, "graces": gr, "left": le, "turn": 1 - side}
+
+static func _without(tray: Array, slot: int) -> Array:
+	var t: Array = tray.duplicate()
+	t[slot] = null
+	return t
 
 func _moves(grid: PackedByteArray, tray: Array) -> Array:
 	var out: Array = []
@@ -213,7 +292,7 @@ func _moves(grid: PackedByteArray, tray: Array) -> Array:
 					continue
 				var after_grid: PackedByteArray = BlockData.place_and_clear(grid, offsets, x, y)
 				var cleared: int = before + offsets.size() - (64 - _free(after_grid))
-				out.append({"slot": slot, "x": x, "y": y, "grid": after_grid,
+				out.append({"slot": slot, "x": x, "y": y, "grid": after_grid, "cells": offsets.size(),
 					"lines": _lines_for(cleared), "snug": BlockData._snugness(grid, offsets, x, y)})
 	return out
 

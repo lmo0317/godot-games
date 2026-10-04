@@ -23,11 +23,14 @@ func _ready() -> void:
 
 func _run() -> void:
 	var player := VersusMatch.new()
-	player.level = "normal"
+	# BENCH_PLAYER=hard pits each level against a stand-in that plays like the hard computer
+	player.level = OS.get_environment("BENCH_PLAYER") if not OS.get_environment("BENCH_PLAYER").is_empty() else "normal"
 	var cpu := VersusMatch.new()
 	add_child(player)
 	add_child(cpu)
-	for level in ["easy", "normal", "hard"]:
+	# BENCH_LEVELS=hard (comma separated) measures only those levels
+	var levels: Array = OS.get_environment("BENCH_LEVELS").split(",") if not OS.get_environment("BENCH_LEVELS").is_empty() else ["easy", "normal", "hard"]
+	for level in levels:
 		cpu.level = level
 		var res := {"cpu": 0, "player": 0, "draw": 0, "stuck": 0, "margin": 0}
 		for m in range(MATCHES):
@@ -39,8 +42,8 @@ func _run() -> void:
 			if r["stuck"]:
 				res["stuck"] += 1
 			res["margin"] += absi(r["scores"][0] - r["scores"][1])
-		print("BENCH_VS %s: computer wins %d%%, player %d%%, draw %d%% | ended by stuck %d%% | avg margin %d" % [
-			level, 100 * res["cpu"] / MATCHES, 100 * res["player"] / MATCHES, 100 * res["draw"] / MATCHES,
+		print("BENCH_VS (player %s) %s: computer wins %d%%, player %d%%, draw %d%% | ended by stuck %d%% | avg margin %d" % [
+			player.level, level, 100 * res["cpu"] / MATCHES, 100 * res["player"] / MATCHES, 100 * res["draw"] / MATCHES,
 			100 * res["stuck"] / MATCHES, res["margin"] / MATCHES])
 	get_tree().quit()
 
@@ -63,7 +66,8 @@ func _match(sides: Array, first: int) -> Dictionary:
 			_sync(grid)
 			tray = BlockData.get_adaptive_trio(board, 0, 0, 3, null, MainGame.VERSUS_PRESSURE, first_deal).map(func(s): return FakePiece.new(s))
 			first_deal = false
-		var move: Dictionary = sides[turn].choose_move(grid, tray)
+		var st := {"scores": scores.duplicate(), "combos": combos.duplicate(), "graces": graces.duplicate(), "left": left.duplicate(), "turn": turn}
+		var move: Dictionary = sides[turn].choose_move(grid, tray, st)
 		if move.is_empty():
 			return {"winner": "player" if turn == 1 else "cpu", "stuck": true, "scores": scores}
 		var shape: Dictionary = tray[move["slot"]].shape_data
