@@ -39,6 +39,8 @@ var last_revive_cells: Array[int] = []
 @onready var ghosts_container: Node2D = $Ghosts
 @onready var pieces_container: Node2D = $Pieces
 @onready var effects_container: Node2D = $Effects
+# Combo streak before this clear (set by MainGame): cleared blocks fly out harder with it
+var clear_combo: int = 0
 
 func _ready() -> void:
 	if not has_node("Highlights"):
@@ -302,6 +304,8 @@ func check_and_clear_lines() -> Dictionary:
 	)
 	
 	var gems_collected: int = 0
+	var local_center: Vector2 = to_local(avg_pos)
+	var fling_power: float = minf(0.8 + 0.15 * (total_lines - 1) + 0.08 * clear_combo, 1.7)
 	for idx in range(sorted_cells.size()):
 		var coord: Vector2i = sorted_cells[idx]
 		var x = coord.x
@@ -325,7 +329,7 @@ func check_and_clear_lines() -> Dictionary:
 				var blast: CellBlast = cell_blast_scene.instantiate()
 				blast.position = get_cell_position(x, y)
 				effects_container.add_child(blast)
-				blast.start_blast(block_tex)
+				blast.start_blast(block_tex, blast.position - local_center, fling_power)
 			)
 		else:
 			if sp != null and is_instance_valid(sp):
@@ -333,7 +337,7 @@ func check_and_clear_lines() -> Dictionary:
 			var blast: CellBlast = cell_blast_scene.instantiate()
 			blast.position = get_cell_position(x, y)
 			effects_container.add_child(blast)
-			blast.start_blast(block_tex)
+			blast.start_blast(block_tex, blast.position - local_center, fling_power)
 	
 	lines_cleared.emit(total_lines, cells_to_clear.size(), avg_pos)
 	return {

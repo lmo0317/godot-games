@@ -88,7 +88,8 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `settings_modal.gd` | 게임/프로필/업적 탭: 옵션 토글·스킨, 프로필 편집·초기화, 업적 목록 |
 | `drag_scroll.gd` (`DragScroll`) | 버튼이 가득한 스크롤 영역을 끌어서 스크롤. 일정 거리 이상 끌면 눌린 버튼을 취소해 클릭으로 처리되지 않음 |
 | `profile_setup_modal.gd`, `revive_modal.gd` | 첫 실행 프로필 설정, 5초 부활 팝업 |
-| `cell_blast.gd`, `floating_text.gd` | 단발성 이펙트 |
+| `combo_popup.gd` (`ComboPopup`) | 줄을 지울 때 뜨는 칭찬 문구·`Combo N`·점수. `assets/sprites/combo/`의 글자 그림을 조합하고 빛줄기·반짝이를 뒤에 깔아 차례로 튀어나옴 |
+| `cell_blast.gd`, `floating_text.gd` | 단발성 이펙트. 지운 블록은 클리어 중심에서 바깥으로 회전하며 커지면서 날아감(줄 수·콤보가 클수록 멀리) |
 
 ### 3.4 로컬 저장 파일 (`user://`)
 
@@ -160,6 +161,7 @@ GODOT_ANDROID_KEYSTORE_RELEASE_PATH=<keystore> GODOT_ANDROID_KEYSTORE_RELEASE_US
 
 | 도구 | 용도 |
 |---|---|
+| `capture_combo.tscn` | 줄 클리어 연출(작은 클리어·콤보 8·피버 콤보 12)을 0.1·0.3·0.7초 시점으로 캡처. 실행 방법은 `capture_screens`와 같음 |
 | `capture_screens.tscn` | 주요 화면 12개를 PNG로 저장(UI 점검용). 창이 필요해 `--headless` 없이 `--resolution 720x1280`으로 실행, 저장 위치는 `CAPTURE_DIR` 환경 변수 |
 | `export_rules.tscn` | 블록·점수 규칙과 엔진 검증 샘플을 `block_rules.json`으로 내보내기 |
 | `block_replay.js` | 서버 점수 재연산, Godot RNG·해시 포팅 |
@@ -168,6 +170,7 @@ GODOT_ANDROID_KEYSTORE_RELEASE_PATH=<keystore> GODOT_ANDROID_KEYSTORE_RELEASE_US
 | `generate_original_blocks.py` | 클래식 블록 |
 | `generate_skins.py` | 캔디·네온·보석 스킨 |
 | `generate_avatars.py` | 프로필 아바타 8종(블록 색별 표정 캐릭터) |
+| `generate_combo_text.py` | 콤보 연출 글자 그림: `Combo`, 금색 숫자, 점수 숫자, 칭찬 문구 5종, 빛줄기 (Arial Rounded MT Bold로 그림) |
 | `generate_ui_assets.py` | 홈·설정·왕관·사운드·닫기·잠금 공통 UI 아이콘 |
 | `generate_assets.py`, `generate_faceted_assets.py` | 효과음·초기 스프라이트·초기 블록 |
 | `generate_sfx.py` | 줄 지우기·콤보·피버·퍼펙트 효과음 합성 (음정마다 파일, -6dBFS로 맞춰 겹쳐도 찢어지지 않게) |

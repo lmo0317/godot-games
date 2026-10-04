@@ -544,6 +544,7 @@ func _on_pointer_up(_screen_pos: Vector2, touch_id: int) -> void:
 		piece.snap_to_board()
 		
 		# Check lines
+		board.clear_combo = combo_count
 		var clear_info = board.check_and_clear_lines()
 		var lines = clear_info["lines"]
 		var perfect: bool = clear_info["perfect"]
@@ -812,13 +813,11 @@ func _update_combo_aura() -> void:
 		tw.tween_property(combo_aura, "scale", Vector2(1.03, 1.03), 0.12)
 		tw.tween_property(combo_aura, "scale", Vector2.ONE, 0.12)
 
-# Praise words for how big the clear was: more lines at once or a longer streak ranks higher
-const PRAISE: Array = [
-	{"text": "Good!", "fill": Color(0.55, 0.95, 1.0), "outline": Color(0.02, 0.32, 0.55)},
-	{"text": "Great!", "fill": Color(0.6, 1.0, 0.7), "outline": Color(0.05, 0.4, 0.2)},
-	{"text": "Excellent!", "fill": Color(1.0, 0.93, 0.45), "outline": Color(0.6, 0.3, 0.0)},
-	{"text": "Amazing!", "fill": Color(1.0, 0.75, 0.35), "outline": Color(0.65, 0.18, 0.0)},
-	{"text": "Unbelievable!", "fill": Color(1.0, 0.7, 0.95), "outline": Color(0.5, 0.05, 0.45)},
+# Praise for how big the clear was: more lines at once or a longer streak ranks higher.
+# The words are pre-drawn images (assets/sprites/combo/praise_1..5: Good! .. Unbelievable!).
+const PRAISE_TINTS: Array = [
+	Color(0.45, 0.85, 1.0), Color(0.5, 1.0, 0.6), Color(1.0, 0.85, 0.3),
+	Color(1.0, 0.6, 0.25), Color(1.0, 0.5, 0.9),
 ]
 
 func _spawn_combo_popup(lines: int, gain: int, center_pos: Vector2) -> void:
@@ -828,24 +827,18 @@ func _spawn_combo_popup(lines: int, gain: int, center_pos: Vector2) -> void:
 		if combo_count >= need:
 			combo_tier += 1
 	var tier: int = maxi(line_tier, combo_tier)
-	var rows: Array = []
-	if tier > 0:
-		var p: Dictionary = PRAISE[tier - 1]
-		rows.append({"text": p["text"], "size": 54 + tier * 3, "fill": p["fill"], "outline": p["outline"]})
-	if combo_count >= 2:
-		var hot: bool = combo_count >= FEVER_COMBO
-		rows.append({"text": "COMBO ×%d" % combo_count, "size": 42,
-			"fill": Color(1.0, 0.62, 0.2) if hot else Color(1.0, 0.86, 0.3),
-			"outline": Color(0.45, 0.1, 0.0) if hot else Color(0.5, 0.25, 0.0)})
-	rows.append({"text": "+%s" % UIKit.format_number(gain), "size": 34 if rows.is_empty() else 30,
-		"fill": Color.WHITE, "outline": Color(0.05, 0.08, 0.15)})
-	# Keep the words on the board even when the clear is at an edge
-	var left: float = board.to_global(Vector2.ZERO).x + 200.0
-	var right: float = board.to_global(Vector2(Board.BOARD_WIDTH, 0)).x - 200.0
+	var tint: Color = Color(0.6, 0.8, 1.0) if tier == 0 else PRAISE_TINTS[tier - 1]
+	if combo_count >= FEVER_COMBO:
+		tint = Color(1.0, 0.6, 0.2)
 	var popup := ComboPopup.new()
-	popup.position = Vector2(clampf(center_pos.x, left, right), center_pos.y)
 	add_child(popup)
-	popup.setup(rows)
+	popup.setup(tier, combo_count, gain, tint)
+	# Keep the words on the board even when the clear is at an edge
+	var margin: float = popup.half_width + 10.0
+	var left: float = board.to_global(Vector2.ZERO).x + margin
+	var right: float = board.to_global(Vector2(Board.BOARD_WIDTH, 0)).x - margin
+	var x: float = board.to_global(Vector2(Board.BOARD_WIDTH * 0.5, 0)).x if left > right else clampf(center_pos.x, left, right)
+	popup.position = Vector2(x, center_pos.y)
 
 func _spawn_floating_text(text: String, spawn_pos: Vector2, col: Color, scale_mult: float = 1.0) -> void:
 	var ft: FloatingText = floating_text_scene.instantiate()
