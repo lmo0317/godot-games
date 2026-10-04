@@ -59,6 +59,8 @@ var road_axis := -1             # 0: the drag goes along x first, 1: along y fir
 var rect_a := -1                # fixed corner of a zone / demolish box
 var rect_b := -1                # corner with the drag arrows
 var build_ok := false
+var drew_new := false           # this press started a new road / box where the finger landed
+var before_press := {}          # the preview before this press (to undo it when two fingers land)
 var shop_tab := 0
 
 # pointer
@@ -94,6 +96,7 @@ var demand_bars: Array = []
 var speed_button: Button
 var undo_button: Button
 var shop_button: Button
+var done_button: Button         # ends road / zone / demolish drawing
 var build_ui: Control           # cost + cancel/confirm, floats over the ghost
 var cost_label: Label
 var ok_button: Button
@@ -171,6 +174,7 @@ func _layout() -> void:
 	date_box.position.x = roundf((W - date_box.size.x) * 0.5)
 	res_box.position.x = W - res_box.size.x - 16
 	shop_button.position = Vector2(W - 166, H - 160)
+	done_button.position = shop_button.position
 	toast_panel.position = Vector2(16, H - 116)
 	_apply_camera()
 
@@ -475,6 +479,19 @@ func _build_hud() -> void:
 	UIKit.style_button(shop_button, "primary", 28, 16)
 	shop_button.pressed.connect(_open_shop)
 	add_child(shop_button)
+	done_button = Button.new()
+	done_button.text = "완료"
+	done_button.expand_icon = true
+	done_button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	done_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	done_button.add_theme_constant_override("icon_max_width", 72)
+	done_button.size = Vector2(150, 144)
+	UIKit.style_button(done_button, "selected", 28, 16)
+	done_button.visible = false
+	done_button.pressed.connect(func():
+		SoundManager.play("click")
+		_end_build())
+	add_child(done_button)
 
 
 func _explain_warnings() -> void:
@@ -539,7 +556,8 @@ func _update_context() -> void:
 		return
 	undo_button.disabled = undo_op.is_empty() or undo_op.get("month", -1) != city.month
 	shop_button.visible = build == Build.NONE
-	build_ui.visible = build != Build.NONE
+	done_button.visible = _drawing()
+	build_ui.visible = build != Build.NONE and _has_preview()
 	select_ui.visible = build == Build.NONE and map.selected >= 0 and city.can_bulldoze(map.selected)
 	if select_ui.visible:
 		var forest := city.obj[map.selected] == 0 and city.zone[map.selected] == Defs.Z.NONE
@@ -561,11 +579,11 @@ func _hint_text() -> String:
 			var f := Defs.fac(fac_id)
 			return "%s %s · %s\n건물을 끌어 옮기고, 초록 체크를 누르면 지어져요" % [f["name"], UIKit.money(f["cost"]), f["desc"]]
 		Build.ROAD:
-			return "도로 %s/칸 (물 위 다리 %s) · 화살표 칸에서 끌어 길게 그려요\n다른 칸을 누르면 거기서 시작해요. 고속도로와 이어져야 해요" % [UIKit.money(Defs.ROAD_COST), UIKit.money(Defs.BRIDGE_COST)]
+			return "도로 %s/칸 (다리 %s) · 손가락으로 그어서 그려요. 시작과 끝을 차례로 눌러도 돼요\n초록 체크로 짓고, 다 했으면 오른쪽 아래 '완료' · 맵 이동은 두 손가락" % [UIKit.money(Defs.ROAD_COST), UIKit.money(Defs.BRIDGE_COST)]
 		Build.ZONE:
-			return "%s 구역 %s/칸 · 화살표 모서리를 끌면 크기, 안쪽을 끌면 위치가 바뀌어요\n도로 2칸 안에 전기·물이 닿으면 건물이 저절로 지어져요" % [Defs.ZONE_NAMES[build_zone], UIKit.money(Defs.ZONE_COST)]
+			return "%s 구역 %s/칸 · 손가락으로 네모를 그려요. 두 모서리를 차례로 눌러도 돼요\n초록 체크로 칠하고, 다 했으면 오른쪽 아래 '완료' · 맵 이동은 두 손가락" % [Defs.ZONE_NAMES[build_zone], UIKit.money(Defs.ZONE_COST)]
 		Build.CLEAR:
-			return "치울 곳을 네모로 골라요 (숲은 %s) · 화살표 모서리를 끌면 크기가 바뀌어요\n돈은 돌려받지 못해요" % UIKit.money(Defs.CLEAR_COST)
+			return "철거 (숲은 %s) · 치울 곳을 손가락으로 네모로 그려요. 돈은 돌려받지 못해요\n초록 체크로 치우고, 다 했으면 오른쪽 아래 '완료' · 맵 이동은 두 손가락" % UIKit.money(Defs.CLEAR_COST)
 	if map.selected >= 0:
 		return _cell_info(map.selected)
 	return _advice()
@@ -818,7 +836,12 @@ func _build_float_ui() -> void:
 	cancel.position = Vector2(10, 38)
 	cancel.pressed.connect(func():
 		SoundManager.play("click")
-		_end_build())
+		if _drawing():
+			_clear_preview()
+			_refresh_ghost()
+			_update_context()
+		else:
+			_end_build())
 	build_ui.add_child(cancel)
 	ok_button = _glyph_button("ok")
 	ok_button.position = Vector2(106, 38)
@@ -850,16 +873,16 @@ func _begin_build(kind: String, id: int) -> void:
 			fac_cell = center
 		"road":
 			build = Build.ROAD
-			road_path = [center]
+			done_button.icon = Atlas.icon("ui_road")
 		"zone":
 			build = Build.ZONE
 			build_zone = id
-			rect_a = center
-			rect_b = _offset_cell(center, Vector2i(2, 2))
+			done_button.icon = Atlas.icon(ZONE_ICONS[id])
 		"clear":
 			build = Build.CLEAR
-			rect_a = center
-			rect_b = _offset_cell(center, Vector2i(1, 1))
+			done_button.icon = Atlas.icon("ui_bulldoze")
+	_clear_preview()
+	done_button.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	map.overlay = _overlay_for_build()
 	_refresh_ghost()
 	_update_context()
@@ -878,6 +901,28 @@ func _end_build() -> void:
 	map.overlay = ""
 	_update_context()
 	map.queue_redraw()
+
+
+func _drawing() -> bool:
+	## Road, zone and demolish are drawn with the finger and stay on until '완료'.
+	return build in [Build.ROAD, Build.ZONE, Build.CLEAR]
+
+
+func _has_preview() -> bool:
+	match build:
+		Build.FAC:
+			return true
+		Build.ROAD:
+			return not road_path.is_empty()
+		Build.ZONE, Build.CLEAR:
+			return rect_a >= 0
+	return false
+
+
+func _clear_preview() -> void:
+	road_path = []
+	rect_a = -1
+	rect_b = -1
 
 
 func _overlay_for_build() -> String:
@@ -914,7 +959,7 @@ func _handle_cell() -> int:
 		Build.FAC:
 			return fac_cell
 		Build.ROAD:
-			return road_path[-1]
+			return road_path[-1] if not road_path.is_empty() else -1
 		Build.ZONE, Build.CLEAR:
 			return rect_b
 	return -1
@@ -936,6 +981,15 @@ func _refresh_ghost() -> void:
 	## Green/red ground, cost and whether the check button works, for where the ghost is now.
 	if build == Build.NONE:
 		return
+	if not _has_preview():
+		map.preview = {}
+		map.ghost_roads = {}
+		map.handle_cell = -1
+		build_ok = false
+		build_ui.visible = false
+		map.queue_redraw()
+		return
+	build_ui.visible = true
 	var pv := {}
 	var total := 0
 	var count := 0
@@ -966,7 +1020,7 @@ func _refresh_ghost() -> void:
 					total += cost
 					count += 1
 			if count == 0:
-				reason = "화살표 칸에서 끌어 도로를 그려요" if road_path.size() == 1 else "도로를 놓을 수 있는 칸이 없어요"
+				reason = "끌거나 끝 칸을 눌러 이어요" if road_path.size() == 1 else "도로를 놓을 수 있는 칸이 없어요"
 		Build.ZONE:
 			for c in _rect_cells(rect_a, rect_b):
 				var cost := city.zone_cost(c, build_zone)
@@ -1029,31 +1083,26 @@ func _ghost_top(i: int, key: String) -> float:
 
 func _place_float_ui() -> void:
 	## Keep the cancel/confirm buttons over the ghost (and the demolish button over a tapped cell).
+	var floor_y := toast_panel.position.y - 8        # stay above the advisor bar
 	if build_ui.visible:
-		var left := INF
-		var right := -INF
-		var top := INF
-		var bottom := -INF
-		for c in _ghost_cells():
-			var p := _cell_screen(c)
-			left = minf(left, p.x)
-			right = maxf(right, p.x)
-			top = minf(top, p.y - (MapView.HH + 22.0) * zoom)     # room for the drag arrows
-			bottom = maxf(bottom, p.y + MapView.HH * zoom)
+		# over the tile the finger works on: the building, the end of the road, the box corner
+		var h := _handle_cell()
+		var p := _cell_screen(h)
+		var top := p.y - (MapView.HH + 22.0) * zoom     # room for the drag arrows
 		if build == Build.FAC:
 			top = minf(top, _ghost_top(fac_cell, map.ghost))
-		var at := Vector2((left + right) * 0.5 - build_ui.size.x * 0.5, top - build_ui.size.y - 6)
+		var at := Vector2(p.x - build_ui.size.x * 0.5, top - build_ui.size.y - 6)
 		if at.y < TOP_SAFE:
-			at.y = bottom + 6
+			at.y = p.y + (MapView.HH + 22.0) * zoom + 6
 		at.x = clampf(at.x, 110, W - build_ui.size.x - 8)
-		at.y = clampf(at.y, TOP_SAFE, H - build_ui.size.y - 8)
+		at.y = clampf(at.y, TOP_SAFE, floor_y - build_ui.size.y)
 		build_ui.position = at.round()
 	if select_ui.visible:
 		var p := _cell_screen(map.selected)
 		var key := map.sprite_for(map.selected)
 		var at := Vector2(p.x - select_ui.size.x * 0.5, _ghost_top(map.selected, key) - select_ui.size.y - 6)
 		at.x = clampf(at.x, 110, W - select_ui.size.x - 8)
-		at.y = clampf(at.y, TOP_SAFE, H - select_ui.size.y - 8)
+		at.y = clampf(at.y, TOP_SAFE, floor_y - select_ui.size.y)
 		select_ui.position = at.round()
 
 
@@ -1095,9 +1144,8 @@ func _confirm_build() -> void:
 					else:
 						stroke_spent += cost
 	var kind := build
-	if kind == Build.ROAD:
-		# like building walls: stay on the end of the new road, ready to draw on from there
-		road_path = [road_path[-1]]
+	if _drawing():
+		_clear_preview()        # keep drawing; '완료' ends it
 	else:
 		_end_build()
 	_finish_edit("bulldoze" if kind == Build.CLEAR else "place", at)
@@ -1668,6 +1716,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _begin_pinch() -> void:
+	if pressing and drew_new:
+		road_path = before_press["road"]
+		rect_a = before_press["a"]
+		rect_b = before_press["b"]
+		_refresh_ghost()
 	pressing = false
 	drag = ""
 	multi_touch = true
@@ -1697,18 +1750,35 @@ func _press(p: Vector2) -> void:
 	if build == Build.NONE:
 		return
 	var cell := _screen_to_cell(p)
+	drew_new = false
+	before_press = {"road": road_path.duplicate(), "a": rect_a, "b": rect_b}
 	if build == Build.FAC:
 		if _hits(p, fac_cell, true):
 			drag = "move"
 			drag_cell = fac_cell
-	elif _hits(p, _handle_cell(), false):
+	elif _has_preview() and _hits(p, _handle_cell(), false):
 		drag = "extend" if build == Build.ROAD else "resize"
 		drag_cell = _handle_cell()
 		road_base = road_path.duplicate()
 		road_axis = -1
-	elif cell >= 0 and cell in _ghost_cells():
+	elif build != Build.ROAD and cell >= 0 and cell in _ghost_cells():
 		drag = "move"
 		drag_cell = cell
+	elif cell >= 0:
+		# start a new road / box right under the finger
+		drew_new = true
+		drag_cell = cell
+		if build == Build.ROAD:
+			drag = "extend"
+			road_path = [cell]
+			road_base = [cell]
+			road_axis = -1
+		else:
+			drag = "resize"
+			rect_a = cell
+			rect_b = cell
+		_refresh_ghost()
+		_update_context()
 	if drag != "pan":
 		drag_offset = _cell_screen(drag_cell) - p
 
@@ -1743,18 +1813,28 @@ func _tap(p: Vector2) -> void:
 		_update_context()
 		map.queue_redraw()
 		return
-	# tapping somewhere else moves the ghost there
-	if cell < 0 or cell in _ghost_cells() or (build == Build.FAC and _hits(p, fac_cell, true)):
+	if _drawing():
+		# tapping a second cell after a one-cell start makes the road / box between the two
+		var prev: Array = before_press["road"]
+		var a0: int = before_press["a"]
+		var one := prev.size() == 1 if build == Build.ROAD else (a0 >= 0 and a0 == int(before_press["b"]))
+		var start: int = (prev[0] if build == Build.ROAD else a0) if one else -1
+		if drew_new and one and cell >= 0 and cell != start:
+			if build == Build.ROAD:
+				road_base = prev.duplicate()
+				road_axis = -1
+				_extend_path(cell)
+			else:
+				rect_a = start
+				var pa := City.pos(start)
+				var pt := City.pos(cell)
+				rect_b = City.idx(clampi(pt.x, pa.x - MAX_RECT + 1, pa.x + MAX_RECT - 1), clampi(pt.y, pa.y - MAX_RECT + 1, pa.y + MAX_RECT - 1))
+			_refresh_ghost()
+		SoundManager.play("click")
 		return
-	match build:
-		Build.FAC:
-			fac_cell = cell
-		Build.ROAD:
-			road_path = [cell]
-		Build.ZONE, Build.CLEAR:
-			if not _shift_ghost(City.pos(cell) - City.pos(rect_a)):
-				var size := City.pos(rect_b) - City.pos(rect_a)
-				rect_a = cell
-				rect_b = _offset_cell(cell, size)
+	# tapping somewhere else moves the building there
+	if cell < 0 or (build == Build.FAC and _hits(p, fac_cell, true)):
+		return
+	fac_cell = cell
 	SoundManager.play("click")
 	_refresh_ghost()
