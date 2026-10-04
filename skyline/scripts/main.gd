@@ -5,9 +5,7 @@ extends Control
 ## ghost appears on the map on green/red ground with cancel/confirm buttons above it. Drag the ghost
 ## to move it, drag anywhere else to move the map, press the green check to build.
 
-const W := 1280
-const H := 720
-const VIEW := Rect2(0, 0, W, H)
+const BASE := Vector2(1280, 720)     # design size; the screen is at least this big
 const SAVE_PATH := "user://save.json"
 const META_PATH := "user://meta.json"
 const MIN_ZOOM := 1.0
@@ -29,6 +27,11 @@ const SHOP_TABS := [
 	["시설", [["fac", 2], ["fac", 3], ["fac", 4], ["fac", 5], ["fac", 6], ["fac", 7], ["fac", 8], ["fac", 9], ["fac", 10]]],
 	["명소", [["fac", 11], ["fac", 12], ["fac", 13]]],
 ]
+
+# screen size: the window is filled (stretch aspect "expand"), so a wide phone gets a wider screen
+var W := BASE.x
+var H := BASE.y
+var VIEW := Rect2(Vector2.ZERO, BASE)
 
 var city: City
 var world: Node2D
@@ -106,6 +109,9 @@ var modal_layer: Control
 var title_screen: Control
 var continue_button: Button
 var best_label: Label
+var title_box: Control          # title screen content, kept in the middle
+var date_box: Panel
+var res_box: Panel
 
 
 class Glyph:
@@ -150,7 +156,23 @@ func _ready() -> void:
 	modal_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(modal_layer)
 	_build_title()
+	get_viewport().size_changed.connect(_layout)
+	_layout()
 	_show_title()
+
+
+func _layout() -> void:
+	## Put the edge-bound windows and buttons where the screen is now.
+	var size := get_viewport_rect().size
+	W = maxf(size.x, BASE.x)
+	H = maxf(size.y, BASE.y)
+	VIEW = Rect2(0, 0, W, H)
+	title_box.position = ((Vector2(W, H) - BASE) * 0.5).round()
+	date_box.position.x = roundf((W - date_box.size.x) * 0.5)
+	res_box.position.x = W - res_box.size.x - 16
+	shop_button.position = Vector2(W - 166, H - 160)
+	toast_panel.position = Vector2(16, H - 116)
+	_apply_camera()
 
 
 func _notification(what: int) -> void:
@@ -169,11 +191,15 @@ func _build_title() -> void:
 	bg.color = UIKit.BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	title_screen.add_child(bg)
+	title_box = Control.new()
+	title_box.size = BASE
+	title_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_screen.add_child(title_box)
 	var frame := Panel.new()
 	frame.add_theme_stylebox_override("panel", UIKit.window(16))
 	frame.position = Vector2(48, 48)
 	frame.size = Vector2(624, 624)
-	title_screen.add_child(frame)
+	title_box.add_child(frame)
 	var art := TextureRect.new()
 	art.texture = load("res://assets/art/title.jpg")
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -184,31 +210,31 @@ func _build_title() -> void:
 	art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	frame.add_child(art)
 	var right := 720.0
-	var col_w := W - right - 48.0
+	var col_w := BASE.x - right - 48.0
 	var title := UIKit.outlined(UIKit.label("도트 미니 시티", 60, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER), 12)
 	title.position = Vector2(right, 110)
 	title.size = Vector2(col_w, 80)
-	title_screen.add_child(title)
+	title_box.add_child(title)
 	var sub := UIKit.label("구역을 칠하면 도시가 스스로 자라요", 24, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	sub.position = Vector2(right, 190)
 	sub.size = Vector2(col_w, 36)
-	title_screen.add_child(sub)
+	title_box.add_child(sub)
 	var col := VBoxContainer.new()
 	col.position = Vector2(right + (col_w - 400) / 2.0, 270)
 	col.size = Vector2(400, 290)
 	col.add_theme_constant_override("separation", 18)
-	title_screen.add_child(col)
+	title_box.add_child(col)
 	continue_button = _menu_button(col, "이어하기", "primary", _continue_game)
 	_menu_button(col, "새 도시 만들기", "primary", func(): _start_game("normal"))
 	_menu_button(col, "오늘의 도시", "secondary", func(): _start_game("daily"))
 	best_label = UIKit.label("", 22, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	best_label.position = Vector2(right, 600)
 	best_label.size = Vector2(col_w, 34)
-	title_screen.add_child(best_label)
+	title_box.add_child(best_label)
 	var tag := UIKit.label("가칭 · 첫 플레이 버전", 18, Color(UIKit.MUTED, 0.6), HORIZONTAL_ALIGNMENT_CENTER)
 	tag.position = Vector2(right, 640)
 	tag.size = Vector2(col_w, 30)
-	title_screen.add_child(tag)
+	title_box.add_child(tag)
 
 
 func _menu_button(parent: Control, text: String, kind: String, cb: Callable) -> Button:
@@ -380,7 +406,7 @@ func _build_hud() -> void:
 	goals_label.add_theme_constant_override("line_spacing", -4)
 	rank_box.add_child(goals_label)
 	# top middle: date and monthly balance
-	var date_box := _hud_panel(Vector2(500, 12), Vector2(300, 64))
+	date_box = _hud_panel(Vector2(490, 12), Vector2(300, 64))
 	date_label = UIKit.outlined(UIKit.label("", 24, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER), 4)
 	date_label.position = Vector2(8, 2)
 	date_label.size = Vector2(284, 34)
@@ -390,7 +416,8 @@ func _build_hud() -> void:
 	delta_label.size = Vector2(284, 26)
 	date_box.add_child(delta_label)
 	# top-right: money, people, demand
-	var res := _hud_panel(Vector2(W - 324, 12), Vector2(308, 140))
+	res_box = _hud_panel(Vector2(W - 324, 12), Vector2(308, 140))
+	var res := res_box
 	var coin := TextureRect.new()
 	coin.texture = Atlas.icon("coin")
 	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -653,8 +680,8 @@ func _show_shop() -> void:
 	modal_layer.add_child(dim)
 	var win := Panel.new()
 	win.add_theme_stylebox_override("panel", UIKit.window(16))
-	win.position = Vector2(60, 40)
-	win.size = Vector2(W - 120, H - 80)
+	win.size = BASE - Vector2(120, 80)
+	win.position = ((Vector2(W, H) - win.size) * 0.5).round()
 	win.mouse_filter = Control.MOUSE_FILTER_STOP
 	dim.add_child(win)
 	var title := UIKit.outlined(UIKit.label("건설", 34, UIKit.GOLD), 6)
