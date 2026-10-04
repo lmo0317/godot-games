@@ -1,30 +1,34 @@
 extends Control
-## Game screen: title, map with camera and tools, top info bar, bottom build bar, popups.
+## Game screen (landscape): title, map with camera, status windows, build shop and placement.
 ## The rules live in City; this script turns input into City edits and City signals into feedback.
+## Building works like base-builder games (Clash of Clans): open the shop, pick something, and a
+## ghost appears on the map on green/red ground with cancel/confirm buttons above it. Drag the ghost
+## to move it, drag anywhere else to move the map, press the green check to build.
 
-const W := 720
-const H := 1280
-const MSG_Y := 1112             # the advisor message bar starts here; the map fills the screen above
-const VIEW := Rect2(0, 0, W, MSG_Y)
-const TOP_H := 0
+const W := 1280
+const H := 720
+const VIEW := Rect2(0, 0, W, H)
 const SAVE_PATH := "user://save.json"
 const META_PATH := "user://meta.json"
 const MIN_ZOOM := 1.0
 const MAX_ZOOM := 3.0
 const START_ZOOM := 2.0        # one tile 128 px wide (sprites 1:1), like Kairosoft town games
 const MAX_RECT := 16
-const FAC_PAGE := 6
+const MAX_PATH := 64
+const EDGE := 70.0             # dragging a ghost this close to the screen edge moves the map
+const EDGE_SPEED := 700.0
+const TOP_SAFE := 86.0          # floating buttons stay below the top status windows
+const MSG_TEXT := Color(0.16, 0.22, 0.1)
+const SPEED_NAMES := ["멈춤", "보통", "빠름", "최고속"]
+const ZONE_ICONS := ["", "ui_res", "ui_com", "ui_ind"]
 
-enum Tool { HAND, ROAD, R, C, I, FAC, BULLDOZE }
-const TOOL_INFO := {
-	Tool.HAND: ["보기", "ui_hand"],
-	Tool.ROAD: ["도로", "ui_road"],
-	Tool.R: ["주거", "ui_res"],
-	Tool.C: ["상업", "ui_com"],
-	Tool.I: ["공업", "ui_ind"],
-	Tool.FAC: ["시설", "ui_fac"],
-	Tool.BULLDOZE: ["철거", "ui_bulldoze"],
-}
+enum Build { NONE, FAC, ROAD, ZONE, CLEAR }
+# shop tabs: [name, items]; an item is [kind, id] with kind road, zone (id = Defs.Z), clear or fac
+const SHOP_TABS := [
+	["도로·구역", [["road", 0], ["zone", 1], ["zone", 2], ["zone", 3], ["clear", 0]]],
+	["시설", [["fac", 2], ["fac", 3], ["fac", 4], ["fac", 5], ["fac", 6], ["fac", 7], ["fac", 8], ["fac", 9], ["fac", 10]]],
+	["명소", [["fac", 11], ["fac", 12], ["fac", 13]]],
+]
 
 var city: City
 var world: Node2D
@@ -34,9 +38,6 @@ var fx: FxLayer
 
 var zoom := 3.0
 var cam := Vector2.ZERO
-var tool := Tool.HAND
-var fac_id := 2
-var fac_page := 0
 var speed_idx := 1
 var week_timer := 0.0
 var meta := {"best": 0, "best_daily": {}, "muted": false}
@@ -44,16 +45,27 @@ var year_start := {}
 var year_net := 0
 var warned := {}
 
-# pointer state
-var stroke_active := false
-var stroke_start := -1
-var stroke_last := -1
-var stroke_moved := false
-var stroke_press := Vector2.ZERO
-var stroke_changes := {}
-var stroke_spent := 0
-var stroke_failed := false
-var undo_op := {}
+# placement (the ghost)
+var build := Build.NONE
+var build_zone := 0
+var fac_id := 2
+var fac_cell := -1
+var road_path: Array = []       # cells from the start; the last one carries the drag arrows
+var road_base: Array = []       # the path when the current drag began
+var road_axis := -1             # 0: the drag goes along x first, 1: along y first
+var rect_a := -1                # fixed corner of a zone / demolish box
+var rect_b := -1                # corner with the drag arrows
+var build_ok := false
+var shop_tab := 0
+
+# pointer
+var pressing := false
+var moved := false
+var drag := ""                  # pan, move, extend (road), resize (box)
+var drag_cell := -1
+var drag_offset := Vector2.ZERO
+var press_pos := Vector2.ZERO
+var finger := Vector2.ZERO
 var panning := false
 var pan_last := Vector2.ZERO
 var touches := {}
@@ -61,6 +73,12 @@ var multi_touch := false
 var pinch_dist := 1.0
 var pinch_zoom := 3.0
 var pinch_anchor := Vector2.ZERO
+
+# one edit (for undo)
+var stroke_changes := {}
+var stroke_spent := 0
+var stroke_failed := false
+var undo_op := {}
 
 # UI
 var money_label: Label
@@ -71,13 +89,14 @@ var rank_label: Label
 var goals_label: Label
 var demand_bars: Array = []
 var speed_button: Button
-var tool_buttons := {}
-var fac_strip: Panel
 var undo_button: Button
-var context_box: Control
+var shop_button: Button
+var build_ui: Control           # cost + cancel/confirm, floats over the ghost
+var cost_label: Label
+var ok_button: Button
+var select_ui: Control          # demolish button over a tapped cell
+var demolish_button: Button
 var hint_label: Label
-var fac_row: HBoxContainer
-var fac_buttons := {}
 var toast_panel: PanelContainer      # the advisor message bar
 var toast_label: Label
 var toast_queue: Array = []
@@ -87,6 +106,25 @@ var modal_layer: Control
 var title_screen: Control
 var continue_button: Button
 var best_label: Label
+
+
+class Glyph:
+	## White check or cross with a dark rim, drawn as lines (the font has no such signs).
+	extends Control
+	var kind := "ok"
+
+	func _draw() -> void:
+		var s := size
+		var pts: PackedVector2Array
+		if kind == "ok":
+			pts = PackedVector2Array([s * Vector2(0.27, 0.52), s * Vector2(0.44, 0.7), s * Vector2(0.75, 0.3)])
+			draw_polyline(pts, Color(0.05, 0.2, 0.02), 15.0)
+			draw_polyline(pts, Color.WHITE, 9.0)
+		else:
+			for line in [[Vector2(0.3, 0.28), Vector2(0.7, 0.68)], [Vector2(0.7, 0.28), Vector2(0.3, 0.68)]]:
+				draw_line(s * line[0], s * line[1], Color(0.3, 0.02, 0.02), 15.0)
+			for line in [[Vector2(0.3, 0.28), Vector2(0.7, 0.68)], [Vector2(0.7, 0.28), Vector2(0.3, 0.68)]]:
+				draw_line(s * line[0], s * line[1], Color.WHITE, 9.0)
 
 
 func _ready() -> void:
@@ -104,9 +142,9 @@ func _ready() -> void:
 	fx.world = world
 	add_child(fx)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_build_top_bar()
-	_build_bottom_bar()
+	_build_hud()
 	_build_toast()
+	_build_float_ui()
 	modal_layer = Control.new()
 	modal_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	modal_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -133,41 +171,43 @@ func _build_title() -> void:
 	title_screen.add_child(bg)
 	var frame := Panel.new()
 	frame.add_theme_stylebox_override("panel", UIKit.window(16))
-	frame.position = Vector2(40, 70)
-	frame.size = Vector2(640, 520)
+	frame.position = Vector2(48, 48)
+	frame.size = Vector2(624, 624)
 	title_screen.add_child(frame)
 	var art := TextureRect.new()
 	art.texture = load("res://assets/art/title.jpg")
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	art.position = Vector2(6, 6)
-	art.size = Vector2(628, 508)
+	art.size = Vector2(612, 612)
 	art.clip_contents = true
 	art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	frame.add_child(art)
-	var title := UIKit.outlined(UIKit.label("도트 미니 시티", 64, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER), 12)
-	title.position = Vector2(0, 610)
-	title.size = Vector2(W, 80)
+	var right := 720.0
+	var col_w := W - right - 48.0
+	var title := UIKit.outlined(UIKit.label("도트 미니 시티", 60, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER), 12)
+	title.position = Vector2(right, 110)
+	title.size = Vector2(col_w, 80)
 	title_screen.add_child(title)
 	var sub := UIKit.label("구역을 칠하면 도시가 스스로 자라요", 24, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	sub.position = Vector2(0, 690)
-	sub.size = Vector2(W, 36)
+	sub.position = Vector2(right, 190)
+	sub.size = Vector2(col_w, 36)
 	title_screen.add_child(sub)
 	var col := VBoxContainer.new()
-	col.position = Vector2(160, 760)
-	col.size = Vector2(400, 380)
+	col.position = Vector2(right + (col_w - 400) / 2.0, 270)
+	col.size = Vector2(400, 290)
 	col.add_theme_constant_override("separation", 18)
 	title_screen.add_child(col)
 	continue_button = _menu_button(col, "이어하기", "primary", _continue_game)
 	_menu_button(col, "새 도시 만들기", "primary", func(): _start_game("normal"))
 	_menu_button(col, "오늘의 도시", "secondary", func(): _start_game("daily"))
 	best_label = UIKit.label("", 22, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	best_label.position = Vector2(0, 1180)
-	best_label.size = Vector2(W, 34)
+	best_label.position = Vector2(right, 600)
+	best_label.size = Vector2(col_w, 34)
 	title_screen.add_child(best_label)
 	var tag := UIKit.label("가칭 · 첫 플레이 버전", 18, Color(UIKit.MUTED, 0.6), HORIZONTAL_ALIGNMENT_CENTER)
-	tag.position = Vector2(0, 1222)
-	tag.size = Vector2(W, 30)
+	tag.position = Vector2(right, 640)
+	tag.size = Vector2(col_w, 30)
 	title_screen.add_child(tag)
 
 
@@ -209,7 +249,7 @@ func _start_game(mode: String) -> void:
 	city.new_game(seed_in, mode)
 	_attach_city()
 	_save_game()
-	_toast("고속도로(왼쪽)에 도로를 이어 깔고, 발전소와 급수탑을 지어요", "info")
+	_toast("오른쪽 아래 '건설'에서 도로를 골라 고속도로(왼쪽)에 이어 깔아요", "info")
 
 
 func _continue_game() -> void:
@@ -241,7 +281,8 @@ func _attach_city() -> void:
 	year_start = {"pop": city.pop, "money": city.money}
 	year_net = 0
 	warned = {}
-	_set_tool(Tool.HAND)
+	_end_build()
+	map.selected = -1
 	_set_speed(1)
 	var a := city.active_rect()
 	cam = MapView.grid_to_local(Vector2(a.get_center()) - Vector2(0.5, 0.5))
@@ -279,7 +320,7 @@ func _save_meta() -> void:
 		f.store_string(JSON.stringify(meta))
 
 
-# ================================================================ top bar
+# ================================================================ HUD
 func _hud_panel(pos: Vector2, size: Vector2) -> Panel:
 	## Dark see-through window with a light rim, like the status boxes of pocket management games.
 	var p := Panel.new()
@@ -295,7 +336,7 @@ func _hud_panel(pos: Vector2, size: Vector2) -> Panel:
 
 
 func _side_button(icon: String, text: String, pos: Vector2, cb: Callable) -> Button:
-	## Square button with a picture and a short label under it (right column and top-left).
+	## Square button with a picture and a short label under it (left column).
 	var b := Button.new()
 	b.text = text
 	b.icon = Atlas.icon(icon)
@@ -315,64 +356,98 @@ func _side_button(icon: String, text: String, pos: Vector2, cb: Callable) -> But
 	return b
 
 
-func _build_top_bar() -> void:
-	# top-left: menu, speed, undo
-	_side_button("ui_menu", "메뉴", Vector2(10, 10), _show_menu)
-	speed_button = _side_button("ui_speed", "보통", Vector2(98, 10), func(): _set_speed([1, 2, 3, 0][speed_idx]))
-	undo_button = _side_button("ui_undo", "취소", Vector2(186, 10), _undo)
-	# top-right: status window
-	var panel := _hud_panel(Vector2(282, 8), Vector2(430, 148))
+func _icon_filter(name: String) -> CanvasItem.TextureFilter:
+	## Pixel icons shown at whole-number sizes stay crisp; building pictures shrunk into buttons
+	## are smoothed.
+	return CanvasItem.TEXTURE_FILTER_NEAREST if name.begins_with("ui_") or not Art.has(name) else CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+
+
+func _build_hud() -> void:
+	# top-left: town rank and the goal for the next one
+	var rank_box := _hud_panel(Vector2(16, 12), Vector2(470, 64))
 	var chip := PanelContainer.new()
 	var csb := UIKit.box(UIKit.ACCENT, Color(1, 0.9, 0.7), 6, 2)
-	csb.content_margin_top = 0
-	csb.content_margin_bottom = 0
 	chip.add_theme_stylebox_override("panel", csb)
-	chip.position = Vector2(12, 10)
+	chip.position = Vector2(10, 12)
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(chip)
+	rank_box.add_child(chip)
 	rank_label = UIKit.outlined(UIKit.label("마을", 20), 4)
 	chip.add_child(rank_label)
-	date_label = UIKit.outlined(UIKit.label("", 26, UIKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT), 4)
-	date_label.position = Vector2(110, 4)
-	date_label.size = Vector2(306, 40)
-	panel.add_child(date_label)
-	delta_label = UIKit.label("", 18, UIKit.GREEN)
-	delta_label.position = Vector2(14, 50)
-	delta_label.size = Vector2(170, 36)
-	panel.add_child(delta_label)
+	goals_label = UIKit.label("", 17, UIKit.TEXT)
+	goals_label.position = Vector2(104, 4)
+	goals_label.size = Vector2(356, 56)
+	goals_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	goals_label.add_theme_constant_override("line_spacing", -4)
+	rank_box.add_child(goals_label)
+	# top middle: date and monthly balance
+	var date_box := _hud_panel(Vector2(500, 12), Vector2(300, 64))
+	date_label = UIKit.outlined(UIKit.label("", 24, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER), 4)
+	date_label.position = Vector2(8, 2)
+	date_label.size = Vector2(284, 34)
+	date_box.add_child(date_label)
+	delta_label = UIKit.label("", 17, UIKit.GREEN, HORIZONTAL_ALIGNMENT_CENTER)
+	delta_label.position = Vector2(8, 34)
+	delta_label.size = Vector2(284, 26)
+	date_box.add_child(delta_label)
+	# top-right: money, people, demand
+	var res := _hud_panel(Vector2(W - 324, 12), Vector2(308, 140))
+	var coin := TextureRect.new()
+	coin.texture = Atlas.icon("coin")
+	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	coin.texture_filter = _icon_filter("coin")
+	coin.position = Vector2(12, 8)
+	coin.size = Vector2(36, 36)
+	coin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	res.add_child(coin)
 	money_label = UIKit.outlined(UIKit.label("$0", 32, UIKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT), 6)
-	money_label.position = Vector2(150, 44)
-	money_label.size = Vector2(266, 44)
-	panel.add_child(money_label)
+	money_label.position = Vector2(56, 4)
+	money_label.size = Vector2(238, 44)
+	res.add_child(money_label)
 	pop_label = UIKit.label("", 19, UIKit.TEXT)
-	pop_label.position = Vector2(14, 98)
-	pop_label.size = Vector2(290, 36)
-	panel.add_child(pop_label)
-	# demand bars R C I
+	pop_label.position = Vector2(14, 50)
+	pop_label.size = Vector2(284, 32)
+	res.add_child(pop_label)
+	var dl := UIKit.label("수요", 16, UIKit.MUTED)
+	dl.position = Vector2(14, 92)
+	dl.size = Vector2(60, 34)
+	res.add_child(dl)
 	var names := ["주", "상", "공"]
 	for k in 3:
-		var x := 316 + k * 36
+		var x := 80 + k * 72
 		var back := ColorRect.new()
 		back.color = Color(0, 0, 0, 0.4)
-		back.position = Vector2(x, 92)
+		back.position = Vector2(x, 90)
 		back.size = Vector2(24, 34)
 		back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		panel.add_child(back)
+		res.add_child(back)
 		var fill := ColorRect.new()
 		fill.color = Defs.ZONE_COLORS[k + 1]
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		back.add_child(fill)
 		demand_bars.append(fill)
-		var l := UIKit.label(names[k], 13, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-		l.position = Vector2(x - 6, 124)
-		l.size = Vector2(36, 20)
-		panel.add_child(l)
-	# goal strip under the status window
-	var goal := _hud_panel(Vector2(282, 162), Vector2(430, 40))
-	goals_label = UIKit.label("", 17, UIKit.TEXT)
-	goals_label.position = Vector2(12, 2)
-	goals_label.size = Vector2(408, 36)
-	goal.add_child(goals_label)
+		var l := UIKit.label(names[k], 16, UIKit.MUTED)
+		l.position = Vector2(x + 30, 92)
+		l.size = Vector2(30, 30)
+		res.add_child(l)
+	# left column: menu, speed, undo
+	_side_button("ui_menu", "메뉴", Vector2(16, 96), _show_menu)
+	speed_button = _side_button("ui_speed", "보통", Vector2(16, 192), func(): _set_speed([1, 2, 3, 0][speed_idx]))
+	undo_button = _side_button("ui_undo", "취소", Vector2(16, 288), _undo)
+	# bottom-right: the shop
+	shop_button = Button.new()
+	shop_button.text = "건설"
+	shop_button.icon = Atlas.icon("ui_fac")
+	shop_button.expand_icon = true
+	shop_button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	shop_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	shop_button.add_theme_constant_override("icon_max_width", 84)
+	shop_button.texture_filter = _icon_filter("ui_fac")
+	shop_button.position = Vector2(W - 166, H - 160)
+	shop_button.size = Vector2(150, 144)
+	UIKit.style_button(shop_button, "primary", 28, 16)
+	shop_button.pressed.connect(_open_shop)
+	add_child(shop_button)
 
 
 func _explain_warnings() -> void:
@@ -382,8 +457,8 @@ func _explain_warnings() -> void:
 	var texts := {
 		"broken": "빨갛게 깜빡이는 도로는 고속도로와 끊긴 도로예요. 화면 왼쪽 끝 고속도로와 이어 주세요",
 		"road": "끊긴 도로 말풍선: 고속도로와 이어진 도로가 2칸 안에 없어서 건물이 못 지어져요",
-		"power": "번개 말풍선: 전기가 안 닿아요. '시설'에서 발전소를 지어요",
-		"water": "물방울 말풍선: 물이 안 닿아요. '시설'에서 급수탑을 지어요",
+		"power": "번개 말풍선: 전기가 안 닿아요. '건설' → '시설'에서 발전소를 지어요",
+		"water": "물방울 말풍선: 물이 안 닿아요. '건설' → '시설'에서 급수탑을 지어요",
 	}
 	for i in City.CELLS:
 		var w := map.warning_of(i)
@@ -426,144 +501,22 @@ func _update_hud() -> void:
 		bar.color = Defs.ZONE_COLORS[k + 1] if d >= 0 else Color(0.9, 0.3, 0.3)
 
 
-# ================================================================ bottom bar
-func _build_bottom_bar() -> void:
-	# right column: build tools
-	var order := [Tool.HAND, Tool.ROAD, Tool.R, Tool.C, Tool.I, Tool.FAC, Tool.BULLDOZE]
-	for k in order.size():
-		var t: int = order[k]
-		tool_buttons[t] = _side_button(TOOL_INFO[t][1], TOOL_INFO[t][0], Vector2(632, 216 + k * 94), func(): _set_tool(t))
-	# facility strip above the message bar (shown with the facility tool)
-	fac_strip = _hud_panel(Vector2(8, MSG_Y - 104), Vector2(616, 98))
-	context_box = fac_strip
-	fac_row = HBoxContainer.new()
-	fac_row.position = Vector2(6, 5)
-	fac_row.size = Vector2(604, 88)
-	fac_row.add_theme_constant_override("separation", 4)
-	fac_strip.add_child(fac_row)
-	var prev := _small_button("◀", func(): _fac_page_step(-1))
-	fac_row.add_child(prev)
-	for id in Defs.FAC_ORDER:
-		var b := Button.new()
-		b.icon = Atlas.icon(Defs.fac(id)["key"])
-		b.expand_icon = true
-		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
-		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		b.add_theme_constant_override("icon_max_width", 44)
-		b.texture_filter = _icon_filter(Defs.fac(id)["key"])
-		b.custom_minimum_size = Vector2(86, 88)
-		b.clip_text = false
-		UIKit.style_button(b, "secondary", 13, 8)
-		b.pressed.connect(func():
-			SoundManager.play("click")
-			_select_facility(id))
-		fac_row.add_child(b)
-		fac_buttons[id] = b
-	var next := _small_button("▶", func(): _fac_page_step(1))
-	fac_row.add_child(next)
-
-
-func _icon_button(icon: String, size: Vector2) -> Button:
-	var b := Button.new()
-	b.icon = Atlas.icon(icon)
-	b.expand_icon = true
-	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	b.texture_filter = _icon_filter(icon)
-	b.custom_minimum_size = size
-	b.size = size
-	UIKit.style_button(b, "secondary", 18, 10)
-	b.add_theme_constant_override("icon_max_width", 32)
-	return b
-
-
-func _icon_filter(name: String) -> CanvasItem.TextureFilter:
-	## Pixel icons shown at whole-number sizes stay crisp; building pictures shrunk into the
-	## facility buttons are smoothed.
-	return CanvasItem.TEXTURE_FILTER_NEAREST if name.begins_with("ui_") or not Art.has(name) else CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-
-
-func _small_button(text: String, cb: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.custom_minimum_size = Vector2(44, 88)
-	UIKit.style_button(b, "secondary", 20, 8)
-	b.pressed.connect(func():
-		SoundManager.play("click")
-		cb.call())
-	return b
-
-
-const SPEED_NAMES := ["멈춤", "보통", "빠름", "최고속"]
-
-
 func _set_speed(k: int) -> void:
 	speed_idx = k
 	speed_button.text = SPEED_NAMES[k]
 	UIKit.style_button(speed_button, "selected" if k == 0 else "secondary", 17, 10)
 
 
-func _set_tool(t: int) -> void:
-	tool = t
-	for k in tool_buttons:
-		UIKit.style_button(tool_buttons[k], "selected" if k == t else "secondary", 17, 10)
-	map.selected = -1
-	map.preview = {}
-	map.ghost_cell = -1
-	map.overlay = _overlay_for_tool()
-	_update_context()
-	map.queue_redraw()
-
-
-func _select_facility(id: int) -> void:
-	if city == null:
-		return
-	if not city.unlocked(id):
-		var need: int = Defs.fac(id)["rank"]
-		_toast("'%s' 랭크가 되면 지을 수 있어요" % Defs.RANKS[need]["name"], "info")
-		return
-	fac_id = id
-	map.overlay = _overlay_for_tool()
-	_update_context()
-	map.queue_redraw()
-
-
-func _overlay_for_tool() -> String:
-	if tool != Tool.FAC:
-		return ""
-	match fac_id:
-		2:
-			return "power"
-		3:
-			return "water"
-		7, 8, 9, 10:
-			return "svc:%d" % Defs.SERVICE_BIT[fac_id]
-	return "land"
-
-
-func _fac_page_step(d: int) -> void:
-	var pages := ceili(Defs.FAC_ORDER.size() / float(FAC_PAGE))
-	fac_page = posmod(fac_page + d, pages)
-	_update_context()
-
-
 func _update_context() -> void:
 	if city == null:
 		return
-	fac_strip.visible = tool == Tool.FAC
 	undo_button.disabled = undo_op.is_empty() or undo_op.get("month", -1) != city.month
-	if tool == Tool.FAC:
-		for k in Defs.FAC_ORDER.size():
-			var id: int = Defs.FAC_ORDER[k]
-			var b: Button = fac_buttons[id]
-			b.visible = k / FAC_PAGE == fac_page
-			var f := Defs.fac(id)
-			var lock := not city.unlocked(id)
-			var done := Defs.is_landmark(id) and city.has_landmark(id)
-			b.text = "%s\n%s" % [f["name"], "잠김" if lock else ("완성" if done else UIKit.money(f["cost"]))]
-			b.modulate = Color(1, 1, 1, 0.45) if lock or done else Color.WHITE
-			UIKit.style_button(b, "selected" if id == fac_id else "secondary", 13, 8)
-		_set_hint("%s %s · %s" % [Defs.fac(fac_id)["name"], UIKit.money(Defs.fac(fac_id)["cost"]), Defs.fac(fac_id)["desc"]])
-		return
+	shop_button.visible = build == Build.NONE
+	build_ui.visible = build != Build.NONE
+	select_ui.visible = build == Build.NONE and map.selected >= 0 and city.can_bulldoze(map.selected)
+	if select_ui.visible:
+		var forest := city.obj[map.selected] == 0 and city.zone[map.selected] == Defs.Z.NONE
+		demolish_button.text = "철거 %s" % UIKit.money(Defs.CLEAR_COST) if forest else "철거"
 	_set_hint(_hint_text())
 
 
@@ -576,14 +529,16 @@ func _set_hint(text: String) -> void:
 
 
 func _hint_text() -> String:
-	match tool:
-		Tool.ROAD:
-			return "도로 %s/칸 (물 위 다리 %s)\n손가락으로 끌어서 길게 깔아요. 고속도로와 이어져야 해요" % [UIKit.money(Defs.ROAD_COST), UIKit.money(Defs.BRIDGE_COST)]
-		Tool.R, Tool.C, Tool.I:
-			var z: int = [0, 0, Defs.Z.R, Defs.Z.C, Defs.Z.I][tool]
-			return "%s 구역 %s/칸 · 끌어서 네모로 칠해요\n도로 2칸 안에 전기·물이 있으면 건물이 저절로 지어져요" % [Defs.ZONE_NAMES[z], UIKit.money(Defs.ZONE_COST)]
-		Tool.BULLDOZE:
-			return "끌어서 네모로 철거해요 (숲은 %s)\n돈은 돌려받지 못해요" % UIKit.money(Defs.CLEAR_COST)
+	match build:
+		Build.FAC:
+			var f := Defs.fac(fac_id)
+			return "%s %s · %s\n건물을 끌어 옮기고, 초록 체크를 누르면 지어져요" % [f["name"], UIKit.money(f["cost"]), f["desc"]]
+		Build.ROAD:
+			return "도로 %s/칸 (물 위 다리 %s) · 화살표 칸에서 끌어 길게 그려요\n다른 칸을 누르면 거기서 시작해요. 고속도로와 이어져야 해요" % [UIKit.money(Defs.ROAD_COST), UIKit.money(Defs.BRIDGE_COST)]
+		Build.ZONE:
+			return "%s 구역 %s/칸 · 화살표 모서리를 끌면 크기, 안쪽을 끌면 위치가 바뀌어요\n도로 2칸 안에 전기·물이 닿으면 건물이 저절로 지어져요" % [Defs.ZONE_NAMES[build_zone], UIKit.money(Defs.ZONE_COST)]
+		Build.CLEAR:
+			return "치울 곳을 네모로 골라요 (숲은 %s) · 화살표 모서리를 끌면 크기가 바뀌어요\n돈은 돌려받지 못해요" % UIKit.money(Defs.CLEAR_COST)
 	if map.selected >= 0:
 		return _cell_info(map.selected)
 	return _advice()
@@ -600,9 +555,9 @@ func _advice() -> String:
 		if city.zone[i] != Defs.Z.NONE:
 			zones += 1
 	if city.road_count < 14:
-		return "도움말: '도로'를 골라 왼쪽 고속도로 끝에서 이어 깔아요\n두 손가락(또는 마우스 휠)으로 확대, 끌어서 이동"
+		return "도움말: 오른쪽 아래 '건설' → '도로'를 골라 왼쪽 고속도로 끝에서 이어 깔아요\n두 손가락(또는 마우스 휠)으로 확대, 끌어서 이동"
 	if zones < 6:
-		return "도움말: 도로 옆에 '주거' 구역을 칠해요\n집이 생기면 '상업'·'공업'도 칠해요"
+		return "도움말: '건설'에서 '주거 구역'을 골라 도로 옆에 칠해요\n집이 생기면 '상업'·'공업'도 칠해요"
 	var broken := 0
 	for i in City.CELLS:
 		if city.obj[i] == Defs.ROAD and city.connected[i] == 0 and city.is_active(i):
@@ -623,7 +578,7 @@ func _advice() -> String:
 	if no_road >= 1:
 		return "도로가 안 닿는 구역이 %d칸 있어요 (끊긴 도로 말풍선)\n고속도로와 이어진 도로가 2칸 안에 있어야 해요" % no_road
 	if not has.has(2) or not has.has(3):
-		return "도움말: '시설'에서 발전소와 급수탑을 지어요\n전기와 물이 닿아야 건물이 자라요"
+		return "도움말: '건설' → '시설'에서 발전소와 급수탑을 지어요\n전기와 물이 닿아야 건물이 자라요"
 	if no_power >= 1 and no_power >= no_water:
 		return "전기가 안 닿는 구역이 %d칸 있어요 (번개 말풍선)\n발전소를 하나 더 지어요" % no_power
 	if no_water >= 1:
@@ -674,35 +629,632 @@ func _cell_info(i: int) -> String:
 	return head + "\n" + line2
 
 
+# ================================================================ shop
+func _open_shop() -> void:
+	if city == null or build != Build.NONE:
+		return
+	SoundManager.play("click")
+	map.selected = -1
+	_update_context()
+	map.queue_redraw()
+	_show_shop()
+
+
+func _show_shop() -> void:
+	## Shop window like base-builder games: tabs on top, picture cards below. Tap a card to place it.
+	_close_modal()
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.gui_input.connect(func(e: InputEvent):
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+			_close_modal())
+	modal_layer.add_child(dim)
+	var win := Panel.new()
+	win.add_theme_stylebox_override("panel", UIKit.window(16))
+	win.position = Vector2(60, 40)
+	win.size = Vector2(W - 120, H - 80)
+	win.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.add_child(win)
+	var title := UIKit.outlined(UIKit.label("건설", 34, UIKit.GOLD), 6)
+	title.position = Vector2(28, 14)
+	title.size = Vector2(150, 60)
+	win.add_child(title)
+	for k in SHOP_TABS.size():
+		var tab := Button.new()
+		tab.text = SHOP_TABS[k][0]
+		tab.position = Vector2(180 + k * 190, 16)
+		tab.size = Vector2(176, 58)
+		UIKit.style_button(tab, "selected" if k == shop_tab else "secondary", 22, 12)
+		tab.pressed.connect(func():
+			SoundManager.play("click")
+			shop_tab = k
+			_show_shop())
+		win.add_child(tab)
+	var close := _glyph_button("x")
+	close.position = Vector2(win.size.x - 96, 12)
+	close.pressed.connect(func():
+		SoundManager.play("click")
+		_close_modal())
+	win.add_child(close)
+	var grid := GridContainer.new()
+	grid.columns = 5
+	grid.position = Vector2(24, 98)
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 14)
+	win.add_child(grid)
+	for item in SHOP_TABS[shop_tab][1]:
+		grid.add_child(_shop_card(item[0], item[1]))
+
+
+func _shop_card(kind: String, id: int) -> Button:
+	var title := ""
+	var icon := ""
+	var price := ""
+	var desc := ""
+	var locked := false
+	var done := false
+	match kind:
+		"road":
+			title = "도로"
+			icon = "ui_road"
+			price = "%s/칸" % UIKit.money(Defs.ROAD_COST)
+			desc = "끌어서 길게 그려요\n고속도로와 이어 주세요"
+		"zone":
+			title = "%s 구역" % Defs.ZONE_NAMES[id]
+			icon = ZONE_ICONS[id]
+			price = "%s/칸" % UIKit.money(Defs.ZONE_COST)
+			desc = ["", "전기·물이 닿으면\n집이 지어져요", "가게가 생겨\n세금과 일자리", "공장이 생겨\n일자리가 늘어요"][id]
+		"clear":
+			title = "철거"
+			icon = "ui_bulldoze"
+			price = "무료 (숲 %s)" % UIKit.money(Defs.CLEAR_COST)
+			desc = "네모로 골라\n한 번에 치워요"
+		"fac":
+			var f := Defs.fac(id)
+			title = f["name"]
+			icon = f["key"]
+			price = UIKit.money(f["cost"])
+			desc = f["desc"]
+			locked = not city.unlocked(id)
+			done = Defs.is_landmark(id) and city.has_landmark(id)
+			if locked:
+				price = "'%s'부터" % Defs.RANKS[int(f["rank"])]["name"]
+			elif done:
+				price = "완성"
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(214, 250)
+	UIKit.style_button(b, "secondary", 20, 12)
+	var v := VBoxContainer.new()
+	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 10)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 4)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(v)
+	var pic := TextureRect.new()
+	pic.texture = Atlas.icon(icon)
+	pic.custom_minimum_size = Vector2(110, 96)
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	pic.texture_filter = _icon_filter(icon)
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(pic)
+	v.add_child(UIKit.outlined(UIKit.label(title, 22, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER), 4))
+	v.add_child(UIKit.outlined(UIKit.label(price, 20, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER), 4))
+	var d := UIKit.label(desc, 15, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	d.custom_minimum_size = Vector2(190, 0)
+	v.add_child(d)
+	if locked or done:
+		b.modulate = Color(1, 1, 1, 0.5)
+	b.pressed.connect(func():
+		SoundManager.play("click")
+		if locked:
+			_toast("'%s' 랭크가 되면 지을 수 있어요" % Defs.RANKS[int(Defs.fac(id)["rank"])]["name"], "info")
+		elif done:
+			_toast("명소는 하나씩만 지을 수 있어요", "info")
+		else:
+			_begin_build(kind, id))
+	return b
+
+
+func _glyph_button(kind: String) -> Button:
+	## Square cancel (red cross) or confirm (green check) button.
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(84, 76)
+	b.size = Vector2(84, 76)
+	if kind == "ok":
+		UIKit.style_raised(b, Color(0.42, 0.78, 0.2), Color(0.85, 1.0, 0.6), Color(0.15, 0.35, 0.05), 12)
+	else:
+		UIKit.style_button(b, "danger", 20, 12)
+	var g := Glyph.new()
+	g.kind = kind
+	g.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(g)
+	return b
+
+
+# ================================================================ placement
+func _build_float_ui() -> void:
+	build_ui = Control.new()
+	build_ui.size = Vector2(200, 118)
+	build_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	build_ui.visible = false
+	add_child(build_ui)
+	cost_label = UIKit.outlined(UIKit.label("", 22, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER), 6)
+	cost_label.position = Vector2(-60, 0)
+	cost_label.size = Vector2(320, 34)
+	build_ui.add_child(cost_label)
+	var cancel := _glyph_button("x")
+	cancel.position = Vector2(10, 38)
+	cancel.pressed.connect(func():
+		SoundManager.play("click")
+		_end_build())
+	build_ui.add_child(cancel)
+	ok_button = _glyph_button("ok")
+	ok_button.position = Vector2(106, 38)
+	ok_button.pressed.connect(_confirm_build)
+	build_ui.add_child(ok_button)
+	select_ui = Control.new()
+	select_ui.size = Vector2(160, 64)
+	select_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	select_ui.visible = false
+	add_child(select_ui)
+	demolish_button = Button.new()
+	demolish_button.size = Vector2(160, 60)
+	UIKit.style_button(demolish_button, "danger", 22, 12)
+	demolish_button.pressed.connect(_demolish_selected)
+	select_ui.add_child(demolish_button)
+
+
+func _begin_build(kind: String, id: int) -> void:
+	_close_modal()
+	map.selected = -1
+	var center := _screen_to_cell(VIEW.get_center())
+	if center < 0 or not city.is_active(center):
+		var a := city.active_rect()
+		center = City.idx(a.position.x + a.size.x / 2, a.position.y + a.size.y / 2)
+	match kind:
+		"fac":
+			build = Build.FAC
+			fac_id = id
+			fac_cell = center
+		"road":
+			build = Build.ROAD
+			road_path = [center]
+		"zone":
+			build = Build.ZONE
+			build_zone = id
+			rect_a = center
+			rect_b = _offset_cell(center, Vector2i(2, 2))
+		"clear":
+			build = Build.CLEAR
+			rect_a = center
+			rect_b = _offset_cell(center, Vector2i(1, 1))
+	map.overlay = _overlay_for_build()
+	_refresh_ghost()
+	_update_context()
+
+
+func _end_build() -> void:
+	build = Build.NONE
+	if drag != "pan":
+		drag = ""
+	map.preview = {}
+	map.ghost = ""
+	map.ghost_cell = -1
+	map.ghost_radius = 0
+	map.ghost_roads = {}
+	map.handle_cell = -1
+	map.overlay = ""
+	_update_context()
+	map.queue_redraw()
+
+
+func _overlay_for_build() -> String:
+	if build != Build.FAC:
+		return ""
+	match fac_id:
+		2:
+			return "power"
+		3:
+			return "water"
+		7, 8, 9, 10:
+			return "svc:%d" % Defs.SERVICE_BIT[fac_id]
+	return "land"
+
+
+func _offset_cell(i: int, d: Vector2i) -> int:
+	var p := City.pos(i) + d
+	return City.idx(clampi(p.x, 0, City.N - 1), clampi(p.y, 0, City.N - 1))
+
+
+func _ghost_cells() -> Array:
+	match build:
+		Build.FAC:
+			return [fac_cell]
+		Build.ROAD:
+			return road_path
+		Build.ZONE, Build.CLEAR:
+			return _rect_cells(rect_a, rect_b)
+	return []
+
+
+func _handle_cell() -> int:
+	match build:
+		Build.FAC:
+			return fac_cell
+		Build.ROAD:
+			return road_path[-1]
+		Build.ZONE, Build.CLEAR:
+			return rect_b
+	return -1
+
+
+func _rect_cells(a: int, b: int) -> Array:
+	if a < 0 or b < 0:
+		return []
+	var pa := City.pos(a)
+	var pb := City.pos(b)
+	var out: Array = []
+	for y in range(mini(pa.y, pb.y), maxi(pa.y, pb.y) + 1):
+		for x in range(mini(pa.x, pb.x), maxi(pa.x, pb.x) + 1):
+			out.append(City.idx(x, y))
+	return out
+
+
+func _refresh_ghost() -> void:
+	## Green/red ground, cost and whether the check button works, for where the ghost is now.
+	if build == Build.NONE:
+		return
+	var pv := {}
+	var total := 0
+	var count := 0
+	var reason := ""
+	map.ghost = ""
+	map.ghost_cell = -1
+	map.ghost_radius = 0
+	map.ghost_roads = {}
+	match build:
+		Build.FAC:
+			var cost := city.facility_cost(fac_cell, fac_id)
+			pv[fac_cell] = cost >= 0
+			if cost >= 0:
+				total = cost
+				count = 1
+			else:
+				reason = "여기엔 지을 수 없어요"
+			map.ghost = Defs.fac(fac_id)["key"]
+			map.ghost_cell = fac_cell
+			map.ghost_radius = int(Defs.fac(fac_id)["radius"]) if fac_id in [2, 3, 7, 8, 9, 10] else 0
+		Build.ROAD:
+			for c in road_path:
+				var cost := city.road_cost(c)
+				pv[c] = cost >= 0 or city.obj[c] == Defs.ROAD
+				if pv[c]:
+					map.ghost_roads[c] = true
+				if cost >= 0:
+					total += cost
+					count += 1
+			if count == 0:
+				reason = "화살표 칸에서 끌어 도로를 그려요" if road_path.size() == 1 else "도로를 놓을 수 있는 칸이 없어요"
+		Build.ZONE:
+			for c in _rect_cells(rect_a, rect_b):
+				var cost := city.zone_cost(c, build_zone)
+				if cost < 0 and city.zone[c] == build_zone:
+					continue                # already this zone: leave it alone
+				pv[c] = cost >= 0
+				if cost >= 0:
+					total += cost
+					count += 1
+			if count == 0:
+				reason = "칠할 수 있는 칸이 없어요"
+		Build.CLEAR:
+			for c in _rect_cells(rect_a, rect_b):
+				if city.can_bulldoze(c):
+					pv[c] = true
+					count += 1
+					if city.obj[c] == 0 and city.zone[c] == Defs.Z.NONE:
+						total += Defs.CLEAR_COST
+			if count == 0:
+				reason = "치울 것이 없어요"
+	if reason == "" and total > city.money:
+		reason = "돈이 부족해요 (%s)" % UIKit.money(total)
+	build_ok = reason == ""
+	map.preview = pv
+	match build:
+		Build.CLEAR:
+			map.preview_ok = Color(1.0, 0.6, 0.2, 0.5)
+		Build.ROAD:
+			map.preview_ok = Color(0.4, 1.0, 0.5, 0.15)    # light, so the road picture shows through
+		_:
+			map.preview_ok = Color(0.4, 1.0, 0.5, 0.45)
+	map.handle_cell = _handle_cell()
+	ok_button.disabled = not build_ok
+	ok_button.modulate = Color.WHITE if build_ok else Color(1, 1, 1, 0.55)
+	if reason != "":
+		cost_label.text = reason
+	elif build == Build.FAC:
+		cost_label.text = UIKit.money(total)
+	elif build == Build.CLEAR:
+		cost_label.text = "%d칸 철거%s" % [count, "  %s" % UIKit.money(total) if total > 0 else ""]
+	else:
+		cost_label.text = "%d칸  %s" % [count, UIKit.money(total)]
+	var just_hint := build == Build.ROAD and road_path.size() == 1 and count == 0
+	cost_label.add_theme_color_override("font_color", UIKit.GOLD if build_ok else (UIKit.TEXT if just_hint else UIKit.RED))
+	map.queue_redraw()
+
+
+func _cell_screen(i: int) -> Vector2:
+	return world.position + map.cell_center(i) * zoom
+
+
+func _ghost_top(i: int, key: String) -> float:
+	## Screen y of the top of a building picture standing on cell i.
+	var t := Art.tex(key) if key != "" else null
+	var c := _cell_screen(i)
+	if t == null:
+		return c.y - MapView.HH * zoom
+	return c.y + (MapView.HH * MapView.FOOT - t.get_size().y / MapView.DETAIL) * zoom
+
+
+func _place_float_ui() -> void:
+	## Keep the cancel/confirm buttons over the ghost (and the demolish button over a tapped cell).
+	if build_ui.visible:
+		var left := INF
+		var right := -INF
+		var top := INF
+		var bottom := -INF
+		for c in _ghost_cells():
+			var p := _cell_screen(c)
+			left = minf(left, p.x)
+			right = maxf(right, p.x)
+			top = minf(top, p.y - (MapView.HH + 22.0) * zoom)     # room for the drag arrows
+			bottom = maxf(bottom, p.y + MapView.HH * zoom)
+		if build == Build.FAC:
+			top = minf(top, _ghost_top(fac_cell, map.ghost))
+		var at := Vector2((left + right) * 0.5 - build_ui.size.x * 0.5, top - build_ui.size.y - 6)
+		if at.y < TOP_SAFE:
+			at.y = bottom + 6
+		at.x = clampf(at.x, 110, W - build_ui.size.x - 8)
+		at.y = clampf(at.y, TOP_SAFE, H - build_ui.size.y - 8)
+		build_ui.position = at.round()
+	if select_ui.visible:
+		var p := _cell_screen(map.selected)
+		var key := map.sprite_for(map.selected)
+		var at := Vector2(p.x - select_ui.size.x * 0.5, _ghost_top(map.selected, key) - select_ui.size.y - 6)
+		at.x = clampf(at.x, 110, W - select_ui.size.x - 8)
+		at.y = clampf(at.y, TOP_SAFE, H - select_ui.size.y - 8)
+		select_ui.position = at.round()
+
+
+func _confirm_build() -> void:
+	if build == Build.NONE or not build_ok:
+		return
+	_begin_edit()
+	var at := _handle_cell()
+	match build:
+		Build.FAC:
+			_record(fac_cell)
+			var cost := city.place_facility(fac_cell, fac_id)
+			if cost < 0:
+				stroke_changes.erase(fac_cell)
+				stroke_failed = true
+			else:
+				stroke_spent += cost
+		Build.ROAD:
+			for c in road_path:
+				_road_at(c)
+		Build.ZONE:
+			for c in _rect_cells(rect_a, rect_b):
+				if city.zone_cost(c, build_zone) >= 0:
+					_record(c)
+					var cost := city.place_zone(c, build_zone)
+					if cost < 0:
+						stroke_changes.erase(c)
+						stroke_failed = true
+					else:
+						stroke_spent += cost
+		Build.CLEAR:
+			for c in _rect_cells(rect_a, rect_b):
+				if city.can_bulldoze(c):
+					_record(c)
+					var cost := city.bulldoze(c)
+					if cost < 0:
+						stroke_changes.erase(c)
+						stroke_failed = true
+					else:
+						stroke_spent += cost
+	var kind := build
+	if kind == Build.ROAD:
+		# like building walls: stay on the end of the new road, ready to draw on from there
+		road_path = [road_path[-1]]
+	else:
+		_end_build()
+	_finish_edit("bulldoze" if kind == Build.CLEAR else "place", at)
+
+
+func _demolish_selected() -> void:
+	var c := map.selected
+	if city == null or c < 0 or not city.can_bulldoze(c):
+		return
+	_begin_edit()
+	_record(c)
+	var cost := city.bulldoze(c)
+	if cost < 0:
+		stroke_changes.erase(c)
+		stroke_failed = true
+	else:
+		stroke_spent += cost
+	map.selected = -1
+	_finish_edit("bulldoze", c)
+
+
+func _begin_edit() -> void:
+	stroke_changes = {}
+	stroke_spent = 0
+	stroke_failed = false
+
+
+func _record(i: int) -> void:
+	if not stroke_changes.has(i):
+		stroke_changes[i] = city.cell_state(i)
+
+
+func _finish_edit(sound: String, at: int) -> void:
+	if not stroke_changes.is_empty():
+		undo_op = {"changes": stroke_changes, "spent": stroke_spent, "month": city.month}
+		city.refresh()
+		SoundManager.play(sound)
+		if stroke_spent > 0 and at >= 0:
+			fx.pop_text(map.cell_center(at), "-" + UIKit.money(stroke_spent), UIKit.RED)
+	elif stroke_failed:
+		SoundManager.play("invalid")
+	if stroke_failed and city.money < 50:
+		_toast("돈이 부족해요. 시간이 지나면 세금이 들어와요", "bad")
+	stroke_changes = {}
+	_after_edit()
+
+
+func _undo() -> void:
+	if undo_op.is_empty() or undo_op["month"] != city.month:
+		return
+	SoundManager.play("click")
+	var changes: Dictionary = undo_op["changes"]
+	for c in changes:
+		city.set_cell_state(c, changes[c])
+	city.money += int(undo_op["spent"])
+	undo_op = {}
+	city.refresh()
+	_after_edit()
+
+
+func _road_at(cell: int) -> void:
+	if cell < 0:
+		return
+	if city.road_cost(cell) < 0:
+		if city.obj[cell] != Defs.ROAD:
+			stroke_failed = true
+		return
+	_record(cell)
+	var cost := city.place_road(cell)
+	if cost < 0:
+		stroke_changes.erase(cell)
+		stroke_failed = true
+	else:
+		stroke_spent += cost
+
+
+func _extend_path(target: int) -> void:
+	## Road drawing: from where the drag began to the finger as a straight line with at most one
+	## bend (the first way the finger went decides which side the bend is on). Going back over the
+	## path shortens it.
+	var k := road_base.find(target)
+	if k >= 0:
+		road_path = road_base.slice(0, k + 1)
+		if k == road_base.size() - 1:
+			road_axis = -1
+		return
+	var a := City.pos(road_base[-1])
+	var b := City.pos(target)
+	if road_axis < 0:
+		road_axis = 0 if absi(b.x - a.x) >= absi(b.y - a.y) else 1
+	var corner := Vector2i(b.x, a.y) if road_axis == 0 else Vector2i(a.x, b.y)
+	road_path = road_base.duplicate()
+	for goal in [corner, b]:
+		while a != goal and road_path.size() < MAX_PATH:
+			a += Vector2i(signi(goal.x - a.x), signi(goal.y - a.y))
+			var c := City.idx(a.x, a.y)
+			var j := road_path.find(c)
+			if j >= 0:
+				road_path.resize(j + 1)
+			else:
+				road_path.append(c)
+
+
+func _shift_ghost(d: Vector2i) -> bool:
+	## Move the whole ghost by d cells; false (and no move) if it would leave the map.
+	var cells: Array = road_path if build == Build.ROAD else ([fac_cell] if build == Build.FAC else [rect_a, rect_b])
+	var moved_cells: Array = []
+	for c in cells:
+		var p: Vector2i = City.pos(c) + d
+		if not City.inside(p.x, p.y):
+			return false
+		moved_cells.append(City.idx(p.x, p.y))
+	match build:
+		Build.FAC:
+			fac_cell = moved_cells[0]
+		Build.ROAD:
+			road_path = moved_cells
+		Build.ZONE, Build.CLEAR:
+			rect_a = moved_cells[0]
+			rect_b = moved_cells[1]
+	return true
+
+
+func _drag_ghost() -> void:
+	var target := _screen_to_cell(finger + drag_offset)
+	if target < 0 or target == drag_cell:
+		return
+	match drag:
+		"extend":
+			_extend_path(target)
+		"resize":
+			var pa := City.pos(rect_a)
+			var pt := City.pos(target)
+			pt.x = clampi(pt.x, pa.x - MAX_RECT + 1, pa.x + MAX_RECT - 1)
+			pt.y = clampi(pt.y, pa.y - MAX_RECT + 1, pa.y + MAX_RECT - 1)
+			rect_b = City.idx(pt.x, pt.y)
+		"move":
+			if not _shift_ghost(City.pos(target) - City.pos(drag_cell)):
+				return
+		_:
+			return
+	drag_cell = target
+	_refresh_ghost()
+
+
+func _hits(p: Vector2, cell: int, tall: bool) -> bool:
+	## Is the finger on this cell (or on the building standing on it)? A little generous for fingers.
+	if cell < 0:
+		return false
+	var d := p - _cell_screen(cell)
+	var hw := maxf(MapView.HW * zoom, 40.0)
+	var hh := maxf(MapView.HH * zoom, 28.0)
+	var up := hh
+	if tall:
+		up = maxf(up, _cell_screen(cell).y - _ghost_top(cell, map.ghost))
+	return absf(d.x) <= hw and d.y >= -up and d.y <= hh
+
+
 # ================================================================ toast and popups
-const MSG_TEXT := Color(0.16, 0.22, 0.1)
-
-
 func _build_toast() -> void:
 	## Bottom message bar with the town advisor, like pocket management games: hints and news.
 	toast_panel = PanelContainer.new()
-	var sb := UIKit.box(Color(0.86, 0.95, 0.74), Color(0.36, 0.56, 0.26), 10, 3)
+	var sb := UIKit.box(Color(0.86, 0.95, 0.74, 0.95), Color(0.36, 0.56, 0.26), 10, 3)
 	sb.shadow_color = Color(0, 0, 0, 0.3)
 	sb.shadow_size = 4
 	toast_panel.add_theme_stylebox_override("panel", sb)
-	toast_panel.position = Vector2(8, MSG_Y + 6)
-	toast_panel.size = Vector2(W - 16, H - MSG_Y - 14)
+	toast_panel.position = Vector2(16, H - 116)
+	toast_panel.size = Vector2(900, 104)
 	toast_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(toast_panel)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
+	row.add_theme_constant_override("separation", 12)
 	toast_panel.add_child(row)
 	var face := TextureRect.new()
 	face.texture = Art.tex("advisor")
-	face.custom_minimum_size = Vector2(128, 128)
+	face.custom_minimum_size = Vector2(88, 88)
 	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	face.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(face)
-	toast_label = UIKit.label("", 22, MSG_TEXT)
+	toast_label = UIKit.label("", 19, MSG_TEXT)
 	toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	toast_label.custom_minimum_size = Vector2(530, 128)
+	toast_label.custom_minimum_size = Vector2(770, 88)
 	toast_label.add_theme_constant_override("line_spacing", -2)
 	row.add_child(toast_label)
 	hint_label = toast_label
@@ -816,8 +1368,11 @@ func _show_menu() -> void:
 	UIKit.style_button(land_btn, "secondary", 22, 12)
 	land_btn.text = "지가 지도 보기" if map.overlay != "land" else "지가 지도 끄기"
 	land_btn.pressed.connect(func():
-		_set_tool(Tool.HAND)
-		map.overlay = "land" if land_btn.text == "지가 지도 보기" else ""
+		var show := land_btn.text == "지가 지도 보기"
+		_end_build()
+		map.selected = -1
+		map.overlay = "land" if show else ""
+		_update_context()
 		map.queue_redraw()
 		_close_modal())
 	box.add_child(land_btn)
@@ -837,6 +1392,7 @@ func _show_menu() -> void:
 func _to_title() -> void:
 	if city != null and not city.finished:
 		_save_game()
+	_end_build()
 	city = null
 	_show_title()
 
@@ -875,7 +1431,7 @@ func _on_rank_up(r: int) -> void:
 func _on_month_passed(income: int, expense: int) -> void:
 	var net := income - expense
 	year_net += net
-	fx.pop_text(world.get_transform().affine_inverse() * Vector2(560, 120), "%s%s" % ["+" if net >= 0 else "", UIKit.money(net)], UIKit.GREEN if net >= 0 else UIKit.RED)
+	fx.pop_text(world.get_transform().affine_inverse() * Vector2(W - 170, 100), "%s%s" % ["+" if net >= 0 else "", UIKit.money(net)], UIKit.GREEN if net >= 0 else UIKit.RED)
 	_save_game()
 
 
@@ -960,6 +1516,8 @@ func _process(delta: float) -> void:
 	if city == null or title_screen.visible:
 		walkers.speed = 0.0
 		return
+	_auto_pan(delta)
+	_place_float_ui()
 	var running := not _modal_open() and not city.finished
 	var spd: float = Defs.SPEEDS[speed_idx] if running else 0.0
 	walkers.speed = spd if not city.finished else 1.0
@@ -973,8 +1531,29 @@ func _process(delta: float) -> void:
 		_after_edit()
 
 
+func _auto_pan(delta: float) -> void:
+	## Dragging a ghost to the screen edge moves the map, so long roads fit in one drag.
+	if not pressing or drag in ["", "pan"]:
+		return
+	var v := Vector2.ZERO
+	if finger.x < EDGE:
+		v.x = -1.0
+	elif finger.x > W - EDGE:
+		v.x = 1.0
+	if finger.y < EDGE:
+		v.y = -1.0
+	elif finger.y > H - EDGE:
+		v.y = 1.0
+	if v == Vector2.ZERO:
+		return
+	cam += v * EDGE_SPEED * delta / zoom
+	_apply_camera()
+	_drag_ghost()
+
+
 func _after_edit() -> void:
 	_explain_warnings()
+	_refresh_ghost()
 	map.queue_redraw()
 	walkers.city_changed()
 	_update_hud()
@@ -1013,6 +1592,8 @@ func _zoom_at(screen: Vector2, new_zoom: float) -> void:
 
 # ================================================================ input
 func _unhandled_input(event: InputEvent) -> void:
+	## One finger: drag the ghost (or its arrows) to change it, drag anywhere else to move the map,
+	## tap to look at a cell (or to move the ghost there). Two fingers: zoom and move.
 	if city == null or title_screen.visible or _modal_open():
 		return
 	if event is InputEventScreenTouch:
@@ -1046,23 +1627,22 @@ func _unhandled_input(event: InputEvent) -> void:
 			pan_last = mb.position
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed and VIEW.has_point(mb.position):
-				_begin_stroke(mb.position)
-			elif not mb.pressed and stroke_active:
-				_end_stroke(mb.position)
+				_press(mb.position)
+			elif not mb.pressed:
+				_release(mb.position)
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if panning:
 			cam -= (mm.position - pan_last) / zoom
 			pan_last = mm.position
 			_apply_camera()
-		elif stroke_active:
-			_move_stroke(mm.position)
-		elif tool == Tool.FAC and VIEW.has_point(mm.position):
-			_set_ghost(_screen_to_cell(mm.position))
+		elif pressing:
+			_drag_to(mm.position)
 
 
 func _begin_pinch() -> void:
-	_cancel_stroke()
+	pressing = false
+	drag = ""
 	multi_touch = true
 	var pts: Array = touches.values()
 	pinch_dist = maxf(1.0, (pts[0] as Vector2).distance_to(pts[1]))
@@ -1081,207 +1661,73 @@ func _update_pinch() -> void:
 	_apply_camera()
 
 
-func _record(i: int) -> void:
-	if not stroke_changes.has(i):
-		stroke_changes[i] = city.cell_state(i)
-
-
-func _begin_stroke(p: Vector2) -> void:
-	stroke_active = true
-	stroke_moved = false
-	stroke_press = p
-	stroke_changes = {}
-	stroke_spent = 0
-	stroke_failed = false
-	pan_last = p
+func _press(p: Vector2) -> void:
+	pressing = true
+	moved = false
+	press_pos = p
+	finger = p
+	drag = "pan"
+	if build == Build.NONE:
+		return
 	var cell := _screen_to_cell(p)
-	stroke_start = cell
-	stroke_last = cell
-	match tool:
-		Tool.ROAD:
-			_road_at(cell)
-			map.queue_redraw()
-		Tool.R, Tool.C, Tool.I, Tool.BULLDOZE:
-			_rect_preview(cell)
-		Tool.FAC:
-			_set_ghost(cell)
+	if build == Build.FAC:
+		if _hits(p, fac_cell, true):
+			drag = "move"
+			drag_cell = fac_cell
+	elif _hits(p, _handle_cell(), false):
+		drag = "extend" if build == Build.ROAD else "resize"
+		drag_cell = _handle_cell()
+		road_base = road_path.duplicate()
+		road_axis = -1
+	elif cell >= 0 and cell in _ghost_cells():
+		drag = "move"
+		drag_cell = cell
+	if drag != "pan":
+		drag_offset = _cell_screen(drag_cell) - p
 
 
-func _move_stroke(p: Vector2) -> void:
-	if p.distance_to(stroke_press) > 14.0:
-		stroke_moved = true
-	var cell := _screen_to_cell(p)
-	match tool:
-		Tool.HAND:
-			cam -= (p - pan_last) / zoom
-			pan_last = p
+func _drag_to(p: Vector2) -> void:
+	if not moved and p.distance_to(press_pos) > 12.0:
+		moved = true
+	if drag == "pan":
+		if moved:
+			cam -= (p - finger) / zoom
 			_apply_camera()
-		Tool.ROAD:
-			if cell >= 0 and stroke_last >= 0 and cell != stroke_last:
-				var a := City.pos(stroke_last)
-				var b := City.pos(cell)
-				while a != b:
-					var d := b - a
-					if absi(d.x) >= absi(d.y):
-						a.x += signi(d.x)
-					else:
-						a.y += signi(d.y)
-					_road_at(City.idx(a.x, a.y))
-				stroke_last = cell
-				map.queue_redraw()
-				_update_hud()
-		Tool.R, Tool.C, Tool.I, Tool.BULLDOZE:
-			_rect_preview(cell)
-		Tool.FAC:
-			_set_ghost(cell)
-
-
-func _end_stroke(p: Vector2) -> void:
-	stroke_active = false
-	match tool:
-		Tool.HAND:
-			if not stroke_moved:
-				var cell := _screen_to_cell(p)
-				map.selected = cell if cell >= 0 and map.selected != cell else -1
-				SoundManager.play("click")
-				_update_context()
-				map.queue_redraw()
-			return
-		Tool.R, Tool.C, Tool.I, Tool.BULLDOZE:
-			var z: int = [0, 0, Defs.Z.R, Defs.Z.C, Defs.Z.I, 0, 0][tool]
-			for c in _rect_cells(stroke_start, stroke_last):
-				if tool == Tool.BULLDOZE:
-					if city.can_bulldoze(c):
-						_record(c)
-						var cost := city.bulldoze(c)
-						if cost < 0:
-							stroke_changes.erase(c)
-							stroke_failed = true
-						else:
-							stroke_spent += cost
-				elif city.zone_cost(c, z) >= 0:
-					_record(c)
-					var cost := city.place_zone(c, z)
-					if cost < 0:
-						stroke_changes.erase(c)
-						stroke_failed = true
-					else:
-						stroke_spent += cost
-			map.preview = {}
-		Tool.FAC:
-			var cell := map.ghost_cell
-			if cell >= 0 and VIEW.has_point(p):
-				if city.facility_cost(cell, fac_id) < 0:
-					stroke_failed = true
-				else:
-					_record(cell)
-					var cost := city.place_facility(cell, fac_id)
-					if cost < 0:
-						stroke_changes.erase(cell)
-						stroke_failed = true
-					else:
-						stroke_spent += cost
-	_finish_stroke()
-
-
-func _finish_stroke() -> void:
-	if not stroke_changes.is_empty():
-		undo_op = {"changes": stroke_changes, "spent": stroke_spent, "month": city.month}
-		city.refresh()
-		SoundManager.play("bulldoze" if tool == Tool.BULLDOZE else "place")
-		if stroke_spent > 0:
-			fx.pop_text(_screen_to_map(stroke_press), "-" + UIKit.money(stroke_spent), UIKit.RED)
-	elif stroke_failed or tool == Tool.FAC:
-		SoundManager.play("invalid")
-	if stroke_failed and city.money < 50:
-		_toast("돈이 부족해요. 시간이 지나면 세금이 들어와요", "bad")
-	stroke_changes = {}
-	_after_edit()
-
-
-func _cancel_stroke() -> void:
-	if not stroke_active:
+			finger = p
 		return
-	stroke_active = false
-	for c in stroke_changes:
-		city.set_cell_state(c, stroke_changes[c])
-	city.money += stroke_spent
-	stroke_changes = {}
-	stroke_spent = 0
-	map.preview = {}
-	map.ghost_cell = -1
-	city.refresh()
-	_after_edit()
+	finger = p
+	_drag_ghost()
 
 
-func _undo() -> void:
-	if undo_op.is_empty() or undo_op["month"] != city.month:
+func _release(p: Vector2) -> void:
+	if not pressing:
 		return
+	pressing = false
+	if not moved:
+		_tap(p)
+	drag = ""
+
+
+func _tap(p: Vector2) -> void:
+	var cell := _screen_to_cell(p)
+	if build == Build.NONE:
+		map.selected = cell if cell >= 0 and map.selected != cell else -1
+		SoundManager.play("click")
+		_update_context()
+		map.queue_redraw()
+		return
+	# tapping somewhere else moves the ghost there
+	if cell < 0 or cell in _ghost_cells() or (build == Build.FAC and _hits(p, fac_cell, true)):
+		return
+	match build:
+		Build.FAC:
+			fac_cell = cell
+		Build.ROAD:
+			road_path = [cell]
+		Build.ZONE, Build.CLEAR:
+			if not _shift_ghost(City.pos(cell) - City.pos(rect_a)):
+				var size := City.pos(rect_b) - City.pos(rect_a)
+				rect_a = cell
+				rect_b = _offset_cell(cell, size)
 	SoundManager.play("click")
-	var changes: Dictionary = undo_op["changes"]
-	for c in changes:
-		city.set_cell_state(c, changes[c])
-	city.money += int(undo_op["spent"])
-	undo_op = {}
-	city.refresh()
-	_after_edit()
-
-
-func _road_at(cell: int) -> void:
-	if cell < 0:
-		return
-	if city.road_cost(cell) < 0:
-		if city.obj[cell] != Defs.ROAD:
-			stroke_failed = true
-		return
-	_record(cell)
-	var cost := city.place_road(cell)
-	if cost < 0:
-		stroke_changes.erase(cell)
-		stroke_failed = true
-	else:
-		stroke_spent += cost
-
-
-func _rect_cells(a: int, b: int) -> Array:
-	if a < 0 or b < 0:
-		return []
-	var pa := City.pos(a)
-	var pb := City.pos(b)
-	pb.x = clampi(pb.x, pa.x - MAX_RECT + 1, pa.x + MAX_RECT - 1)
-	pb.y = clampi(pb.y, pa.y - MAX_RECT + 1, pa.y + MAX_RECT - 1)
-	var out: Array = []
-	for y in range(mini(pa.y, pb.y), maxi(pa.y, pb.y) + 1):
-		for x in range(mini(pa.x, pb.x), maxi(pa.x, pb.x) + 1):
-			out.append(City.idx(x, y))
-	return out
-
-
-func _rect_preview(cell: int) -> void:
-	if cell < 0:
-		return
-	stroke_last = cell
-	var z: int = [0, 0, Defs.Z.R, Defs.Z.C, Defs.Z.I, 0, 0][tool]
-	var pv := {}
-	var total := 0
-	for c in _rect_cells(stroke_start, cell):
-		var ok := city.can_bulldoze(c) if tool == Tool.BULLDOZE else city.zone_cost(c, z) >= 0
-		if tool != Tool.BULLDOZE and not ok and city.zone[c] == z:
-			continue
-		pv[c] = ok
-		if ok and tool != Tool.BULLDOZE:
-			total += city.zone_cost(c, z)
-	map.preview = pv
-	if tool != Tool.BULLDOZE:
-		hint_label.text = "%d칸 · %s" % [pv.size(), UIKit.money(total)]
-	map.queue_redraw()
-
-
-func _set_ghost(cell: int) -> void:
-	if cell < 0:
-		return
-	map.ghost_cell = cell
-	map.ghost = Defs.fac(fac_id)["key"]
-	map.ghost_radius = int(Defs.fac(fac_id)["radius"]) if fac_id in [2, 3, 7, 8, 9, 10] else 0
-	map.preview = {cell: city.facility_cost(cell, fac_id) >= 0 and city.money >= city.facility_cost(cell, fac_id)}
-	map.queue_redraw()
+	_refresh_ghost()

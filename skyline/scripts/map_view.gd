@@ -29,6 +29,9 @@ var preview := {}               # cell -> true (ok) / false (not allowed)
 var ghost := ""                 # sprite drawn on the hovered cell for facilities
 var ghost_cell := -1
 var ghost_radius := 0
+var ghost_roads := {}           # cells drawn as road while a road is being placed
+var handle_cell := -1           # green arrows around this cell: drag here
+var preview_ok := Color(0.4, 1.0, 0.5, 0.45)
 var overlay := ""               # "", "power", "water", "svc:<bit>" or "land"
 var selected := -1
 var fires := {}                 # cell -> seconds left
@@ -67,7 +70,7 @@ func _process(delta: float) -> void:
 	# water ripples swap twice a second; warnings bob and broken roads pulse every frame
 	if int(time * 2.0) != before:
 		queue_redraw()
-	elif not fires.is_empty() or has_warnings:
+	elif not fires.is_empty() or has_warnings or handle_cell >= 0:
 		overlays.queue_redraw()
 
 
@@ -138,7 +141,8 @@ func _road_mask(p: Vector2i) -> int:
 	for k in 4:
 		var q: Vector2i = p + City.DIRS[k]
 		if City.inside(q.x, q.y):
-			if city.obj[City.idx(q.x, q.y)] == Defs.ROAD:
+			var j := City.idx(q.x, q.y)
+			if city.obj[j] == Defs.ROAD or ghost_roads.has(j):
 				m |= bits[k]
 		elif k == 3:
 			m |= 8          # the highway runs off the map edge
@@ -203,8 +207,9 @@ func _draw() -> void:
 			_tile(self, "water%d_%d" % [_shore_mask(p), frame], i, tint)
 		else:
 			_tile(self, "grass%d" % ((p.x * 7 + p.y * 13) % 3), i, tint)
-		if o == Defs.ROAD:
-			_tile(self, ("bridge%d" if city.terrain[i] == Defs.T.WATER else "road%d") % _road_mask(p), i, tint)
+		if o == Defs.ROAD or ghost_roads.has(i):
+			var see := tint if o == Defs.ROAD else Color(1, 1, 1, 0.8)
+			_tile(self, ("bridge%d" if city.terrain[i] == Defs.T.WATER else "road%d") % _road_mask(p), i, see)
 		elif city.zone[i] != Defs.Z.NONE:
 			# zoned land keeps its yard under the building, like a plot in a town game
 			_tile(self, "lot_" + ZONE_KEY[city.zone[i]], i)
@@ -282,7 +287,7 @@ func _draw_buildings(ci: CanvasItem) -> void:
 			if name != "":
 				_spr(ci, name, i, Color.WHITE if city.is_active(i) else LOCKED)
 	if ghost_cell >= 0 and ghost != "":
-		_spr(ci, ghost, ghost_cell, Color(1, 1, 1, 0.7))
+		_spr(ci, ghost, ghost_cell, Color(1, 1, 1, 0.85))
 
 
 # ---------------------------------------------------------------- layer 3: overlays
@@ -367,10 +372,29 @@ func _draw_active_outline(ci: CanvasItem) -> void:
 
 func _draw_preview(ci: CanvasItem) -> void:
 	for c in preview:
-		ci.draw_colored_polygon(diamond(c), Color(0.4, 1.0, 0.5, 0.45) if preview[c] else Color(1.0, 0.3, 0.3, 0.45))
+		ci.draw_colored_polygon(diamond(c), preview_ok if preview[c] else Color(1.0, 0.3, 0.3, 0.45))
 	if ghost_cell >= 0 and ghost_radius > 0:
 		# a circle on the grid is an ellipse on screen
 		var r := (ghost_radius + 0.5) * HW * sqrt(2.0)
 		ci.draw_set_transform(cell_center(ghost_cell), 0.0, Vector2(1.0, float(TH) / TW))
 		ci.draw_arc(Vector2.ZERO, r, 0, TAU, 72, Color(1, 1, 1, 0.85), 2.0)
 		ci.draw_set_transform(Vector2.ZERO)
+	if handle_cell >= 0:
+		_draw_arrows(ci, handle_cell)
+
+
+func _draw_arrows(ci: CanvasItem, i: int) -> void:
+	## Four green arrows pointing out of the tile edges, like base-builder games: "drag me".
+	var c := cell_center(i)
+	var push := 5.0 + roundf(sin(time * 6.0) * 1.5)
+	var shape := [Vector2(9, 0), Vector2(2, 7), Vector2(2, 3), Vector2(-6, 3), Vector2(-6, -3), Vector2(2, -3), Vector2(2, -7)]
+	for d in [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]:
+		var edge_mid := c + Vector2(d.x * HW * 0.5, d.y * HH * 0.5)
+		var n := Vector2(d.x * HH, d.y * HW).normalized()      # outward normal of that diamond edge
+		var side := Vector2(-n.y, n.x)
+		var pts := PackedVector2Array()
+		for q in shape:
+			pts.append(edge_mid + n * (push + 8.0 + q.x * 1.3) + side * q.y * 1.3)
+		ci.draw_colored_polygon(pts, Color(0.45, 0.95, 0.3))
+		pts.append(pts[0])
+		ci.draw_polyline(pts, Color(0.1, 0.25, 0.05), 1.0)
