@@ -37,7 +37,7 @@
 
 | 종류 | 방법 | 위치 |
 |---|---|---|
-| 블록·칸·고스트·방해 돌 | Pillow 코드 | `tools/generate_original_blocks.py`, `tools/generate_faceted_assets.py` |
+| 블록·칸·고스트 | Pillow 코드 | `tools/generate_original_blocks.py`, `tools/generate_faceted_assets.py` |
 | 내비게이션·상태 아이콘 | Pillow 코드 | `tools/generate_ui_assets.py` |
 | 아바타 | Pillow 코드 | `tools/generate_avatars.py` |
 | 스킨 | Pillow 코드 | `tools/generate_skins.py` |
@@ -61,7 +61,6 @@ subtle dark navy mobile puzzle-game backdrop, low contrast, soft depth, empty ce
 | 이름 | 파일 | 방법 | 출처 | 쓰는 곳 | 상태 |
 |---|---|---|---|---|---|
 | 클래식 블록 8색 | `assets/sprites/block_*.png` | 코드 | `generate_original_blocks.py` | 보드·홈 로고 | 유지 |
-| 방해 돌(회색 블록) | `assets/sprites/block_stone.png` | 코드 | `generate_original_blocks.py` `stone` | 대결 공격 | 완료 |
 | 빈 칸·고스트 | `assets/sprites/cell_slot.png`, `cell_ghost.png` | 코드 | `generate_faceted_assets.py` | 보드 | 유지 |
 | 홈·설정·사운드·왕관·닫기·잠금 | `assets/sprites/*_icon.png`, `sound_*.png` | 코드 | `generate_ui_assets.py` | 헤더·팝업·스테이지 | 완료 |
 | 손가락(첫 판 안내) | `assets/sprites/tap_hand.png` (128px) | 코드 | `generate_ui_assets.py` `tap_hand()` | 첫 판 안내 | 완료 |
