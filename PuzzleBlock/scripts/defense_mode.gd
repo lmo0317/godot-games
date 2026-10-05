@@ -25,7 +25,7 @@ const BOSS_EVERY: int = 5
 const FIELD_TOP: float = 92.0
 const FIELD_SIZE := Vector2(720, 1188)
 # Spots on the wall walkway, either side of the gate (x), filled from the gate outward
-const SLOTS: Array[float] = [272.0, 448.0, 200.0, 520.0, 128.0, 592.0, 56.0, 664.0]
+const SLOTS: Array[float] = [245.0, 475.0, 180.0, 540.0, 115.0, 605.0, 50.0, 670.0]   # clear of the gate roof (x 294-423)
 const SPAWN_X := Vector2(70.0, 650.0)   # monsters enter anywhere across the top
 
 const TEX := {

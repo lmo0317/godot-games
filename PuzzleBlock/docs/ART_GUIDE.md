@@ -86,7 +86,7 @@ cute chibi PIXEL ART game sprite in the style of classic 16-bit RPGs, chunky vis
 | `slime.png` | green slime monster seen FROM THE FRONT (moving down toward the viewer), angry eyes, tiny fangs |
 | `goblin.png` | goblin warrior seen FROM THE FRONT, green skin, big pointy ears, wooden club raised, ragged leather armor |
 | `boss.png` | evil wizard boss seen FROM THE FRONT, purple robe and big pointed hat with gold trim, white hair, staff with glowing orange crystal |
-| `wall.png` | wide horizontal castle wall seen from slightly above, battlements, wooden gate in the middle, two blue banners, spans the full width, bottom half of the canvas |
+| `wall.png` | (2026-10-05 "문 디자인이 별로" 피드백으로 다시 그림, 두 안 중 B) cute castle wall of light grey stone, flat crenellated walkway top across the full width; in the centre a round-topped red double wooden door with big golden star studs and iron rings, chunky stone arch, small blue tiled roof canopy over the door, two hanging lanterns, flower pots. 게임에서는 240×51 픽셀을 3배(720×153)로. A안(사암 성벽, 금색 방패 문장, 빛나는 철창살 문, 횃불)도 있음 |
 | `field.png` | 불투명: PORTRAIT top-down pixel art battlefield, dirt road from top edge to bottom edge, grass with flowers, bushes, rocks and trees at the edges, slightly muted |
 
 가져오기(`tools/import_battle_art.py`, "pixel"): 여백을 자르고, 같은 색이 이어지는 길이로 그림 한 칸의 크기를 재서 칸마다 가운데 색을 뽑아 원래 픽셀 해상도로 되돌림(저격수: 한 칸 10px → 68×123). 너무 촘촘한 그림(보스)은 긴 변 110~120칸으로 맞춤. 게임에서는 nearest 필터로 키워 그림(창병 112px, 슬라임 84px, 보스 180px 높이).
