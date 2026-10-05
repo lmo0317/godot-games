@@ -106,6 +106,14 @@ PALETTE = {
         "left": (250, 100, 175),    # #FA64AF
         "right": (200, 30, 110),    # #C81E6E
         "bottom": (150, 15, 80),    # #960F50
+    },
+    # Grey stone: blocks the opponent's attacks drop onto the board in versus mode
+    "stone": {
+        "base": (112, 120, 140),    # #70788C Slate
+        "top": (178, 186, 204),     # #B2BACC
+        "left": (132, 140, 160),    # #848CA0
+        "right": (88, 95, 114),     # #585F72
+        "bottom": (60, 66, 82),     # #3C4252
     }
 }
 

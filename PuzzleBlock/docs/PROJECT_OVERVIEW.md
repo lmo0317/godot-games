@@ -9,7 +9,7 @@
 | 장르 | 8×8 블록 퍼즐 (구글 플레이 *Block Blast!* `com.block.juggle` 참고) |
 | 엔진 | Godot 4.7 (GDScript), 렌더러 `GL Compatibility` |
 | 해상도 | 720×1280 세로 고정, `canvas_items` 스트레치 + `keep` 비율 |
-| 모드 | 클래식(무한), 오늘의 챌린지(날짜 시드), 어드벤처(스테이지 20개) |
+| 모드 | 클래식(무한), 오늘의 챌린지(날짜 시드), 어드벤처(스테이지 20개), 컴퓨터와 대결(쉬움·보통·어려움) |
 | 주 배포 대상 | Web (HTML5/WASM, 스레드 미사용) |
 | 백엔드 | Node.js + Express 라우터 (JSON 파일 DB): 랭킹, 프로필, 이벤트 로그, 점수 재연산 검증 |
 | 배포처 | 사내 112 서버 `http://192.168.219.112/block-game/` (`/block-blast/` 심볼릭 링크) |
@@ -88,6 +88,7 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `settings_modal.gd` | 게임/프로필/업적 탭: 옵션 토글·스킨, 프로필 편집·초기화, 업적 목록 |
 | `drag_scroll.gd` (`DragScroll`) | 버튼이 가득한 스크롤 영역을 끌어서 스크롤. 일정 거리 이상 끌면 눌린 버튼을 취소해 클릭으로 처리되지 않음 |
 | `profile_setup_modal.gd`, `revive_modal.gd` | 첫 실행 프로필 설정, 5초 부활 팝업 |
+| `versus_match.gd` (`VersusMatch`) | 컴퓨터와 공격 대전: 위쪽 표시(양쪽 들어올 공격 게이지, 컴퓨터 보드 미니맵), 공격량·상쇄·방해 돌 계산, 컴퓨터 보드를 실시간으로 두는 AI(난이도별 간격과 수 고르기), 공격이 날아가는 연출. 내 보드는 `MainGame`이 돌리고 `player_cleared()`, `take_player_drop()`을 부름 |
 | `tutorial_hint.gd` (`TutorialHint`) | 첫 판 안내: 손가락이 트레이 블록을 줄을 완성하는 자리로 끌어다 놓는 동작을 반복하고 한 줄 문구를 띄움. 입력을 막지 않고, 언제 보여 줄지는 `MainGame`이 정함 |
 | `score_counter.gd` (`ScoreCounter`) | 게임 화면 위쪽 가운데의 큰 점수. 광택 숫자 그림으로 그리고 새 점수까지 굴러 올라감(놓기는 짧게, 콤보는 길게 크게, 퍼펙트 클리어는 가장 길게 금빛). 최고 점수는 그 위 금색 한 줄(왕관·점수·신기록까지 남은 점수) |
 | `combo_popup.gd` (`ComboPopup`) | 줄을 지울 때 뜨는 칭찬 문구·`Combo N`·점수. `assets/sprites/combo/`의 글자 그림을 조합하고 빛줄기·반짝이를 뒤에 깔아 차례로 튀어나옴 |
@@ -194,10 +195,12 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path . res://tests/test_solva
 | `test_adventure` | 스테이지 데이터 검증, 봇이 20개 스테이지 모두 클리어 | |
 | `test_skins` | 스킨 텍스처, 설정 저장, 보드·트레이 즉시 반영 | |
 | `test_autoplay` | 실제 게임 자동 플레이, 이벤트 전송, 퍼펙트 클리어, 챌린지, 서버 재연산 통과 | ✅ |
+| `test_versus` | 공격 대전: 공격량, 상쇄, 돌이 줄을 완성하지 않음, 블록을 놓으면 기다리던 돌이 내 보드에 떨어짐, 같은 시작 보드, 컴퓨터가 혼자 두고 설정 창에서 멈춤, 컴퓨터가 막히면 WIN·내가 막히면 LOSE | |
 | `test_tutorial` | 첫 판 안내: 처음 하는 사람에게 나옴, 가리킨 자리가 줄을 지움, 블록을 잡으면 사라짐, 지우면 끝나고 저장됨, 본 사람·이미 해 본 사람·챌린지에는 안 나옴 | |
 | `test_magnet` | 자석 스냅: 미리보기가 0.9칸 안의 가장 가까운 빈자리에 붙음(보드 가장자리 밖에서 안으로, 먼 곳은 안 붙음), 들고 있는 블록은 손가락을 따라감, 놓으면 미리보기 자리에 배치·기록 | |
 | `test_achievements` | 업적 해금·저장, 설정 탭 전환, 끌어서 스크롤 | |
 | `test_offline` | 스토어 빌드 동작: 랭킹 UI 숨김, 점수·이벤트 미전송, 뒤로가기. `BLOCK_OFFLINE=1`로 실행 | |
+| `bench_versus` | (측정 도구) 난이도별 컴퓨터가 `BENCH_PACE`초(기본 2초)마다 두는 대역과 공격 대전한 승률, 한 판 길이, 떨어진 돌 수 | |
 | `bench_classic` | (측정 도구) 탐욕 봇 200판으로 클래식 판 길이·점수·콤보·긴장 구간, 처음 24수의 최대 콤보·콤보 끊김·퍼펙트 클리어 측정. `BENCH_NO_PRESSURE=1`이면 난이도 곡선 없이, `BENCH_EMPTY_START=1`이면 빈 보드로, `BENCH_NO_FUN=1`이면 초반 재미 세트 없이 측정 | |
 
 로컬 서버가 필요한 테스트는 `tools/dev_server.js`를 띄우고(`npm install express` 후 `node tools/dev_server.js`) `BLOCK_API_HOST=http://127.0.0.1:3000`을 지정해 112 서버로 요청이 가지 않게 합니다.

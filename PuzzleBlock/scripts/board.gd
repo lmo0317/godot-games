@@ -399,6 +399,31 @@ func _blast_single_cell(x: int, y: int) -> void:
 	effects_container.add_child(blast)
 	blast.start_blast(block_tex)
 
+# Versus: the opponent's attack drops grey stones on random empty cells (never completing a line)
+func drop_stones(count: int, rng: RandomNumberGenerator) -> Array[Vector2i]:
+	var before := get_occupancy_snapshot()
+	var after := VersusMatch.drop_stones(before, count, rng)
+	var added: Array[Vector2i] = []
+	var tex: Texture2D = BlockSkins.texture("stone")
+	for idx in range(64):
+		if after[idx] != 0 and before[idx] == 0:
+			var x: int = idx % GRID_SIZE
+			var y: int = idx / GRID_SIZE
+			added.append(Vector2i(x, y))
+			grid_state[x][y] = "stone"
+			var sp := Sprite2D.new()
+			sp.texture = tex
+			var target: Vector2 = get_cell_position(x, y)
+			sp.position = target - Vector2(0, 120)
+			sp.modulate.a = 0.0
+			pieces_container.add_child(sp)
+			placed_sprites[x][y] = sp
+			var tw := sp.create_tween().set_parallel(true)
+			var delay: float = added.size() * 0.04
+			tw.tween_property(sp, "position", target, 0.22).set_delay(delay).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			tw.tween_property(sp, "modulate:a", 1.0, 0.1).set_delay(delay)
+	return added
+
 func can_fit_shape(shape_data: Dictionary) -> bool:
 	var cells: Array = shape_data["cells"]
 	var bounds: Rect2i = BlockData.get_bounds(cells)
