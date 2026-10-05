@@ -220,7 +220,7 @@ func _build_versus_card() -> void:
 	var t := UIKit.label("컴퓨터와 대결", 26)
 	_place(t, 64, 8, 300, 36)
 	card.add_child(t)
-	var d := UIKit.label("줄을 지워 상대 보드를 공격", UIKit.TYPE_SMALL, UIKit.MUTED)
+	var d := UIKit.label("줄을 지워 상대 캐릭터를 공격", UIKit.TYPE_SMALL, UIKit.MUTED)
 	_place(d, 64, 44, 360, 26)
 	card.add_child(d)
 	versus_status = UIKit.label("", 20, accent, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -242,7 +242,7 @@ func _build_versus_picker() -> void:
 	_place(title, 0, 34, W - 140, 48)
 	card.add_child(title)
 	UIKit.style_modal(card, title)
-	var rule := UIKit.label("각자 자기 보드에서 동시에! 줄을 지우면 상대에게\n방해 블록이 떨어지고, 놓을 곳이 없으면 패배", UIKit.TYPE_SMALL, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	var rule := UIKit.label("각자 자기 보드에서 퍼즐을 풀고, 줄을 지우면 공격!\n상대 체력을 먼저 0으로 만들면 승리", UIKit.TYPE_SMALL, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_place(rule, 20, 90, W - 180, 56)
 	card.add_child(rule)
 	var y := 166.0

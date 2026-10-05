@@ -69,7 +69,6 @@ var tutorial_hint: TutorialHint = null
 # Versus mode (VersusMatch): turns against the computer on one board
 var versus: VersusMatch
 var versus_level: String = "normal"
-var versus_rng := RandomNumberGenerator.new()
 
 # Combo fever state (combo_count >= FEVER_COMBO) and its looping board glow
 var fever_active: bool = false
@@ -154,8 +153,8 @@ func _ready() -> void:
 	versus = VersusMatch.new()
 	$UI/Header.add_child(versus)
 	versus.visible = false
-	versus.cpu_lost.connect(func(): _finish_versus("cpu_stuck"))
-	versus.player_hit.connect(_on_versus_hit)
+	versus.cpu_defeated.connect(func(reason: String): _finish_versus("cpu_" + reason))
+	versus.player_defeated.connect(func(reason: String): _finish_versus("player_" + reason))
 	for plate in $TrayPlates.get_children():
 		plate.add_theme_stylebox_override("panel", UIKit.tray_plate())
 	_load_best_score()
@@ -333,9 +332,6 @@ func _show_exit_confirm() -> void:
 	exit_confirm.visible = true
 
 func _process(delta: float) -> void:
-	if versus.visible:
-		versus.paused = start_screen.visible or settings_modal.visible or leaderboard_modal.visible \
-			or game_over_panel.visible or (exit_confirm != null and exit_confirm.visible)
 	if shake_duration > 0.0:
 		shake_duration -= delta
 		var ox = randf_range(-shake_intensity, shake_intensity)
@@ -381,7 +377,6 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 	$UI/Header/ScoreBox.visible = not vs_mode
 	$UI/Header/BestBox.visible = not vs_mode
 	if vs_mode:
-		versus_rng.randomize()
 		versus.begin(versus_level, LeaderboardManager.nickname, LeaderboardManager.get_avatar_texture(), [])
 	_dismiss_tutorial_hint()
 	tutorial_trays = 0
@@ -446,8 +441,6 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 			if seq != game_seq or is_game_over:
 				return
 	_spawn_new_tray()
-	if game_mode == "versus":
-		versus.start()
 
 func _clear_tray() -> void:
 	for i in range(3):
@@ -646,17 +639,13 @@ func _commit_placement(piece: BlockPiece) -> bool:
 	if game_mode == "adventure" and _update_stage_after_move(lines, clear_info["gems"]):
 		return true
 	if game_mode == "versus":
-		# A clear attacks the computer; a piece without a clear lets waiting stones fall here
+		# A clear hits the computer; then the computer places one piece on its own board
 		if lines > 0:
 			versus.player_cleared(lines, combo_count, perfect, clear_info["center"])
-		else:
-			var n: int = versus.take_player_drop()
-			if n > 0:
-				board.drop_stones(n, versus_rng)
-				SoundManager.play_revive_bomb()
-				SettingsManager.vibrate(60)
-				apply_screen_shake(9.0, 0.22)
-				combo_fx.flash(VersusMatch.ATTACK_COLOR, 0.18)
+		var seq := game_seq
+		get_tree().create_timer(0.35).timeout.connect(func():
+			if seq == game_seq and not is_game_over:
+				versus.cpu_turn())
 
 	if _is_tray_empty():
 		_spawn_new_tray()
@@ -1305,29 +1294,23 @@ func _start_versus(level: String) -> void:
 	start_screen.visible = false
 	start_new_game(false, "versus")
 
-func _on_versus_hit(amount: int) -> void:
-	# The computer's attack reached the waiting queue
-	if is_game_over:
-		return
-	SoundManager.play("invalid", 1.0, 2.0)
-	SettingsManager.vibrate(30)
-	apply_screen_shake(4.0 + minf(amount, 8) * 0.8, 0.15)
-
 func _finish_versus(reason: String) -> void:
+	# reason: cpu_ko / cpu_stuck (win), player_ko / player_stuck (lose)
 	if is_game_over:
 		return
 	is_game_over = true
 	versus.stop()
 	last_game_over_msec = Time.get_ticks_msec()
-	var won: bool = reason == "cpu_stuck"
+	var won: bool = reason.begins_with("cpu_")
 	Achievements.add_stat("games_played", 1)
 	Achievements.add_stat(("versus_win_" if won else "versus_loss_") + versus_level, 1)
 	Analytics.log_event("versus_result", {
 		"game_id": game_id,
 		"level": versus_level,
 		"result": "win" if won else "lose",
-		"sent": versus.sent[VersusMatch.ME],
-		"cpu_sent": versus.sent[VersusMatch.CPU],
+		"reason": reason,
+		"damage": versus.dealt[VersusMatch.ME],
+		"cpu_damage": versus.dealt[VersusMatch.CPU],
 		"moves": move_count,
 		"duration_s": snappedf((last_game_over_msec - game_start_msec) / 1000.0, 0.1)
 	})
@@ -1339,15 +1322,20 @@ func _finish_versus(reason: String) -> void:
 		SoundManager.play_gameover()
 		SettingsManager.vibrate(120)
 
-	await get_tree().create_timer(0.65).timeout
+	await get_tree().create_timer(0.8).timeout
 
 	_restore_game_over_texts()
 	go_title.text = "WIN!" if won else "LOSE"
-	$UI/GameOverModal/Card/ScoreSub.text = "보낸 공격"
-	go_final_score.text = "%d : %d" % [versus.sent[VersusMatch.ME], versus.sent[VersusMatch.CPU]]
+	$UI/GameOverModal/Card/ScoreSub.text = "준 데미지"
+	go_final_score.text = "%d : %d" % [versus.dealt[VersusMatch.ME], versus.dealt[VersusMatch.CPU]]
 	go_best_score.text = "나 : 컴퓨터(%s)" % VersusMatch.level_name(versus_level)
 	go_new_badge.visible = false
-	go_rank_status.text = "컴퓨터가 놓을 곳이 없어요!" if won else "놓을 수 있는 블록이 없어요."
+	go_rank_status.text = {
+		"cpu_ko": "컴퓨터를 쓰러뜨렸어요!",
+		"cpu_stuck": "컴퓨터가 놓을 곳이 없어요!",
+		"player_ko": "체력이 바닥났어요.",
+		"player_stuck": "놓을 수 있는 블록이 없어요.",
+	}.get(reason, "")
 	go_btn_view_rank.visible = false
 	go_btn_retry.text = "다시 대결"
 	game_over_panel.visible = true
