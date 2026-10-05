@@ -36,7 +36,7 @@ cd toss && npm install && npm run build
 | 뒤로가기 | 안드로이드 뒤로가기를 게임이 받음. 창 닫기 → 게임 중이면 홈 → 홈에서는 "게임을 종료할까요?" 확인 후 종료 |
 | 진동 | 토스 햅틱(`generateHapticFeedback`) 사용. 아이폰에서도 동작 |
 | 소리 | 앱이 백그라운드로 가면 즉시 정지, 돌아오면 재개(웹 공통) |
-| `eval` | 사용하지 않음 |
+| `eval` | 게임 코드는 쓰지 않음. 엔진이 넣는 `JavaScriptBridge.eval`용 JS 함수(`_godot_js_eval`, 안에서 `eval()` 호출)도 `tools/patch_web.py`가 아무것도 실행하지 않는 함수로 바꾸고, `eval(`·`new Function`·`Function(`이 남아 있으면 빌드를 실패시킴 |
 
 ## 4. 콘솔에서 할 일 (직접)
 
@@ -59,3 +59,9 @@ cd toss && npm install && npm run build
 - [ ] 게임 오버 후 "토스 랭킹에 기록했어요", 랭킹 버튼으로 리더보드 열림 (앱 정보 승인 후)
 - [ ] 진동(햅틱) 동작, 설정에서 끄면 멈춤
 - [ ] 앱을 완전히 닫았다 다시 열어도 최고 점수·어드벤처 진행이 남아 있음
+
+## 6. 검토 반려 기록
+
+| 날짜 | 반려 사유 | 원인 | 조치 |
+|---|---|---|---|
+| 2026-10-05 | "eval과 같이 외부에서 코드를 받아와 실행시킬 수 있는 코드는 보안상 허용되지 않아요" | Godot 웹 엔진 `index.js`의 `_godot_js_eval`(JavaScriptBridge.eval 구현)에 `eval()` 2곳. 게임은 쓰지 않지만 번들에 남아 있었음 | `patch_web.py`에서 함수 본문을 실행 없는 함수로 교체, 남은 `eval`/`Function` 검사 추가. 토스 번들(`index.js`, `ait-bridge.js`, worklet, `index.html`)에서 `eval`, `new Function`, 동적 `script`/`import` 없음 확인 |

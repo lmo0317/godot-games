@@ -31,6 +31,30 @@ if s3 in s and 'window.__godotAudioCtx' not in s:
     s = s.replace(s3, 'GodotAudio.ctx=ctx;window.__godotAudioCtx=ctx;', 1)
     print("Exposed the audio context in index.js")
 
+# No code from strings: the engine ships JavaScriptBridge.eval() as a JS function that calls
+# eval(). The game never uses it, and Apps in Toss rejects any eval in the bundle, so the function
+# is replaced by one that runs nothing (the wasm import name "godot_js_eval" has to stay).
+EVAL_FN = 'function _godot_js_eval('
+if EVAL_FN in s:
+    start = s.index(EVAL_FN)
+    depth = 0
+    end = s.index('{', start)
+    for i in range(end, len(s)):
+        if s[i] == '{':
+            depth += 1
+        elif s[i] == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    stub = 'function _godot_js_noexec(p_js,p_use_global_ctx,p_union_ptr,p_byte_arr,p_byte_arr_write,p_callback){return 0}'
+    s = s[:start] + stub + s[end:]
+    s = s.replace('_godot_js_eval', '_godot_js_noexec')
+    print("Disabled JavaScriptBridge.eval in index.js")
+if re.search(r'(?<![\w$])eval\s*\(|new Function|(?<![\w$.])Function\s*\(', s):
+    print("ERROR: index.js still runs code from strings (eval / Function)")
+    sys.exit(1)
+
 with open(js_path, "w", encoding="utf-8") as f:
     f.write(s)
 
