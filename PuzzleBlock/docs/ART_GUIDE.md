@@ -43,7 +43,8 @@
 | 스킨 | Pillow 코드 | `tools/generate_skins.py` |
 | 로고·스토어 이미지 | Pillow 코드 + 실제 캡처 | `tools/generate_store_assets.py`, `store/` |
 | 테마 배경 | 기존 생성 이미지 유지 | `assets/art/` |
-| 대결·디펜스 캐릭터·이펙트·전장 | Codex 그림 생성(`codex exec`, 투명 PNG) → `tools/import_battle_art.py` | `assets/art/battle/`, `assets/art/defense/` |
+| 대결 캐릭터·이펙트 | Codex 그림 생성(`codex exec`, 투명 PNG) → `tools/import_battle_art.py` | `assets/art/battle/` |
+| 블록 디펜스 캐릭터·성벽·전장·탄 | Pillow 코드(도트) | `tools/generate_defense_sprites.py` → `assets/art/defense/` |
 | 스토어 스크린샷 | 실제 게임 캡처 | `store/` |
 | 콤보 연출 글자·빛줄기 | Pillow 코드 | `tools/generate_combo_text.py` |
 
@@ -69,31 +70,25 @@ clean 2D chibi game sprite, bold dark navy outline, flat cel shading with light 
 | `fx_fireball.png` | fireball effect only: yellow-white core, orange and red flames trailing to the RIGHT (flies left), embers |
 
 
-### 디펜스 픽셀 아트 (Codex, 2026-10-05)
+### 블록 디펜스 도트 (코드로 그림, 2026-10-05)
 
-아군(궁수·마법사)은 뒷모습이 별로라는 피드백으로 앞모습 꼬마 스타일로 다시 그림. 아군 스타일 문구: `adorable cute chibi PIXEL ART unit for a cute mobile tower-defense game, classic 16-bit pixel art with chunky visible square pixels (like a 40x40 sprite scaled up), very big round head and tiny body (2-head-tall proportions), big shiny eyes, happy friendly expression, bright saturated colors, 1-pixel dark outline, simple 2-3 tone shading, no anti-aliasing, no gradients, no blur. FRONT VIEW facing the viewer, full body, standing pose.` (+ 투명 배경 문구)
+**스타일 한 줄**: 레트로 저해상도 도트(참고: Google Play "도트 기사단: 픽셀 디펜스 전쟁" 풍). 작은 캐릭터, 단순한 실루엣, 적은 디테일, 따뜻하고 살짝 차분한 색.
 
-세로 디펜스(위에서 내려오는 몬스터, 아래 성벽)용. 공통 스타일 문구(배경 제외):
-
-```text
-cute chibi PIXEL ART game sprite in the style of classic 16-bit RPGs, chunky visible square pixels (looks like a 48x48 sprite scaled up), limited bright palette, 1-pixel dark outline, simple 2-3 tone shading, no anti-aliasing, no gradients, no blur. TRANSPARENT background (PNG with alpha), no ground, no shadow, no text, no letters, no watermark, no logo. Square canvas, subject centered and filling about 70% of it.
-```
-
-| 파일 | 주제 |
+| 규칙 | 내용 |
 |---|---|
-| `archer.png` | (아래 귀여운 꼬마 스타일) cute little archer girl, green hood, small wooden bow, quiver on the back, holding the bow ready |
-| `mage.png` | (아래 귀여운 꼬마 스타일) cute little mage boy, big blue pointy wizard hat and blue robe, short wand with a glowing orange star tip |
-| `slime.png` | green slime monster seen FROM THE FRONT (moving down toward the viewer), angry eyes, tiny fangs |
-| `goblin.png` | goblin warrior seen FROM THE FRONT, green skin, big pointy ears, wooden club raised, ragged leather armor |
-| `boss.png` | evil wizard boss seen FROM THE FRONT, purple robe and big pointed hat with gold trim, white hair, staff with glowing orange crystal |
-| `wall.png` | (2026-10-05 "문 디자인이 별로" 피드백으로 다시 그림, 두 안 중 B) cute castle wall of light grey stone, flat crenellated walkway top across the full width; in the centre a round-topped red double wooden door with big golden star studs and iron rings, chunky stone arch, small blue tiled roof canopy over the door, two hanging lanterns, flower pots. 게임에서는 240×51 픽셀을 3배(720×153)로. A안(사암 성벽, 금색 방패 문장, 빛나는 철창살 문, 횃불)도 있음 |
-| `field.png` | 불투명: PORTRAIT top-down pixel art battlefield, dirt road from top edge to bottom edge, grass with flowers, bushes, rocks and trees at the edges, slightly muted |
-
-가져오기(`tools/import_battle_art.py`, "pixel"): 여백을 자르고, 같은 색이 이어지는 길이로 그림 한 칸의 크기를 재서 칸마다 가운데 색을 뽑아 원래 픽셀 해상도로 되돌림(저격수: 한 칸 10px → 68×123). 너무 촘촘한 그림(보스)은 긴 변 110~120칸으로 맞춤. 게임에서는 nearest 필터로 키워 그림(창병 112px, 슬라임 84px, 보스 180px 높이).
+| 방법 | 전부 Pillow 코드로 한 칸씩 그림: `tools/generate_defense_sprites.py` (생성 이미지 쓰지 않음) |
+| 배율 | 모든 그림을 **같은 4배**로 그림(`DefenseMode.PIXEL_SCALE`, nearest). 픽셀 크기가 섞이면 안 됨 |
+| 크기(원본 칸) | 궁수 20×24, 마법사 20×24, 고블린 20×22, 슬라임 16×13, 보스 32×36, 화살 3×10, 화염구 9×9, 타격 별 7×7, 성벽 180×40, 전장 180×297 |
+| 방향 | 아군 뒷모습(위쪽 몬스터를 봄), 몬스터 앞모습 |
+| 외곽선·빛 | 1칸 외곽선 `#2B1D2E`, 왼쪽 위에서 빛(왼쪽 한 칸 밝게, 오른쪽 한두 칸 어둡게) |
+| 팔레트 | 생성기의 `P` 하나만 씀. 주요: 외곽 `#2B1D2E`, 피부 `#F1C39A`, 초록 `#8CD06A/#5CA84A/#347034`, 파랑 `#7FA8F0/#4A7BD8/#34539E`, 보라 `#9C6CD6/#7A4AB8/#52308A`, 가죽 `#8B5A3C`, 나무 `#D08A45`, 금 `#F2B23A`, 주황 `#FF8A3A`, 돌 `#C4C0BA/#A4A09A/#7C7874`, 풀 `#7EBE5C/#68AC4E/#569642`, 길 `#E2C48C/#D2B076` |
 
 Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을 다시 실행합니다(2026-10-05 슬라임·고블린).
 
 ## 사용자가 거절한 것
+
+- 2026-10-05: Codex로 그린 디펜스 픽셀 아트 — 그림마다 픽셀 크기가 달랐고(성벽 3배, 캐릭터 1~1.6배), 디테일이 많은 큰 머리 꼬마 그림이라 "구리다". 정면 아군도 거절(아군은 뒷모습). 디펜스는 코드 도트로 바꿈.
+- 2026-10-05: 성문과 겹치는 유닛 배치.
 
 - 2026-09: 홍보 이미지처럼 화려하고 시선을 빼앗는 게임 배경. 배경은 플레이 영역보다 조용해야 함.
 
@@ -113,7 +108,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 빛줄기 | `assets/sprites/combo/rays.png` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 뒤 | 완료 |
 | 대결 기사·마법사 | `assets/art/battle/knight.png`, `wizard.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 대결 무대 | 완료 |
 | 대결 스킬 이펙트 | `assets/art/battle/fx_slash.png`, `fx_fireball.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 기사 검격, 마법사 화염구·메테오 | 완료 |
-| 디펜스 아군(픽셀) | `assets/art/defense/archer.png`, `mage.png` | Codex 생성(gpt-5.5) | 위 픽셀 아트 프롬프트 | 웨이브 화면, 홈 카드·HUD 아이콘 | 완료 |
-| 디펜스 몬스터(픽셀) | `assets/art/defense/slime.png`, `goblin.png`, `boss.png` | Codex 생성 | 위 픽셀 아트 프롬프트 | 웨이브 화면 | 완료 |
-| 디펜스 성벽·전장(픽셀) | `assets/art/defense/wall.png`, `field.png` | Codex 생성 | 위 픽셀 아트 프롬프트 | 웨이브 화면 | 완료 |
+| 디펜스 아군(도트) | `assets/art/defense/archer.png`, `mage.png` | 코드 | `generate_defense_sprites.py` `archer()`, `mage()` | 웨이브 화면, 홈 카드·HUD 아이콘 | 완료 |
+| 디펜스 몬스터(도트) | `assets/art/defense/slime.png`, `goblin.png`, `boss.png` | 코드 | `slime()`, `goblin()`, `boss()` | 웨이브 화면 | 완료 |
+| 디펜스 성벽·전장·탄(도트) | `assets/art/defense/wall.png`, `field.png`, `arrow.png`, `fireball.png`, `spark.png` | 코드 | `wall()`, `field()`, `arrow()`, `fireball()`, `spark()` | 웨이브 화면 | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |

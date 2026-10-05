@@ -10,7 +10,7 @@ extends Control
 #     and shoots: archers fast single arrows, mages slower fireballs that burst on everything
 #     nearby. Clear the wave to go back to the puzzle; defenders stay. Every BOSS_EVERY waves a
 #     wizard boss comes. The run ends when the wall falls; the score is the waves held off.
-# Characters are pixel art scaled up with nearest filtering so the pixels stay crisp.
+# All art is code-drawn retro pixel art (tools/generate_defense_sprites.py) drawn at one x4 scale.
 # MainGame runs the board and calls add_points() / board_stuck(); this node owns the rest.
 
 signal wave_started
@@ -25,7 +25,7 @@ const BOSS_EVERY: int = 5
 const FIELD_TOP: float = 92.0
 const FIELD_SIZE := Vector2(720, 1188)
 # Spots on the wall walkway, either side of the gate (x), filled from the gate outward
-const SLOTS: Array[float] = [245.0, 475.0, 180.0, 540.0, 115.0, 605.0, 50.0, 670.0]   # clear of the gate roof (x 294-423)
+const SLOTS: Array[float] = [245.0, 475.0, 160.0, 560.0, 100.0, 620.0, 40.0, 680.0]   # clear of the gate (x 288-432)
 const SPAWN_X := Vector2(70.0, 650.0)   # monsters enter anywhere across the top
 
 const TEX := {
@@ -36,10 +36,13 @@ const TEX := {
 	"boss": preload("res://assets/art/defense/boss.png"),
 	"wall": preload("res://assets/art/defense/wall.png"),
 	"field": preload("res://assets/art/defense/field.png"),
+	"arrow": preload("res://assets/art/defense/arrow.png"),
+	"fireball": preload("res://assets/art/defense/fireball.png"),
+	"spark": preload("res://assets/art/defense/spark.png"),
 }
-const SPARK: Texture2D = preload("res://assets/sprites/sparkle.png")
-# On-screen height of each pixel-art character (nearest filtering keeps the pixels crisp)
-const HEIGHTS := {"archer": 92.0, "mage": 92.0, "slime": 80.0, "goblin": 104.0, "boss": 170.0}
+# Every pixel-art piece (sprites, wall, backdrop) is drawn at this same whole-number scale, so all
+# art pixels are the same size on screen
+const PIXEL_SCALE: float = 4.0
 # Monster stats at wave 1; HP and damage grow by MONSTER_GROWTH per wave
 const MONSTERS := {
 	"slime": {"hp": 40.0, "dps": 8.0, "speed": 70.0},
@@ -251,7 +254,7 @@ func _simulate(dt: float) -> void:
 		_wave_cleared()
 
 func _wall_scale() -> float:
-	return FIELD_SIZE.x / TEX["wall"].get_width()
+	return PIXEL_SCALE
 
 func _wall_top() -> float:
 	return FIELD_SIZE.y - TEX["wall"].get_height() * _wall_scale()
@@ -284,25 +287,12 @@ func _damage_monster(m: Dictionary, dmg: float) -> void:
 func _fire(u: Dictionary, target: Dictionary, dmg: float, splash: float) -> void:
 	var from: Vector2 = u["node"].position + Vector2(0, -_height(u["node"]) * 0.7)
 	var to: Vector2 = target["node"].position + Vector2(0, -_height(target["node"]) * 0.5)
-	var shot: Node2D
-	if splash > 0.0:
-		var orb := Sprite2D.new()
-		orb.texture = SPARK
-		orb.modulate = Color(1.0, 0.55, 0.15)
-		orb.scale = Vector2.ONE * 1.3
-		shot = orb
-	else:
-		# Bright arrow with a fading trail so it reads at a glance
-		var arrow := Line2D.new()
-		arrow.width = 9.0
-		arrow.points = PackedVector2Array([Vector2.ZERO, Vector2(-48, 0)])
-		arrow.begin_cap_mode = Line2D.LINE_CAP_ROUND
-		var g := Gradient.new()
-		g.set_color(0, Color(1.0, 1.0, 0.75))
-		g.set_color(1, Color(1.0, 0.8, 0.2, 0.0))
-		arrow.gradient = g
-		arrow.rotation = (to - from).angle()
-		shot = arrow
+	# Pixel shots at the same x4 scale; the arrow is drawn pointing up
+	var shot := Sprite2D.new()
+	shot.texture = TEX["fireball"] if splash > 0.0 else TEX["arrow"]
+	shot.scale = Vector2.ONE * PIXEL_SCALE
+	if splash <= 0.0:
+		shot.rotation = (to - from).angle() + PI * 0.5
 	shot.position = from
 	shot.z_index = 5
 	_units_layer.add_child(shot)
@@ -319,16 +309,17 @@ func _fire(u: Dictionary, target: Dictionary, dmg: float, splash: float) -> void
 			_impact(target, dmg, Color(1.0, 0.95, 0.6)))
 
 func _burst(at: Vector2, radius: float) -> void:
+	# The fireball pops into a big pixel blast covering the splash area
 	var ring := Sprite2D.new()
-	ring.texture = SPARK
-	ring.modulate = Color(1.0, 0.5, 0.1, 0.9)
+	ring.texture = TEX["fireball"]
 	ring.position = at
 	ring.z_index = 6
-	ring.scale = Vector2.ONE * 0.5
+	ring.scale = Vector2.ONE * PIXEL_SCALE
 	_units_layer.add_child(ring)
+	var full: float = radius * 2.0 / TEX["fireball"].get_width()
 	var tw := ring.create_tween().set_parallel(true)
-	tw.tween_property(ring, "scale", Vector2.ONE * radius / 22.0, 0.22)
-	tw.tween_property(ring, "modulate:a", 0.0, 0.25)
+	tw.tween_property(ring, "scale", Vector2.ONE * full, 0.18)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.26).set_delay(0.06)
 	tw.chain().tween_callback(ring.queue_free)
 
 # A hit on a monster: damage, a flash, a spark and the number
@@ -338,15 +329,15 @@ func _impact(m: Dictionary, dmg: float, col: Color) -> void:
 	_damage_monster(m, dmg)
 	_flash(node, Color(2.2, 2.0, 2.0))
 	var spark := Sprite2D.new()
-	spark.texture = SPARK
+	spark.texture = TEX["spark"]
 	spark.modulate = col
 	spark.position = at
 	spark.z_index = 7
-	spark.scale = Vector2.ONE * 0.4
+	spark.scale = Vector2.ONE * PIXEL_SCALE
 	_units_layer.add_child(spark)
 	var tw := spark.create_tween().set_parallel(true)
-	tw.tween_property(spark, "scale", Vector2.ONE * 1.4, 0.18)
-	tw.tween_property(spark, "modulate:a", 0.0, 0.2)
+	tw.tween_property(spark, "scale", Vector2.ONE * PIXEL_SCALE * 1.5, 0.12)
+	tw.tween_property(spark, "modulate:a", 0.0, 0.18).set_delay(0.06)
 	tw.chain().tween_callback(spark.queue_free)
 	_number(at + Vector2(0, -16), dmg, Color(1.0, 0.95, 0.6))
 
@@ -384,7 +375,7 @@ func _sprite(kind: String) -> Sprite2D:
 	var tex: Texture2D = TEX[kind]
 	var s := Sprite2D.new()
 	s.texture = tex
-	s.scale = Vector2.ONE * HEIGHTS[kind] / tex.get_height()
+	s.scale = Vector2.ONE * PIXEL_SCALE
 	s.offset = Vector2(0, -tex.get_height() * 0.5)
 	_units_layer.add_child(s)
 	return s
@@ -405,7 +396,7 @@ func _spawn_monster(kind: String, k: float) -> void:
 
 # Defenders stand on the wall walkway, filling the spots next to the gate first
 func _layout_units() -> void:
-	var y: float = _wall_top() + 30.0
+	var y: float = _wall_top() + 38.0   # on the walkway just under the battlements
 	for i in range(units.size()):
 		var target := Vector2(SLOTS[i], y)
 		units[i]["node"].create_tween().tween_property(units[i]["node"], "position", target, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -515,8 +506,8 @@ func _build_field() -> void:
 	var bg := TextureRect.new()
 	bg.texture = TEX["field"]
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.size = FIELD_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_SCALE
+	bg.size = Vector2(TEX["field"].get_width(), TEX["field"].get_height()) * PIXEL_SCALE
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	field.add_child(bg)
 	var wall := TextureRect.new()
@@ -525,7 +516,7 @@ func _build_field() -> void:
 	wall.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	wall.stretch_mode = TextureRect.STRETCH_SCALE
 	wall.size = Vector2(TEX["wall"].get_width(), TEX["wall"].get_height()) * _wall_scale()
-	wall.position = Vector2(0, FIELD_SIZE.y - wall.size.y)
+	wall.position = Vector2((FIELD_SIZE.x - wall.size.x) * 0.5, FIELD_SIZE.y - wall.size.y)
 	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	field.add_child(wall)
 	_units_layer = Node2D.new()

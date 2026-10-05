@@ -6,8 +6,10 @@ The raw images are 1254px PNGs made with Codex's image tool (prompts in docs/ART
 - "pixel": pixel-art sprites are trimmed and brought back to the art's own pixel grid (the size of
   one art pixel is measured from runs of equal colour; each art pixel's middle is sampled), with
   hard alpha edges. The game scales them up with nearest filtering so pixels stay crisp.
-- "pixel_bg": an opaque pixel-art backdrop cropped to the battlefield's aspect (size = aspect),
-  then brought back to its pixel grid the same way.
+- "grid": like "pixel" but for sprites drawn on a known n-cell grid (n = size); if the measured
+  grid is far off, the sprite is fitted to n cells on its longer side.
+- "pixel_bg": an opaque pixel-art backdrop cropped to the target aspect and sampled down to exactly
+  that many pixels (size = (width, height)).
 
 Usage: python tools/import_battle_art.py <folder with the raw PNGs> [names...]
 """
@@ -24,13 +26,7 @@ ART = {
     "wizard": ("battle", 256, "png"),
     "fx_slash": ("battle", 256, "png"),
     "fx_fireball": ("battle", 256, "png"),
-    "archer": ("defense", 120, "pixel"),
-    "mage": ("defense", 120, "pixel"),
-    "slime": ("defense", 120, "pixel"),
-    "goblin": ("defense", 120, "pixel"),
-    "boss": ("defense", 110, "pixel"),
-    "wall": ("defense", 240, "pixel"),
-    "field": ("defense", (360, 550), "pixel_bg"),
+    # Block Defense art is code-drawn now (tools/generate_defense_sprites.py)
 }
 
 
@@ -80,6 +76,19 @@ def pixelize(img, max_pixels=120):
     return small
 
 
+def grid(img, n):
+    """A sprite drawn on an n-cell grid: back to that grid (the taller side becomes ~n cells)."""
+    img = trim(img.convert("RGBA"))
+    b = block_size(img)
+    cells = max(img.size) / b
+    if not (n * 0.7 <= cells <= n * 1.35):
+        b = max(img.size) / n   # the art's own grid is off: fit it to n cells
+    w, h = max(1, round(img.width / b)), max(1, round(img.height / b))
+    small = img.resize((w, h), Image.Resampling.NEAREST)
+    small.putalpha(small.getchannel("A").point(lambda a: 255 if a >= 128 else 0))
+    return small
+
+
 def pixel_bg(img, size):
     img = img.convert("RGB")
     tw, th = size
@@ -91,8 +100,8 @@ def pixel_bg(img, size):
     else:
         ch = round(img.width / aspect)
         img = img.crop((0, (img.height - ch) // 2, img.width, (img.height - ch) // 2 + ch))
-    b = block_size(img.convert("RGBA"))
-    return img.resize((max(1, round(img.width / b)), max(1, round(img.height / b))), Image.Resampling.NEAREST)
+    # Exactly the target size so it can be drawn at the same whole-number scale as the sprites
+    return img.resize((tw, th), Image.Resampling.NEAREST)
 
 
 def main():
@@ -108,6 +117,8 @@ def main():
         img = Image.open(raw)
         if mode == "pixel":
             img = pixelize(img, size)
+        elif mode == "grid":
+            img = grid(img, size)
         elif mode == "pixel_bg":
             img = pixel_bg(img, size)
         else:
