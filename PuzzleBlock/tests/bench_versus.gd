@@ -1,112 +1,108 @@
 extends Node
-# Versus balance benchmark: the computer at each level plays MATCHES matches against a stand-in
-# player using the "normal" move choice, on the real tray generator, with main.gd's scoring
-# (own combo per side, fever multiplier, perfect clear). Reports the computer's win rate and how
-# matches end. No rendering.
+# Attack battle benchmark: the computer at each level plays MATCHES matches against a stand-in
+# player that places one piece every BENCH_PACE seconds (default 2.0, an unhurried person) with
+# the "normal" move choice. Both boards run in simulated time with the real tray generator,
+# attacks, cancelling and stones. Reports the computer's win rate and match length. No rendering.
 # Run: Godot_console.exe --headless --path . res://tests/bench_versus.tscn
+#   BENCH_GAMES=<n>, BENCH_PACE=<seconds per piece>, BENCH_LEVELS=easy,hard
 
 const BoardScene: PackedScene = preload("res://scenes/board.tscn")
+const MAX_TIME: float = 600.0
+
 var MATCHES: int = int(OS.get_environment("BENCH_GAMES")) if not OS.get_environment("BENCH_GAMES").is_empty() else 200
-
-var board: Board
-
-# Stand-in for BlockPiece in VersusMatch.choose_move (it reads shape_data only)
-class FakePiece:
-	var shape_data: Dictionary
-	func _init(s: Dictionary) -> void:
-		shape_data = s
+var pace: float = float(OS.get_environment("BENCH_PACE")) if not OS.get_environment("BENCH_PACE").is_empty() else 2.0
+var gen_board: Board
 
 func _ready() -> void:
-	board = BoardScene.instantiate()
-	add_child(board)
+	gen_board = BoardScene.instantiate()
+	add_child(gen_board)
 	_run.call_deferred()
 
 func _run() -> void:
-	var player := VersusMatch.new()
-	# BENCH_PLAYER=hard pits each level against a stand-in that plays like the hard computer
-	player.level = OS.get_environment("BENCH_PLAYER") if not OS.get_environment("BENCH_PLAYER").is_empty() else "normal"
-	var cpu := VersusMatch.new()
-	add_child(player)
-	add_child(cpu)
-	# BENCH_LEVELS=hard (comma separated) measures only those levels
+	var player_ai := VersusMatch.new()
+	player_ai.level = "normal"
+	var cpu_ai := VersusMatch.new()
+	add_child(player_ai)
+	add_child(cpu_ai)
 	var levels: Array = OS.get_environment("BENCH_LEVELS").split(",") if not OS.get_environment("BENCH_LEVELS").is_empty() else ["easy", "normal", "hard"]
 	for level in levels:
-		cpu.level = level
-		var res := {"cpu": 0, "player": 0, "draw": 0, "stuck": 0, "margin": 0}
+		cpu_ai.level = level
+		var interval: float = VersusMatch.level_info(level)["interval"]
+		var wins := 0
+		var timeouts := 0
+		var times: Array[float] = []
+		var stones := 0
 		for m in range(MATCHES):
 			BlockData.get_default_rng().seed = 7000 + m
-			player.rng.seed = 100 + m
-			cpu.rng.seed = 900 + m
-			var r: Dictionary = _match([player, cpu], m % 2)
-			res[r["winner"]] += 1
-			if r["stuck"]:
-				res["stuck"] += 1
-			res["margin"] += absi(r["scores"][0] - r["scores"][1])
-		print("BENCH_VS (player %s) %s: computer wins %d%%, player %d%%, draw %d%% | ended by stuck %d%% | avg margin %d" % [
-			player.level, level, 100 * res["cpu"] / MATCHES, 100 * res["player"] / MATCHES, 100 * res["draw"] / MATCHES,
-			100 * res["stuck"] / MATCHES, res["margin"] / MATCHES])
+			player_ai.rng.seed = 100 + m
+			cpu_ai.rng.seed = 900 + m
+			var r: Dictionary = _match(player_ai, cpu_ai, interval)
+			if r["winner"] == 1:
+				wins += 1
+			elif r["winner"] < 0:
+				timeouts += 1
+			times.append(r["time"])
+			stones += r["stones"]
+		times.sort()
+		print("BENCH_VS %s (player every %.1fs): computer wins %d%%, unfinished %d%% | match length median %ds, p75 %ds | stones per match %.1f" % [
+			level, pace, 100 * wins / MATCHES, 100 * timeouts / MATCHES, int(times[times.size() / 2]), int(times[times.size() * 3 / 4]), float(stones) / MATCHES])
 	get_tree().quit()
 
-# sides[0] = player, sides[1] = computer; first = who moves first
-func _match(sides: Array, first: int) -> Dictionary:
-	var grid := PackedByteArray()
-	grid.resize(64)
+func _match(player_ai: VersusMatch, cpu_ai: VersusMatch, cpu_interval: float) -> Dictionary:
+	var start := PackedByteArray()
+	start.resize(64)
 	for p in BlockData.generate_start_pattern():
 		for o in BlockData.get_offsets(p["shape"]):
-			grid[(p["x"] + o.x) + (p["y"] + o.y) * 8] = 1
-	var scores := [0, 0]
-	var combos := [0, 0]
-	var graces := [0, 0]
-	var left := [VersusMatch.TURNS, VersusMatch.TURNS]
-	var turn: int = first
-	var tray: Array = []
-	var first_deal := true
-	while left[0] > 0 or left[1] > 0:
-		if tray.all(func(p): return p == null):
-			_sync(grid)
-			tray = BlockData.get_adaptive_trio(board, 0, 0, 3, null, MainGame.VERSUS_PRESSURE, first_deal).map(func(s): return FakePiece.new(s))
-			first_deal = false
-		var st := {"scores": scores.duplicate(), "combos": combos.duplicate(), "graces": graces.duplicate(), "left": left.duplicate(), "turn": turn}
-		var move: Dictionary = sides[turn].choose_move(grid, tray, st)
+			start[(p["x"] + o.x) + (p["y"] + o.y) * 8] = 1
+	var sides: Array = []
+	for i in range(2):
+		sides.append({"grid": start.duplicate(), "tray": [], "combo": 0, "grace": 0, "incoming": 0, "next": 0.0, "first": true})
+	sides[0]["ai"] = player_ai
+	sides[0]["interval"] = pace
+	sides[1]["ai"] = cpu_ai
+	sides[1]["interval"] = cpu_interval
+	sides[0]["next"] = pace
+	sides[1]["next"] = cpu_interval
+	var stones := 0
+	var t := 0.0
+	while t < MAX_TIME:
+		var who: int = 0 if sides[0]["next"] <= sides[1]["next"] else 1
+		var s: Dictionary = sides[who]
+		var o: Dictionary = sides[1 - who]
+		t = s["next"]
+		s["next"] += s["interval"]
+		if s["tray"].all(func(p): return p == null):
+			_sync(s["grid"])
+			s["tray"] = BlockData.get_adaptive_trio(gen_board, s["combo"], 0, maxi(s["grace"], 1), null, VersusMatch.PRESSURE, s["first"]).map(func(sh): return VersusMatch.ShapeRef.new(sh))
+			s["first"] = false
+		var move: Dictionary = s["ai"].choose_move(s["grid"], s["tray"], s["combo"])
 		if move.is_empty():
-			return {"winner": "player" if turn == 1 else "cpu", "stuck": true, "scores": scores}
-		var shape: Dictionary = tray[move["slot"]].shape_data
-		tray[move["slot"]] = null
-		var offsets: Array[Vector2i] = BlockData.get_offsets(shape)
-		var before := _count(grid)
-		grid = BlockData.place_and_clear(grid, offsets, move["x"], move["y"])
-		scores[turn] += offsets.size()
-		var lines: int = VersusMatch._lines_for(before + offsets.size() - _count(grid))
-		if lines > 0:
-			combos[turn] += 1
-			graces[turn] = MainGame.MAX_COMBO_GRACE
-			var c: int = combos[turn]
-			var gain: int = int(MainGame.LINE_SCORE_BASE * lines * lines * (1.0 + MainGame.COMBO_ALPHA * c)) \
-				+ int(MainGame.COMBO_BONUS_LINEAR * c + MainGame.COMBO_BONUS_QUADRATIC * c * c)
-			if c >= MainGame.FEVER_COMBO:
-				gain = int(gain * MainGame.FEVER_MULTIPLIER)
-			scores[turn] += gain
-			if _count(grid) == 0:
-				scores[turn] += roundi(MainGame.PERFECT_CLEAR_BASE * (1.0 + MainGame.COMBO_ALPHA * c))
-		elif combos[turn] > 0:
-			graces[turn] -= 1
-			if graces[turn] <= 0:
-				combos[turn] = 0
-		left[turn] -= 1
-		turn = 1 - turn
-	var w := "draw"
-	if scores[0] != scores[1]:
-		w = "player" if scores[0] > scores[1] else "cpu"
-	return {"winner": w, "stuck": false, "scores": scores}
+			return {"winner": 1 - who, "time": t, "stones": stones}
+		s["tray"][move["slot"]] = null
+		s["grid"] = move["grid"]
+		if move["lines"] > 0:
+			s["combo"] += 1
+			s["grace"] = 3
+			var atk: int = VersusMatch.attack_for(move["lines"], s["combo"], VersusMatch._free(s["grid"]) == 64)
+			var cancel: int = mini(atk, s["incoming"])
+			s["incoming"] -= cancel
+			o["incoming"] += atk - cancel
+		else:
+			if s["combo"] > 0:
+				s["grace"] -= 1
+				if s["grace"] <= 0:
+					s["combo"] = 0
+			var n: int = mini(s["incoming"], VersusMatch.MAX_DROP)
+			s["incoming"] -= n
+			stones += n
+			s["grid"] = VersusMatch.drop_stones(s["grid"], n, s["ai"].rng)
+		# Pieces left that fit nowhere: this side loses
+		var left: Array = s["tray"].filter(func(p): return p != null)
+		if not left.is_empty() and s["ai"]._moves(s["grid"], left).is_empty():
+			return {"winner": 1 - who, "time": t, "stones": stones}
+	return {"winner": -1, "time": t, "stones": stones}
 
 func _sync(grid: PackedByteArray) -> void:
 	for x in range(8):
 		for y in range(8):
-			board.grid_state[x][y] = "blue" if grid[x + y * 8] != 0 else null
-
-func _count(grid: PackedByteArray) -> int:
-	var n := 0
-	for v in grid:
-		if v != 0:
-			n += 1
-	return n
+			gen_board.grid_state[x][y] = "blue" if grid[x + y * 8] != 0 else null
