@@ -207,7 +207,8 @@ func _build_defense_card() -> void:
 	card.pressed.connect(func(): defense_pressed.emit())
 	add_child(card)
 	var icon := TextureRect.new()
-	icon.texture = preload("res://assets/art/defense/castle.png")
+	icon.texture = preload("res://assets/art/defense/soldier.png")
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -1,14 +1,16 @@
 class_name DefenseMode
 extends Control
-# Block Defense: puzzle and battle take turns on the whole screen.
+# Block Defense: puzzle and battle take turns on the whole (portrait) screen.
 #  1. Puzzle phase (PUZZLE_TIME seconds): the player breaks blocks on the normal board. The HUD in
 #     the header shows the wave, the castle's HP, the time left and what the points so far buy.
 #  2. The points of the phase turn into allies automatically: a spearman per SOLDIER_COST points
 #     and a sniper per SNIPER_COST (up to the caps; extra points repair the castle).
-#  3. Wave phase: the battlefield covers the screen. Monsters come from the right; spearmen hold
-#     the line in front of the castle, snipers shoot from the wall. Clear the wave to go back to
-#     the puzzle; allies that survive stay. Every BOSS_EVERY waves the wizard boss comes too.
+#  3. Wave phase: the battlefield covers the screen. Monsters walk down the road from the top;
+#     spearmen stand in a row of lanes above the wall at the bottom and block their lane, snipers
+#     shoot from the wall. A lane with no spearman lets monsters reach the wall. Clear the wave to
+#     go back to the puzzle; allies that survive stay. Every BOSS_EVERY waves a wizard boss comes.
 #  The run ends when the castle falls; the score is the number of waves held off.
+# Characters are pixel art scaled up with nearest filtering so the pixels stay crisp.
 # MainGame runs the board and calls add_points() / board_stuck(); this node owns the rest.
 
 signal wave_started
@@ -24,29 +26,32 @@ const CASTLE_HP: int = 300
 const BOSS_EVERY: int = 5
 const FIELD_TOP: float = 92.0
 const FIELD_SIZE := Vector2(720, 1100)
-const GROUND_Y: float = 760.0     # where feet stand on the battlefield (field coordinates)
-const CASTLE_X: float = 170.0     # monsters attack the castle when they reach this x
-const FRONT_X: float = 280.0      # spearmen line up from here to the right
+# On-screen height of each pixel-art character (nearest filtering keeps the pixels crisp)
+const HEIGHTS := {"soldier": 112.0, "sniper": 104.0, "slime": 84.0, "goblin": 112.0, "boss": 180.0}
+# Columns: monsters walk down one of these x lanes; a spearman blocks the lane he stands in
+const LANES: Array[float] = [80.0, 160.0, 240.0, 320.0, 400.0, 480.0, 560.0, 640.0]
+const LANE_ORDER: Array[int] = [3, 4, 2, 5, 1, 6, 0, 7]   # centre lanes are filled first
+const SNIPER_X: Array[float] = [310.0, 410.0, 210.0, 510.0, 110.0, 610.0]
+const BLOCK_REACH: float = 44.0   # a spearman blocks monsters this close to his lane
 
 const TEX := {
 	"soldier": preload("res://assets/art/defense/soldier.png"),
 	"sniper": preload("res://assets/art/defense/sniper.png"),
 	"slime": preload("res://assets/art/defense/slime.png"),
 	"goblin": preload("res://assets/art/defense/goblin.png"),
-	"boss": preload("res://assets/art/battle/wizard.png"),
-	"castle": preload("res://assets/art/defense/castle.png"),
-	"field": preload("res://assets/art/defense/battlefield.jpg"),
-	"fire": preload("res://assets/art/battle/fx_fireball.png"),
+	"boss": preload("res://assets/art/defense/boss.png"),
+	"wall": preload("res://assets/art/defense/wall.png"),
+	"field": preload("res://assets/art/defense/field.png"),
 }
 # Monster stats at wave 1; HP and damage grow by MONSTER_GROWTH per wave
 const MONSTERS := {
-	"slime": {"hp": 40.0, "dps": 8.0, "speed": 42.0, "size": 100.0},
-	"goblin": {"hp": 75.0, "dps": 14.0, "speed": 62.0, "size": 128.0, "flip": true},  # drawn facing right
-	"boss": {"hp": 520.0, "dps": 30.0, "speed": 24.0, "size": 210.0},
+	"slime": {"hp": 40.0, "dps": 8.0, "speed": 42.0},
+	"goblin": {"hp": 75.0, "dps": 14.0, "speed": 62.0},
+	"boss": {"hp": 520.0, "dps": 30.0, "speed": 24.0},
 }
 const MONSTER_GROWTH: float = 1.13
-const SOLDIER := {"hp": 70.0, "dps": 16.0, "size": 130.0}
-const SNIPER := {"damage": 22.0, "interval": 1.3, "size": 112.0}
+const SOLDIER := {"hp": 70.0, "dps": 16.0}
+const SNIPER := {"damage": 22.0, "interval": 1.3}
 
 var phase: String = "idle"       # idle / puzzle / wave / over
 var paused: bool = false
@@ -202,69 +207,87 @@ func _process(delta: float) -> void:
 
 func _simulate(dt: float) -> void:
 	var k: float = pow(MONSTER_GROWTH, wave - 1)
-	# Spawning
+	# Spawning at the top of the road
 	if not _spawn_queue.is_empty():
 		_spawn_clock -= dt
 		if _spawn_clock <= 0.0:
 			_spawn_monster(_spawn_queue.pop_front(), k)
 			_spawn_clock = 1.1
-	# Monsters walk left until they meet the front spearman or the castle
-	var front: Dictionary = _front_soldier()
+	# Monsters walk down their lane until a spearman in the lane or the wall stops them
+	var wall_y: float = _wall_top() + 18.0
 	for m in monsters:
 		var node: Sprite2D = m["node"]
-		var stop_x: float = CASTLE_X + m["reach"]
-		if not front.is_empty():
-			stop_x = maxf(stop_x, front["node"].position.x + m["reach"])
-		if node.position.x > stop_x:
-			node.position.x = maxf(stop_x, node.position.x - m["speed"] * dt)
+		var blocker: Dictionary = _blocker(node.position.x)
+		var stop_y: float = wall_y
+		if not blocker.is_empty():
+			stop_y = blocker["node"].position.y - _height(blocker["node"]) * 0.55
+		if node.position.y < stop_y:
+			node.position.y = minf(stop_y, node.position.y + m["speed"] * dt)
 			m["walk"] += dt
-			node.rotation = sin(m["walk"] * 10.0) * 0.06
+			node.rotation = sin(m["walk"] * 9.0) * 0.07
 		else:
 			node.rotation = 0.0
 			var dmg: float = m["dps"] * dt
-			if not front.is_empty():
-				front["hp"] -= dmg
-				if front["hp"] <= 0.0:
-					_kill_soldier(front)
-					front = _front_soldier()
+			if not blocker.is_empty():
+				blocker["hp"] -= dmg
+				if blocker["hp"] <= 0.0:
+					_kill_soldier(blocker)
 			else:
 				castle_hp = maxf(0.0, castle_hp - dmg)
 				_refresh_field()
-				if castle_hp <= 0:
+				if castle_hp <= 0.0:
 					_castle_fallen()
 					return
-	# Spearmen fight the monster in front of them
+	# Spearmen hit a monster that reached them in their lane
 	for s in soldiers:
-		var target: Dictionary = _nearest_monster(s["node"].position.x, 120.0)
+		var target: Dictionary = _monster_at(s["node"].position, 150.0)
 		if not target.is_empty():
 			_damage_monster(target, SOLDIER["dps"] * dt * (1.0 + 0.04 * (wave - 1)))
-	# Snipers shoot the monster closest to the castle
+	# Snipers shoot the monster closest to the wall
 	for sn in snipers:
 		sn["cooldown"] -= dt
 		if sn["cooldown"] <= 0.0 and not monsters.is_empty():
-			var t: Dictionary = _nearest_monster(-INF, INF)
+			var t: Dictionary = _lowest_monster()
 			if not t.is_empty():
 				sn["cooldown"] = SNIPER["interval"]
-				_shoot(sn["node"].position, t, SNIPER["damage"] * (1.0 + 0.05 * (wave - 1)))
+				_shoot(sn["node"].position + Vector2(0, -_height(sn["node"]) * 0.8), t, SNIPER["damage"] * (1.0 + 0.05 * (wave - 1)))
 	_update_bars()
 	if _spawn_queue.is_empty() and monsters.is_empty() and phase == "wave":
 		_wave_cleared()
 
-func _front_soldier() -> Dictionary:
-	var best: Dictionary = {}
-	for s in soldiers:
-		if best.is_empty() or s["node"].position.x > best["node"].position.x:
-			best = s
-	return best
+func _wall_scale() -> float:
+	return FIELD_SIZE.x / TEX["wall"].get_width()
 
-# The monster with the smallest x that is within reach of x (any monster if reach is INF)
-func _nearest_monster(x: float, reach: float) -> Dictionary:
+func _wall_top() -> float:
+	return FIELD_SIZE.y - TEX["wall"].get_height() * _wall_scale()
+
+func _height(node: Sprite2D) -> float:
+	return node.texture.get_height() * node.scale.y
+
+# The spearman standing in the lane at x, if any
+func _blocker(x: float) -> Dictionary:
+	for s in soldiers:
+		if absf(s["node"].position.x - x) <= BLOCK_REACH:
+			return s
+	return {}
+
+# A monster in the spearman's lane that is within reach above him
+func _monster_at(pos: Vector2, reach: float) -> Dictionary:
 	var best: Dictionary = {}
 	for m in monsters:
-		var mx: float = m["node"].position.x
-		if reach != INF and absf(mx - x) > reach:
+		var mp: Vector2 = m["node"].position
+		if absf(mp.x - pos.x) > BLOCK_REACH or pos.y - mp.y > reach:
 			continue
-		if best.is_empty() or mx < best["node"].position.x:
+		if best.is_empty() or mp.y > best["node"].position.y:
+			best = m
+	return best
+
+func _lowest_monster() -> Dictionary:
+	var best: Dictionary = {}
+	for m in monsters:
+		if m["node"].position.y < 0.0:
+			continue # not on screen yet
+		if best.is_empty() or m["node"].position.y > best["node"].position.y:
 			best = m
 	return best
 
@@ -277,7 +300,7 @@ func _damage_monster(m: Dictionary, dmg: float) -> void:
 		var node: Sprite2D = m["node"]
 		var tw := node.create_tween().set_parallel(true)
 		tw.tween_property(node, "modulate:a", 0.0, 0.3)
-		tw.tween_property(node, "scale", node.scale * 1.3, 0.3)
+		tw.tween_property(node, "scale", node.scale * 1.25, 0.3)
 		tw.chain().tween_callback(node.queue_free)
 
 func _kill_soldier(s: Dictionary) -> void:
@@ -285,18 +308,19 @@ func _kill_soldier(s: Dictionary) -> void:
 	var node: Sprite2D = s["node"]
 	var tw := node.create_tween().set_parallel(true)
 	tw.tween_property(node, "modulate", Color(1, 0.3, 0.3, 0.0), 0.35)
-	tw.tween_property(node, "rotation", -0.8, 0.35)
+	tw.tween_property(node, "position:y", node.position.y + 20.0, 0.35)
 	tw.chain().tween_callback(node.queue_free)
 
+# A crossbow bolt flies up at the target
 func _shoot(from: Vector2, target: Dictionary, dmg: float) -> void:
 	var bolt := Line2D.new()
 	bolt.width = 4.0
 	bolt.default_color = Color(1.0, 0.95, 0.6)
-	bolt.points = PackedVector2Array([Vector2.ZERO, Vector2(-26, 0)])
-	bolt.position = from + Vector2(30, -12)
+	bolt.points = PackedVector2Array([Vector2.ZERO, Vector2(-22, 0)])
+	bolt.position = from
 	bolt.z_index = 5
 	_units_layer.add_child(bolt)
-	var to: Vector2 = target["node"].position + Vector2(0, -20)
+	var to: Vector2 = target["node"].position + Vector2(0, -_height(target["node"]) * 0.5)
 	bolt.rotation = (to - bolt.position).angle()
 	var tw := bolt.create_tween()
 	tw.tween_property(bolt, "position", to, maxf(0.08, bolt.position.distance_to(to) / 1400.0) / speed)
@@ -314,40 +338,45 @@ func _flash(node: CanvasItem) -> void:
 # Units
 # =========================================================
 
-func _sprite(tex: Texture2D, height: float) -> Sprite2D:
+# Pixel art sprite standing on its feet at position, scaled to its kind's height
+func _sprite(kind: String) -> Sprite2D:
+	var tex: Texture2D = TEX[kind]
 	var s := Sprite2D.new()
 	s.texture = tex
-	s.scale = Vector2.ONE * height / tex.get_height()
-	s.offset = Vector2(0, -tex.get_height() * 0.5)   # position = feet
+	s.scale = Vector2.ONE * HEIGHTS[kind] / tex.get_height()
+	s.offset = Vector2(0, -tex.get_height() * 0.5)
 	_units_layer.add_child(s)
 	return s
 
 func _add_soldier() -> void:
-	var node := _sprite(TEX["soldier"], SOLDIER["size"])
-	node.position = Vector2(CASTLE_X - 40.0, GROUND_Y)
+	var node := _sprite("soldier")
+	node.position = Vector2(FIELD_SIZE.x * 0.5, FIELD_SIZE.y + 40.0)
 	soldiers.append({"node": node, "hp": SOLDIER["hp"], "max_hp": SOLDIER["hp"], "bar": _bar(node)})
 
 func _add_sniper() -> void:
-	var node := _sprite(TEX["sniper"], SNIPER["size"])
-	node.position = Vector2(CASTLE_X - 60.0, GROUND_Y - 250.0)
+	var node := _sprite("sniper")
+	node.position = Vector2(FIELD_SIZE.x * 0.5, FIELD_SIZE.y + 40.0)
 	snipers.append({"node": node, "cooldown": rng.randf_range(0.2, 1.0)})
 
 func _spawn_monster(kind: String, k: float) -> void:
 	var st: Dictionary = MONSTERS[kind]
-	var node := _sprite(TEX[kind], st["size"])
-	node.flip_h = st.get("flip", false)
-	node.position = Vector2(FIELD_SIZE.x + 60.0, GROUND_Y + rng.randf_range(-6.0, 6.0))
+	var node := _sprite(kind)
+	var lane: float = LANES[rng.randi() % LANES.size()] + rng.randf_range(-10.0, 10.0)
+	if kind == "boss":
+		lane = FIELD_SIZE.x * 0.5
+	node.position = Vector2(lane, -10.0)
 	var hp: float = st["hp"] * k
 	monsters.append({"node": node, "kind": kind, "hp": hp, "max_hp": hp, "dps": st["dps"] * k,
-		"speed": st["speed"], "reach": st["size"] * 0.55, "walk": rng.randf() * 3.0, "bar": _bar(node)})
+		"speed": st["speed"], "walk": rng.randf() * 3.0, "bar": _bar(node)})
 
-# Spearmen in a staggered line in front of the castle, snipers on the wall
+# Spearmen stand in a row just above the wall, centre lanes first; snipers on the wall
 func _layout_army() -> void:
+	var front_y: float = _wall_top() + 4.0
 	for i in range(soldiers.size()):
-		var target := Vector2(FRONT_X + (soldiers.size() - 1 - i) * 34.0, GROUND_Y + (14.0 if i % 2 == 0 else -8.0))
+		var target := Vector2(LANES[LANE_ORDER[i]], front_y)
 		soldiers[i]["node"].create_tween().tween_property(soldiers[i]["node"], "position", target, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	for i in range(snipers.size()):
-		var target := Vector2(50.0 + (i % 3) * 48.0, GROUND_Y - 250.0 - (i / 3) * 50.0)
+		var target := Vector2(SNIPER_X[i], _wall_top() + 120.0)
 		snipers[i]["node"].create_tween().tween_property(snipers[i]["node"], "position", target, 0.5)
 
 func _bar(owner: Sprite2D) -> Panel:
@@ -370,8 +399,7 @@ func _update_bars() -> void:
 		for u in list:
 			var bg: Panel = u["bar"]
 			var node: Sprite2D = u["node"]
-			var h: float = node.texture.get_height() * node.scale.y
-			bg.position = node.position + Vector2(-30, -h - 10)
+			bg.position = node.position + Vector2(-30, -_height(node) - 10)
 			var ratio: float = clampf(u["hp"] / u["max_hp"], 0.0, 1.0)
 			var fill: Panel = bg.get_child(0)
 			fill.size.x = 58.0 * ratio
@@ -398,7 +426,8 @@ func _build_hud() -> void:
 	_wave_label.size = Vector2(200, 40)
 	hud.add_child(_wave_label)
 	var castle_icon := TextureRect.new()
-	castle_icon.texture = TEX["castle"]
+	castle_icon.texture = TEX["soldier"]
+	castle_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	castle_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	castle_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	castle_icon.position = Vector2(300, 8)
@@ -451,8 +480,10 @@ func _build_field() -> void:
 	field.clip_contents = true
 	field.z_index = 200
 	field.mouse_filter = Control.MOUSE_FILTER_STOP
+	field.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST   # crisp pixel art
 	field.visible = false
 	add_child(field)
+	# Top-down road from the top of the screen down to the wall
 	var bg := TextureRect.new()
 	bg.texture = TEX["field"]
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -460,30 +491,25 @@ func _build_field() -> void:
 	bg.size = FIELD_SIZE
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	field.add_child(bg)
-	var shade := ColorRect.new()
-	shade.color = Color(0.02, 0.03, 0.08, 0.25)
-	shade.size = FIELD_SIZE
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	field.add_child(shade)
-	var castle := TextureRect.new()
-	castle.texture = TEX["castle"]
-	castle.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	castle.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	castle.size = Vector2(300, 350)
-	castle.position = Vector2(-60, GROUND_Y - 330.0)
-	castle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	field.add_child(castle)
+	var wall := TextureRect.new()
+	wall.texture = TEX["wall"]
+	wall.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	wall.stretch_mode = TextureRect.STRETCH_SCALE
+	wall.size = Vector2(TEX["wall"].get_width(), TEX["wall"].get_height()) * _wall_scale()
+	wall.position = Vector2(0, FIELD_SIZE.y - wall.size.y)
+	wall.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	field.add_child(wall)
 	_units_layer = Node2D.new()
 	field.add_child(_units_layer)
 	_field_title = UIKit.label("", 40, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	_field_title.add_theme_constant_override("outline_size", 10)
 	_field_title.add_theme_color_override("font_outline_color", Color(0.05, 0.03, 0.1))
-	_field_title.position = Vector2(0, 30)
+	_field_title.position = Vector2(0, 14)
 	_field_title.size = Vector2(FIELD_SIZE.x, 54)
 	field.add_child(_field_title)
 	var castle_bg := Panel.new()
 	castle_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	castle_bg.position = Vector2(160, 96)
+	castle_bg.position = Vector2(160, 72)
 	castle_bg.size = Vector2(400, 20)
 	castle_bg.add_theme_stylebox_override("panel", UIKit.box(Color(0, 0, 0, 0.55), Color.TRANSPARENT, 10))
 	field.add_child(castle_bg)
@@ -495,8 +521,8 @@ func _build_field() -> void:
 	_speed_btn = Button.new()
 	_speed_btn.text = "2배속"
 	UIKit.style_button(_speed_btn, "secondary", UIKit.TYPE_BODY, 14)
-	_speed_btn.position = Vector2(FIELD_SIZE.x - 170, FIELD_SIZE.y - 130)
-	_speed_btn.size = Vector2(140, 60)
+	_speed_btn.position = Vector2(FIELD_SIZE.x - 160, 20)
+	_speed_btn.size = Vector2(140, 56)
 	_speed_btn.pressed.connect(func():
 		speed = 2.0 if speed == 1.0 else 1.0
 		_speed_btn.text = "1배속" if speed == 2.0 else "2배속")
