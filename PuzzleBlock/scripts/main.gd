@@ -26,6 +26,7 @@ const COMBO_BONUS_LINEAR: int = 15
 const COMBO_BONUS_QUADRATIC: int = 5
 # Perfect clear bonus before the combo multiplier
 const PERFECT_CLEAR_BASE: int = 300
+const DEFENSE_PRESSURE: float = 0.3
 # Combo fever: from this combo on, line clear points are multiplied
 const FEVER_COMBO: int = 5
 const FEVER_MULTIPLIER: float = 1.5
@@ -66,9 +67,8 @@ var score_counter: ScoreCounter
 var tutorial_active: bool = false
 var tutorial_trays: int = 0
 var tutorial_hint: TutorialHint = null
-# Versus mode (VersusMatch): turns against the computer on one board
-var versus: VersusMatch
-var versus_level: String = "normal"
+# Block Defense (DefenseMode): timed puzzle phases that raise an army, then monster waves
+var defense: DefenseMode
 
 # Combo fever state (combo_count >= FEVER_COMBO) and its looping board glow
 var fever_active: bool = false
@@ -150,18 +150,6 @@ func _ready() -> void:
 	add_child(combo_fx)
 	combo_fx.setup_embers(Rect2(board.to_global(Vector2.ZERO), Vector2(Board.BOARD_WIDTH, Board.BOARD_HEIGHT)))
 	_build_score_header()
-	versus = VersusMatch.new()
-	$UI/Header.add_child(versus)
-	versus.visible = false
-	versus.cpu_defeated.connect(func(reason: String): _finish_versus("cpu_" + reason))
-	versus.player_defeated.connect(func(reason: String): _finish_versus("player_" + reason))
-	versus.impact.connect(func(side: int, strength: int):
-		# The knight being hit shakes the screen; hitting the wizard gives a light shake
-		if side == VersusMatch.ME:
-			apply_screen_shake(5.0 + 3.0 * strength, 0.18)
-			SettingsManager.vibrate(30 + 20 * strength)
-		else:
-			apply_screen_shake(2.0 + 2.0 * strength, 0.12))
 	for plate in $TrayPlates.get_children():
 		plate.add_theme_stylebox_override("panel", UIKit.tray_plate())
 	_load_best_score()
@@ -200,7 +188,14 @@ func _ready() -> void:
 	start_screen.play_pressed.connect(_on_start_play_pressed)
 	start_screen.daily_pressed.connect(_on_start_daily_pressed)
 	start_screen.adventure_pressed.connect(_open_adventure_select)
-	start_screen.versus_pressed.connect(_start_versus)
+	start_screen.defense_pressed.connect(_start_defense)
+	defense = DefenseMode.new()
+	$UI.add_child(defense)
+	$UI.move_child(defense, start_screen.get_index())
+	defense.visible = false
+	defense.puzzle_started.connect(_on_defense_puzzle)
+	defense.wave_started.connect(_on_defense_wave)
+	defense.defeated.connect(_finish_defense)
 	start_screen.ranking_pressed.connect(_open_leaderboard)
 	start_screen.set_ranking_visible(_has_ranking(), LeaderboardManager.is_online())
 	if Toss.active():
@@ -267,8 +262,6 @@ func _on_back_pressed() -> void:
 		leaderboard_modal.close()
 	elif adventure_select.visible:
 		adventure_select.close()
-	elif start_screen.visible and start_screen.versus_picker.visible:
-		start_screen.versus_picker.visible = false
 	elif start_screen.visible and not profile_setup_modal.visible:
 		if Toss.active():
 			_show_exit_confirm()
@@ -339,6 +332,9 @@ func _show_exit_confirm() -> void:
 	exit_confirm.visible = true
 
 func _process(delta: float) -> void:
+	if defense.visible:
+		defense.paused = settings_modal.visible or leaderboard_modal.visible or game_over_panel.visible \
+			or (exit_confirm != null and exit_confirm.visible)
 	if shake_duration > 0.0:
 		shake_duration -= delta
 		var ox = randf_range(-shake_intensity, shake_intensity)
@@ -372,19 +368,18 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 	elif game_mode == "adventure":
 		header_title.text = "STAGE %d" % stage["id"]
 		stage_progress = 0
-	elif game_mode == "versus":
-		header_title.text = "대결 · %s" % VersusMatch.level_name(versus_level)
+	elif game_mode == "defense":
+		header_title.text = "블록 디펜스"
 	else:
 		header_title.text = "퍼즐블록"
 
 	score = 0
 	score_counter.reset(0)
-	var vs_mode: bool = game_mode == "versus"
-	versus.visible = vs_mode
-	$UI/Header/ScoreBox.visible = not vs_mode
-	$UI/Header/BestBox.visible = not vs_mode
-	if vs_mode:
-		versus.begin(versus_level, LeaderboardManager.nickname, LeaderboardManager.get_avatar_texture(), [])
+	var def_mode: bool = game_mode == "defense"
+	defense.stop()
+	defense.visible = false
+	$UI/Header/ScoreBox.visible = not def_mode
+	$UI/Header/BestBox.visible = not def_mode
 	_dismiss_tutorial_hint()
 	tutorial_trays = 0
 	tutorial_active = game_mode == "classic" and (SettingsManager.tutorial_state == "pending" 		or (SettingsManager.tutorial_state == "" and Achievements.get_stat("games_played") == 0))
@@ -429,7 +424,7 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 
 	game_seq += 1
 	var seq := game_seq
-	if game_mode == "classic" or game_mode == "versus":
+	if game_mode == "classic" or game_mode == "defense":
 		# Classic starts from a few pre-placed pieces (see BlockData.generate_start_pattern);
 		# the first set always includes a piece that clears a line right away
 		var pattern := BlockData.generate_start_pattern()
@@ -442,12 +437,12 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 					cells.append(i)
 			play_log.append(["s"] + cells)
 			guarantee_first_clear = true
-			if game_mode == "versus":
-				versus.begin(versus_level, LeaderboardManager.nickname, LeaderboardManager.get_avatar_texture(), cells)
 			await get_tree().create_timer(delay).timeout
 			if seq != game_seq or is_game_over:
 				return
 	_spawn_new_tray()
+	if game_mode == "defense" and seq == game_seq:
+		defense.begin()
 
 func _clear_tray() -> void:
 	for i in range(3):
@@ -464,8 +459,8 @@ func _spawn_new_tray() -> void:
 		shapes = BlockData.get_seeded_trio(challenge_rng)
 	else:
 		# The difficulty curve applies to classic only; adventure stages keep their tuned balance
-		# Versus deals with a fixed medium pressure for both sides
-		var pressure: float = BlockData.pressure_for_score(score) if game_mode == "classic" else (VersusMatch.PRESSURE if game_mode == "versus" else 0.0)
+		# Defense deals with a fixed, helpful pressure: points there buy the army
+		var pressure: float = BlockData.pressure_for_score(score) if game_mode == "classic" else (DEFENSE_PRESSURE if game_mode == "defense" else 0.0)
 		if game_mode == "classic" and deal_index < BlockData.FUN_DEALS and score < BlockData.FUN_SCORE_MAX:
 			# Opening sets are chosen for fun moments: snug fits, multi-line clears, a combo that keeps
 			# going, and a set that empties the board whenever one exists
@@ -510,6 +505,8 @@ func _spawn_new_tray() -> void:
 func _input(event: InputEvent) -> void:
 	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible:
 		return
+	if game_mode == "defense" and defense.phase != "puzzle":
+		return
 		
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -535,6 +532,8 @@ func _input(event: InputEvent) -> void:
 
 func _on_pointer_down(screen_pos: Vector2, touch_id: int) -> void:
 	if dragging_piece != null:
+		return
+	if game_mode == "defense" and defense.phase != "puzzle":
 		return
 		
 	var best_piece: BlockPiece = null
@@ -645,15 +644,6 @@ func _commit_placement(piece: BlockPiece) -> bool:
 
 	if game_mode == "adventure" and _update_stage_after_move(lines, clear_info["gems"]):
 		return true
-	if game_mode == "versus":
-		# A clear hits the computer; then the computer places one piece on its own board
-		if lines > 0:
-			versus.player_cleared(lines, combo_count, perfect, clear_info["center"])
-		var seq := game_seq
-		get_tree().create_timer(0.35).timeout.connect(func():
-			if seq == game_seq and not is_game_over:
-				versus.cpu_turn())
-
 	if _is_tray_empty():
 		_spawn_new_tray()
 	else:
@@ -825,8 +815,8 @@ func _combo_banner_style(col: Color) -> StyleBoxFlat:
 	return sb
 
 func _show_combo_banner(c: int, grace: int = 3) -> void:
-	if game_mode == "versus":
-		return # the battle stage sits where the combo badge would be
+	if game_mode == "defense":
+		return # the defense HUD sits where the combo badge would be
 	if c <= 0:
 		_hide_combo_banner()
 		return
@@ -897,13 +887,9 @@ func _spawn_combo_popup(lines: int, gain: int, center_pos: Vector2) -> void:
 	var tint: Color = Color(0.6, 0.8, 1.0) if tier == 0 else PRAISE_TINTS[tier - 1]
 	if combo_count >= FEVER_COMBO:
 		tint = Color(1.0, 0.6, 0.2)
-	# In a battle the clear only shows its praise; damage shows on the stage instead
-	var numbers: bool = game_mode != "versus"
-	if not numbers and tier == 0:
-		return
 	var popup := ComboPopup.new()
 	add_child(popup)
-	popup.setup(tier, combo_count, gain, tint, numbers)
+	popup.setup(tier, combo_count, gain, tint)
 	# Keep the words on the board even when the clear is at an edge
 	var margin: float = popup.half_width + 10.0
 	var left: float = board.to_global(Vector2.ZERO).x + margin
@@ -996,8 +982,8 @@ func _check_piece_usability_and_game_over() -> void:
 	if remaining_pieces > 0 and not any_can_fit:
 		if game_mode == "adventure":
 			_finish_stage(false, "stuck")
-		elif game_mode == "versus":
-			_finish_versus("player_stuck")
+		elif game_mode == "defense":
+			defense.board_stuck() # ends this puzzle phase; the next one gets a new board
 		elif not has_revived_this_game:
 			_trigger_revive_chance()
 		else:
@@ -1072,6 +1058,8 @@ func _on_profile_setup_completed() -> void:
 	start_screen.visible = true
 
 func _open_home_screen() -> void:
+	defense.stop()
+	defense.visible = false
 	_dismiss_tutorial_hint()
 	SoundManager.play_click()
 	if not start_screen.visible and not is_game_over and not game_id.is_empty():
@@ -1299,58 +1287,69 @@ func _on_go_secondary_pressed() -> void:
 		_open_home_screen()
 
 # =========================================================
-# Versus mode
+# Block Defense
 # =========================================================
 
-func _start_versus(level: String) -> void:
-	versus_level = level
+func _start_defense() -> void:
 	start_screen.visible = false
-	start_new_game(false, "versus")
+	start_new_game(false, "defense")
 
-func _finish_versus(reason: String) -> void:
-	# reason: cpu_ko / cpu_stuck (win), player_ko / player_stuck (lose)
+func _on_defense_puzzle(fresh_board: bool) -> void:
+	# Back from a wave (or the start): the board shows again; after a stuck board, a new one
+	if not fresh_board:
+		_check_piece_usability_and_game_over()
+		return
+	board.reset_board()
+	_clear_tray()
+	var pattern := BlockData.generate_start_pattern()
+	if not pattern.is_empty():
+		var seq := game_seq
+		var delay := board.place_start_pattern(pattern)
+		guarantee_first_clear = true
+		await get_tree().create_timer(delay).timeout
+		if seq != game_seq or is_game_over:
+			return
+	_spawn_new_tray()
+
+func _on_defense_wave() -> void:
+	# The battlefield covers the board: drop whatever is held back into the tray
+	_dismiss_tutorial_hint()
+	if dragging_piece != null and is_instance_valid(dragging_piece):
+		dragging_piece.return_to_tray()
+	dragging_piece = null
+	drag_touch_id = -1
+	board.hide_ghost_preview()
+
+func _finish_defense(waves: int) -> void:
 	if is_game_over:
 		return
 	is_game_over = true
-	versus.stop()
 	last_game_over_msec = Time.get_ticks_msec()
-	var won: bool = reason.begins_with("cpu_")
+	var best: int = maxi(Achievements.get_stat("defense_best_wave"), waves)
+	var new_best: bool = waves > Achievements.get_stat("defense_best_wave")
 	Achievements.add_stat("games_played", 1)
-	Achievements.add_stat(("versus_win_" if won else "versus_loss_") + versus_level, 1)
-	Analytics.log_event("versus_result", {
+	Achievements.max_stat("defense_best_wave", waves)
+	Analytics.log_event("defense_result", {
 		"game_id": game_id,
-		"level": versus_level,
-		"result": "win" if won else "lose",
-		"reason": reason,
-		"damage": versus.dealt[VersusMatch.ME],
-		"cpu_damage": versus.dealt[VersusMatch.CPU],
+		"waves": waves,
+		"score": score,
 		"moves": move_count,
 		"duration_s": snappedf((last_game_over_msec - game_start_msec) / 1000.0, 0.1)
 	})
 	Analytics.flush()
-	if won:
-		SoundManager.play_record()
-		SettingsManager.vibrate(160)
-	else:
-		SoundManager.play_gameover()
-		SettingsManager.vibrate(120)
-
-	await get_tree().create_timer(0.8).timeout
-
+	SoundManager.play_gameover()
+	SettingsManager.vibrate(120)
+	await get_tree().create_timer(0.4).timeout
+	defense.visible = false
 	_restore_game_over_texts()
-	go_title.text = "WIN!" if won else "LOSE"
-	$UI/GameOverModal/Card/ScoreSub.text = "준 데미지"
-	go_final_score.text = "%d : %d" % [versus.dealt[VersusMatch.ME], versus.dealt[VersusMatch.CPU]]
-	go_best_score.text = "나 : 컴퓨터(%s)" % VersusMatch.level_name(versus_level)
-	go_new_badge.visible = false
-	go_rank_status.text = {
-		"cpu_ko": "컴퓨터를 쓰러뜨렸어요!",
-		"cpu_stuck": "컴퓨터가 놓을 곳이 없어요!",
-		"player_ko": "체력이 바닥났어요.",
-		"player_stuck": "놓을 수 있는 블록이 없어요.",
-	}.get(reason, "")
+	go_title.text = "GAME OVER"
+	$UI/GameOverModal/Card/ScoreSub.text = "막아낸 웨이브"
+	go_final_score.text = "%d" % waves
+	go_best_score.text = "최고 기록: %d웨이브" % best
+	go_new_badge.visible = new_best and waves > 0
+	go_rank_status.text = "성이 무너졌어요."
 	go_btn_view_rank.visible = false
-	go_btn_retry.text = "다시 대결"
+	go_btn_retry.text = "다시 도전"
 	game_over_panel.visible = true
 	game_over_panel.modulate.a = 0.0
 	var tw = create_tween()
@@ -1475,8 +1474,9 @@ func _on_leaderboard_score_submitted(res: Dictionary) -> void:
 		go_rank_status.text = "실시간 랭킹 확인 가능"
 
 func _add_score(amount: int, kind: String = "place") -> void:
-	if game_mode == "versus":
-		score += amount # no records in a battle
+	if game_mode == "defense":
+		score += amount # no records; the points raise the army
+		defense.add_points(amount)
 		return
 	score += amount
 	if game_mode == "adventure":

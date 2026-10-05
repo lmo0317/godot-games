@@ -43,7 +43,7 @@
 | 스킨 | Pillow 코드 | `tools/generate_skins.py` |
 | 로고·스토어 이미지 | Pillow 코드 + 실제 캡처 | `tools/generate_store_assets.py`, `store/` |
 | 테마 배경 | 기존 생성 이미지 유지 | `assets/art/` |
-| 대결 캐릭터·스킬 이펙트 | Codex 그림 생성(`codex exec`, 투명 PNG) → `tools/import_battle_art.py` | `assets/art/battle/` |
+| 대결·디펜스 캐릭터·이펙트·전장 | Codex 그림 생성(`codex exec`, 투명 PNG) → `tools/import_battle_art.py` | `assets/art/battle/`, `assets/art/defense/` |
 | 스토어 스크린샷 | 실제 게임 캡처 | `store/` |
 | 콤보 연출 글자·빛줄기 | Pillow 코드 | `tools/generate_combo_text.py` |
 
@@ -67,6 +67,14 @@ clean 2D chibi game sprite, bold dark navy outline, flat cel shading with light 
 | `wizard.png` | cute chibi wizard rival, full body, casting pose, wooden staff with glowing orange crystal, FACING LEFT, purple robe and big pointed purple hat with gold trim, mischievous confident face |
 | `fx_slash.png` | sword slash effect only: big crescent arc of light, white core, cyan-blue glow, small sparkles |
 | `fx_fireball.png` | fireball effect only: yellow-white core, orange and red flames trailing to the RIGHT (flies left), embers |
+| `soldier.png` | cute chibi spearman soldier (ally defender), full body, standing guard with a long spear and a square blue shield, FACING RIGHT, blue tunic over chain mail, round steel helmet |
+| `sniper.png` | cute chibi sniper archer (ally ranged unit), kneeling and aiming a long crossbow, FACING RIGHT, green hood and cloak, leather gear |
+| `slime.png` | cute but menacing green slime monster (enemy), round jelly body, angry eyes and tiny fangs, FACING LEFT |
+| `goblin.png` | chibi goblin warrior monster (enemy), running with a wooden club, FACING LEFT, green skin, pointy ears, ragged leather armor |
+| `castle.png` | small stone castle tower with a wooden gate and battlements, blue banners, gate side FACING RIGHT, no characters |
+| `battlefield.png` | 투명 대신 불투명 배경: side-view grassy plain with a dirt road across the lower third, distant hills and trees, soft evening sky, calm, low contrast, slightly desaturated, no characters (게임에는 1100px JPG) |
+
+Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을 다시 실행합니다(2026-10-05 슬라임·고블린).
 
 ## 사용자가 거절한 것
 
@@ -88,4 +96,7 @@ clean 2D chibi game sprite, bold dark navy outline, flat cel shading with light 
 | 빛줄기 | `assets/sprites/combo/rays.png` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 뒤 | 완료 |
 | 대결 기사·마법사 | `assets/art/battle/knight.png`, `wizard.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 대결 무대 | 완료 |
 | 대결 스킬 이펙트 | `assets/art/battle/fx_slash.png`, `fx_fireball.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 기사 검격, 마법사 화염구·메테오 | 완료 |
+| 디펜스 아군 | `assets/art/defense/soldier.png`, `sniper.png` | Codex 생성 | 위 프롬프트 | 웨이브 화면 | 완료 |
+| 디펜스 몬스터 | `assets/art/defense/slime.png`, `goblin.png` (보스는 `battle/wizard.png`) | Codex 생성 | 위 프롬프트 | 웨이브 화면 | 완료 |
+| 디펜스 성·전장 | `assets/art/defense/castle.png`, `battlefield.jpg` | Codex 생성 | 위 프롬프트 | 웨이브 화면, 홈 카드, HUD | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |

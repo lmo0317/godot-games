@@ -6,7 +6,7 @@ extends ColorRect
 signal play_pressed
 signal daily_pressed
 signal adventure_pressed
-signal versus_pressed(level: String)
+signal defense_pressed
 signal ranking_pressed
 signal settings_pressed
 signal profile_pressed
@@ -27,9 +27,7 @@ var best_value: Label
 var rank_value: Label
 var daily_status: Label
 var adventure_status: Label
-var versus_status: Label
-var versus_picker: ColorRect
-var versus_record_labels: Dictionary = {}  # level id -> Label
+var defense_status: Label
 var logo: Control
 var ranking_button: Button
 var ranking_label: Label
@@ -57,9 +55,8 @@ func _ready() -> void:
 	_build_best_panel()
 	_build_play_button()
 	_build_mode_cards()
-	_build_versus_card()
+	_build_defense_card()
 	_build_ranking_button()
-	_build_versus_picker()
 	var footer := UIKit.label("퍼즐블록 · Godot 4.7", UIKit.TYPE_SMALL, Color(UIKit.MUTED, 0.72), HORIZONTAL_ALIGNMENT_CENTER)
 	_place(footer, 0, 1198, W, 32)
 	add_child(footer)
@@ -76,10 +73,8 @@ func refresh(info: Dictionary) -> void:
 	var daily_best: int = int(info.get("daily_best", -1))
 	daily_status.text = "오늘 최고 %s점" % UIKit.format_number(daily_best) if daily_best > 0 else "오늘 첫 도전!"
 	adventure_status.text = "★ %d / %d  ·  %d단계" % [int(info.get("stars", 0)), int(info.get("stars_total", 60)), int(info.get("next_stage", 1))]
-	var wins := 0
-	for l in VersusMatch.LEVELS:
-		wins += Achievements.get_stat("versus_win_" + l["id"])
-	versus_status.text = "%d승" % wins if wins > 0 else "도전!"
+	var best_wave: int = Achievements.get_stat("defense_best_wave")
+	defense_status.text = "최고 %d웨이브" % best_wave if best_wave > 0 else "도전!"
 	set_muted(bool(info.get("muted", false)))
 
 func set_muted(muted: bool) -> void:
@@ -203,82 +198,30 @@ func _mode_card(x: float, title: String, desc: String, accent: Color, block_colo
 	card.add_child(status)
 	return status
 
-func _build_versus_card() -> void:
-	# Full-width card under the two mode cards: play against the computer
+func _build_defense_card() -> void:
+	# Full-width card under the two mode cards: Block Defense
 	var accent: Color = Color(1.0, 0.45, 0.45)
 	var card := Button.new()
 	UIKit.style_raised(card, Color(0.11, 0.14, 0.23), Color(accent, 0.85), accent.darkened(0.7), 24)
 	_place(card, MARGIN, 988, W - MARGIN * 2, 84)
-	card.pressed.connect(open_versus_picker)
+	card.pressed.connect(func(): defense_pressed.emit())
 	add_child(card)
-	var chip := TextureRect.new()
-	chip.texture = BlockSkins.texture("red", "classic")
-	chip.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_place(chip, 24, 29, 26, 26)
-	card.add_child(chip)
-	var t := UIKit.label("컴퓨터와 대결", 26)
+	var icon := TextureRect.new()
+	icon.texture = preload("res://assets/art/defense/castle.png")
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_place(icon, 14, 12, 44, 60)
+	card.add_child(icon)
+	var t := UIKit.label("블록 디펜스", 26)
 	_place(t, 64, 8, 300, 36)
 	card.add_child(t)
-	var d := UIKit.label("줄을 지워 상대 캐릭터를 공격", UIKit.TYPE_SMALL, UIKit.MUTED)
+	var d := UIKit.label("블록을 깨 병력을 모아 몬스터 막기", UIKit.TYPE_SMALL, UIKit.MUTED)
 	_place(d, 64, 44, 360, 26)
 	card.add_child(d)
-	versus_status = UIKit.label("", 20, accent, HORIZONTAL_ALIGNMENT_RIGHT)
-	_place(versus_status, 380, 26, 236, 30)
-	card.add_child(versus_status)
-
-func _build_versus_picker() -> void:
-	# Difficulty choice for the versus mode, over the home screen
-	versus_picker = ColorRect.new()
-	UIKit.style_modal_backdrop(versus_picker)
-	versus_picker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	versus_picker.mouse_filter = Control.MOUSE_FILTER_STOP
-	versus_picker.visible = false
-	add_child(versus_picker)
-	var card := Panel.new()
-	_place(card, 70, 360, W - 140, 560)
-	versus_picker.add_child(card)
-	var title := UIKit.label("컴퓨터와 대결", UIKit.TYPE_MODAL_TITLE, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	_place(title, 0, 34, W - 140, 48)
-	card.add_child(title)
-	UIKit.style_modal(card, title)
-	var rule := UIKit.label("각자 자기 보드에서 퍼즐을 풀고, 줄을 지우면 공격!\n상대 체력을 먼저 0으로 만들면 승리", UIKit.TYPE_SMALL, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	_place(rule, 20, 90, W - 180, 56)
-	card.add_child(rule)
-	var y := 166.0
-	for l in VersusMatch.LEVELS:
-		var btn := Button.new()
-		UIKit.style_button(btn, "primary" if l["id"] == "normal" else "secondary", 26, 18)
-		_place(btn, 30, y, W - 200, 92)
-		var level_id: String = l["id"]
-		btn.pressed.connect(func():
-			versus_picker.visible = false
-			versus_pressed.emit(level_id))
-		card.add_child(btn)
-		var name_l := UIKit.label(l["name"], 26)
-		_place(name_l, 24, 12, 200, 36)
-		btn.add_child(name_l)
-		var desc_l := UIKit.label(l["desc"], UIKit.TYPE_SMALL, UIKit.MUTED)
-		_place(desc_l, 24, 50, 260, 26)
-		btn.add_child(desc_l)
-		var rec := UIKit.label("", UIKit.TYPE_BODY, UIKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
-		_place(rec, 240, 30, 256, 30)
-		btn.add_child(rec)
-		versus_record_labels[level_id] = rec
-		y += 108
-	var close := Button.new()
-	close.text = "닫기"
-	UIKit.style_button(close, "ghost", 22, 16)
-	_place(close, 30, y + 6, W - 200, 60)
-	close.pressed.connect(func(): versus_picker.visible = false)
-	card.add_child(close)
-
-func open_versus_picker() -> void:
-	for id in versus_record_labels:
-		var w: int = Achievements.get_stat("versus_win_" + id)
-		var l: int = Achievements.get_stat("versus_loss_" + id)
-		versus_record_labels[id].text = "%d승 %d패" % [w, l] if w + l > 0 else ""
-	versus_picker.visible = true
+	defense_status = UIKit.label("", 20, accent, HORIZONTAL_ALIGNMENT_RIGHT)
+	_place(defense_status, 380, 26, 236, 30)
+	card.add_child(defense_status)
 
 func set_ranking_visible(on: bool, show_rank: bool = true) -> void:
 	# show_rank: our own server knows the player's rank; Toss's leaderboard does not tell us
