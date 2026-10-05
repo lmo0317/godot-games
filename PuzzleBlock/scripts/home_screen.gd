@@ -6,7 +6,7 @@ extends ColorRect
 signal play_pressed
 signal daily_pressed
 signal adventure_pressed
-signal defense_pressed
+signal battle_pressed
 signal ranking_pressed
 signal settings_pressed
 signal profile_pressed
@@ -27,7 +27,7 @@ var best_value: Label
 var rank_value: Label
 var daily_status: Label
 var adventure_status: Label
-var defense_status: Label
+var battle_status: Label
 var logo: Control
 var ranking_button: Button
 var ranking_label: Label
@@ -55,7 +55,7 @@ func _ready() -> void:
 	_build_best_panel()
 	_build_play_button()
 	_build_mode_cards()
-	_build_defense_card()
+	_build_battle_card()
 	_build_ranking_button()
 	var footer := UIKit.label("퍼즐블록 · Godot 4.7", UIKit.TYPE_SMALL, Color(UIKit.MUTED, 0.72), HORIZONTAL_ALIGNMENT_CENTER)
 	_place(footer, 0, 1198, W, 32)
@@ -73,8 +73,8 @@ func refresh(info: Dictionary) -> void:
 	var daily_best: int = int(info.get("daily_best", -1))
 	daily_status.text = "오늘 최고 %s점" % UIKit.format_number(daily_best) if daily_best > 0 else "오늘 첫 도전!"
 	adventure_status.text = "★ %d / %d  ·  %d단계" % [int(info.get("stars", 0)), int(info.get("stars_total", 60)), int(info.get("next_stage", 1))]
-	var best_wave: int = Achievements.get_stat("defense_best_wave")
-	defense_status.text = "최고 %d웨이브" % best_wave if best_wave > 0 else "도전!"
+	var best_stage: int = Achievements.get_stat("battle_best_stage")
+	battle_status.text = "최고 STAGE %d" % best_stage if best_stage > 0 else "도전!"
 	set_muted(bool(info.get("muted", false)))
 
 func set_muted(muted: bool) -> void:
@@ -198,31 +198,30 @@ func _mode_card(x: float, title: String, desc: String, accent: Color, block_colo
 	card.add_child(status)
 	return status
 
-func _build_defense_card() -> void:
-	# Full-width card under the two mode cards: Block Defense
+func _build_battle_card() -> void:
+	# Full-width card under the two mode cards: Monster Battle
 	var accent: Color = Color(1.0, 0.45, 0.45)
 	var card := Button.new()
 	UIKit.style_raised(card, Color(0.11, 0.14, 0.23), Color(accent, 0.85), accent.darkened(0.7), 24)
 	_place(card, MARGIN, 988, W - MARGIN * 2, 84)
-	card.pressed.connect(func(): defense_pressed.emit())
+	card.pressed.connect(func(): battle_pressed.emit())
 	add_child(card)
 	var icon := TextureRect.new()
-	icon.texture = preload("res://assets/art/defense/archer.png")
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.texture = preload("res://assets/art/battle/slime.png")
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_place(icon, 14, 12, 44, 60)
 	card.add_child(icon)
-	var t := UIKit.label("블록 디펜스", 26)
+	var t := UIKit.label("몬스터 배틀", 26)
 	_place(t, 64, 8, 300, 36)
 	card.add_child(t)
-	var d := UIKit.label("블록을 깨 병력을 모아 몬스터 막기", UIKit.TYPE_SMALL, UIKit.MUTED)
+	var d := UIKit.label("줄을 지워 몬스터를 공격", UIKit.TYPE_SMALL, UIKit.MUTED)
 	_place(d, 64, 44, 360, 26)
 	card.add_child(d)
-	defense_status = UIKit.label("", 20, accent, HORIZONTAL_ALIGNMENT_RIGHT)
-	_place(defense_status, 380, 26, 236, 30)
-	card.add_child(defense_status)
+	battle_status = UIKit.label("", 20, accent, HORIZONTAL_ALIGNMENT_RIGHT)
+	_place(battle_status, 380, 26, 236, 30)
+	card.add_child(battle_status)
 
 func set_ranking_visible(on: bool, show_rank: bool = true) -> void:
 	# show_rank: our own server knows the player's rank; Toss's leaderboard does not tell us

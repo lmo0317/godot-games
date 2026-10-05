@@ -6,6 +6,8 @@ const CELL_GAP: float = 2.0
 const CELL_SPACING: float = 78.0 # CELL_SIZE + CELL_GAP
 const DEFAULT_TRAY_SCALE: float = 0.58
 const DRAG_OFFSET_Y: float = -110.0
+# Held pieces match the board's scale (the monster battle shrinks the board)
+static var board_scale: float = 1.0
 
 var shape_data: Dictionary = {}
 var slot_index: int = -1
@@ -93,7 +95,7 @@ func start_drag(screen_pos: Vector2) -> void:
 
 	var tw = create_tween().set_parallel(true)
 	move_tween = tw
-	tw.tween_property(self, "scale", Vector2.ONE, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(self, "scale", Vector2.ONE * board_scale, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(self, "modulate:a", 1.0, 0.1)
 
 func update_drag(screen_pos: Vector2) -> void:

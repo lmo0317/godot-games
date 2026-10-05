@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dbu8ea8jsrlgh"
-path="res://.godot/imported/mage.png-55bfec9c9472b4625d1cecad77ceeee9.ctex"
+uid="uid://ckpikn3eeae38"
+path="res://.godot/imported/battlefield.jpg-3dbc89ce8a5370fe579a09de396578a1.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/defense/mage.png"
-dest_files=["res://.godot/imported/mage.png-55bfec9c9472b4625d1cecad77ceeee9.ctex"]
+source_file="res://assets/art/battle/battlefield.jpg"
+dest_files=["res://.godot/imported/battlefield.jpg-3dbc89ce8a5370fe579a09de396578a1.ctex"]
 
 [params]
 

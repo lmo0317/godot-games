@@ -8,6 +8,7 @@ The raw images are 1254px PNGs made with Codex's image tool (prompts in docs/ART
   hard alpha edges. The game scales them up with nearest filtering so pixels stay crisp.
 - "grid": like "pixel" but for sprites drawn on a known n-cell grid (n = size); if the measured
   grid is far off, the sprite is fitted to n cells on its longer side.
+- "jpg": an opaque backdrop scaled to the given width and saved as a JPG.
 - "pixel_bg": an opaque pixel-art backdrop cropped to the target aspect and sampled down to exactly
   that many pixels (size = (width, height)).
 
@@ -26,7 +27,10 @@ ART = {
     "wizard": ("battle", 256, "png"),
     "fx_slash": ("battle", 256, "png"),
     "fx_fireball": ("battle", 256, "png"),
-    # Block Defense art is code-drawn now (tools/generate_defense_sprites.py)
+    # Monster battle: enemies and the backdrop of the battle stage
+    "slime": ("battle", 256, "png"),
+    "goblin": ("battle", 256, "png"),
+    "battlefield": ("battle", 900, "jpg"),
 }
 
 
@@ -121,14 +125,20 @@ def main():
             img = grid(img, size)
         elif mode == "pixel_bg":
             img = pixel_bg(img, size)
+        elif mode == "jpg":
+            img = img.convert("RGB")
+            img = img.resize((size, round(img.height * size / img.width)), Image.Resampling.LANCZOS)
         else:
             img = trim(img.convert("RGBA"))
             scale = size / max(img.size)
             img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.Resampling.LANCZOS)
         out_dir = os.path.join(ROOT, "assets", "art", folder)
         os.makedirs(out_dir, exist_ok=True)
-        path = os.path.join(out_dir, name + ".png")
-        img.save(path, optimize=True)
+        path = os.path.join(out_dir, name + (".jpg" if mode == "jpg" else ".png"))
+        if mode == "jpg":
+            img.save(path, quality=85, optimize=True)
+        else:
+            img.save(path, optimize=True)
         print(f"{path} {img.size} {os.path.getsize(path) // 1024}KB")
 
 

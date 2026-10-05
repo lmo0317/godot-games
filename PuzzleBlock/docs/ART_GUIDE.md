@@ -44,7 +44,7 @@
 | 로고·스토어 이미지 | Pillow 코드 + 실제 캡처 | `tools/generate_store_assets.py`, `store/` |
 | 테마 배경 | 기존 생성 이미지 유지 | `assets/art/` |
 | 대결 캐릭터·이펙트 | Codex 그림 생성(`codex exec`, 투명 PNG) → `tools/import_battle_art.py` | `assets/art/battle/` |
-| 블록 디펜스 캐릭터·성벽·전장·탄 | Pillow 코드(도트) | `tools/generate_defense_sprites.py` → `assets/art/defense/` |
+| 몬스터 배틀 몬스터·배경·이펙트 | Codex 카툰(대결 그림과 같은 그림체) → `tools/import_battle_art.py` | `assets/art/battle/` |
 | 스토어 스크린샷 | 실제 게임 캡처 | `store/` |
 | 콤보 연출 글자·빛줄기 | Pillow 코드 | `tools/generate_combo_text.py` |
 
@@ -70,7 +70,7 @@ clean 2D chibi game sprite, bold dark navy outline, flat cel shading with light 
 | `fx_fireball.png` | fireball effect only: yellow-white core, orange and red flames trailing to the RIGHT (flies left), embers |
 
 
-### 블록 디펜스 도트 (코드로 그림, 2026-10-05)
+### (보관) 블록 디펜스 도트 (코드로 그림, 2026-10-05) — 모드 삭제로 지금은 쓰지 않음
 
 **스타일 한 줄**: 레트로 저해상도 도트(참고: Google Play "도트 기사단: 픽셀 디펜스 전쟁" 풍). 작은 캐릭터, 단순한 실루엣, 적은 디테일, 따뜻하고 살짝 차분한 색.
 
@@ -108,7 +108,6 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 빛줄기 | `assets/sprites/combo/rays.png` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 뒤 | 완료 |
 | 대결 기사·마법사 | `assets/art/battle/knight.png`, `wizard.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 대결 무대 | 완료 |
 | 대결 스킬 이펙트 | `assets/art/battle/fx_slash.png`, `fx_fireball.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 기사 검격, 마법사 화염구·메테오 | 완료 |
-| 디펜스 아군(도트) | `assets/art/defense/archer.png`, `mage.png` | 코드 | `generate_defense_sprites.py` `archer()`, `mage()` | 웨이브 화면, 홈 카드·HUD 아이콘 | 완료 |
-| 디펜스 몬스터(도트) | `assets/art/defense/slime.png`, `goblin.png`, `boss.png` | 코드 | `slime()`, `goblin()`, `boss()` | 웨이브 화면 | 완료 |
-| 디펜스 성벽·전장·탄(도트) | `assets/art/defense/wall.png`, `field.png`, `arrow.png`, `fireball.png`, `spark.png` | 코드 | `wall()`, `field()`, `arrow()`, `fireball()`, `spark()` | 웨이브 화면 | 완료 |
+| 몬스터 배틀 몬스터 | `assets/art/battle/slime.png`, `goblin.png`, `wizard.png`(보스) | Codex 생성 | 위 "대결 그림" 프롬프트(슬라임·고블린은 디펜스 1차 카툰 프롬프트) | 몬스터 배틀 무대, 홈 카드 아이콘 | 완료 |
+| 몬스터 배틀 배경 | `assets/art/battle/battlefield.jpg` (900px) | Codex 생성 | 전장 배경 프롬프트 | 몬스터 배틀 무대 | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |

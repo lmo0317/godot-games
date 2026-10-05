@@ -26,7 +26,7 @@ const COMBO_BONUS_LINEAR: int = 15
 const COMBO_BONUS_QUADRATIC: int = 5
 # Perfect clear bonus before the combo multiplier
 const PERFECT_CLEAR_BASE: int = 300
-const DEFENSE_PRESSURE: float = 0.3
+const BATTLE_PRESSURE: float = 0.3
 # Combo fever: from this combo on, line clear points are multiplied
 const FEVER_COMBO: int = 5
 const FEVER_MULTIPLIER: float = 1.5
@@ -67,8 +67,11 @@ var score_counter: ScoreCounter
 var tutorial_active: bool = false
 var tutorial_trays: int = 0
 var tutorial_hint: TutorialHint = null
-# Block Defense (DefenseMode): timed puzzle phases that raise an army, then monster waves
-var defense: DefenseMode
+# Monster Battle (MonsterBattle): clears hit a monster above a board shrunk to COMPACT_SCALE
+var battle: MonsterBattle
+const COMPACT_SCALE: float = 0.85
+var tray_slots: Array[Vector2] = []
+var _layout_home: Dictionary = {}   # node -> [position, scale] of the normal layout
 
 # Combo fever state (combo_count >= FEVER_COMBO) and its looping board glow
 var fever_active: bool = false
@@ -188,14 +191,19 @@ func _ready() -> void:
 	start_screen.play_pressed.connect(_on_start_play_pressed)
 	start_screen.daily_pressed.connect(_on_start_daily_pressed)
 	start_screen.adventure_pressed.connect(_open_adventure_select)
-	start_screen.defense_pressed.connect(_start_defense)
-	defense = DefenseMode.new()
-	$UI.add_child(defense)
-	$UI.move_child(defense, start_screen.get_index())
-	defense.visible = false
-	defense.puzzle_started.connect(_on_defense_puzzle)
-	defense.wave_started.connect(_on_defense_wave)
-	defense.defeated.connect(_finish_defense)
+	start_screen.battle_pressed.connect(_start_battle)
+	battle = MonsterBattle.new()
+	$UI.add_child(battle)
+	$UI.move_child(battle, start_screen.get_index())
+	battle.visible = false
+	battle.defeated.connect(func(stage_reached: int): _finish_battle(stage_reached, "ko"))
+	battle.player_hit.connect(func(dmg: int):
+		apply_screen_shake(6.0 + minf(dmg, 60) * 0.12, 0.2)
+		SettingsManager.vibrate(60)
+		combo_fx.flash(Color(1.0, 0.3, 0.25), 0.18))
+	tray_slots = TRAY_SLOTS.duplicate()
+	for n in [board, board_background, combo_aura, $TrayPlates]:
+		_layout_home[n] = [n.position, n.scale]
 	start_screen.ranking_pressed.connect(_open_leaderboard)
 	start_screen.set_ranking_visible(_has_ranking(), LeaderboardManager.is_online())
 	if Toss.active():
@@ -332,9 +340,6 @@ func _show_exit_confirm() -> void:
 	exit_confirm.visible = true
 
 func _process(delta: float) -> void:
-	if defense.visible:
-		defense.paused = settings_modal.visible or leaderboard_modal.visible or game_over_panel.visible \
-			or (exit_confirm != null and exit_confirm.visible)
 	if shake_duration > 0.0:
 		shake_duration -= delta
 		var ox = randf_range(-shake_intensity, shake_intensity)
@@ -368,18 +373,19 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 	elif game_mode == "adventure":
 		header_title.text = "STAGE %d" % stage["id"]
 		stage_progress = 0
-	elif game_mode == "defense":
-		header_title.text = "블록 디펜스"
+	elif game_mode == "battle":
+		header_title.text = "몬스터 배틀"
 	else:
 		header_title.text = "퍼즐블록"
 
 	score = 0
 	score_counter.reset(0)
-	var def_mode: bool = game_mode == "defense"
-	defense.stop()
-	defense.visible = false
-	$UI/Header/ScoreBox.visible = not def_mode
-	$UI/Header/BestBox.visible = not def_mode
+	var battle_mode: bool = game_mode == "battle"
+	battle.stop()
+	battle.visible = false
+	$UI/Header/ScoreBox.visible = not battle_mode
+	$UI/Header/BestBox.visible = not battle_mode
+	_apply_layout(battle_mode)
 	_dismiss_tutorial_hint()
 	tutorial_trays = 0
 	tutorial_active = game_mode == "classic" and (SettingsManager.tutorial_state == "pending" 		or (SettingsManager.tutorial_state == "" and Achievements.get_stat("games_played") == 0))
@@ -424,7 +430,7 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 
 	game_seq += 1
 	var seq := game_seq
-	if game_mode == "classic" or game_mode == "defense":
+	if game_mode == "classic" or game_mode == "battle":
 		# Classic starts from a few pre-placed pieces (see BlockData.generate_start_pattern);
 		# the first set always includes a piece that clears a line right away
 		var pattern := BlockData.generate_start_pattern()
@@ -441,8 +447,8 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 			if seq != game_seq or is_game_over:
 				return
 	_spawn_new_tray()
-	if game_mode == "defense" and seq == game_seq:
-		defense.begin()
+	if game_mode == "battle" and seq == game_seq:
+		battle.begin()
 
 func _clear_tray() -> void:
 	for i in range(3):
@@ -459,8 +465,8 @@ func _spawn_new_tray() -> void:
 		shapes = BlockData.get_seeded_trio(challenge_rng)
 	else:
 		# The difficulty curve applies to classic only; adventure stages keep their tuned balance
-		# Defense deals with a fixed, helpful pressure: points there buy the army
-		var pressure: float = BlockData.pressure_for_score(score) if game_mode == "classic" else (DEFENSE_PRESSURE if game_mode == "defense" else 0.0)
+		# The battle deals with a fixed, helpful pressure; the monsters supply the challenge
+		var pressure: float = BlockData.pressure_for_score(score) if game_mode == "classic" else (BATTLE_PRESSURE if game_mode == "battle" else 0.0)
 		if game_mode == "classic" and deal_index < BlockData.FUN_DEALS and score < BlockData.FUN_SCORE_MAX:
 			# Opening sets are chosen for fun moments: snug fits, multi-line clears, a combo that keeps
 			# going, and a set that empties the board whenever one exists
@@ -485,7 +491,9 @@ func _spawn_new_tray() -> void:
 	for i in range(3):
 		var piece: BlockPiece = block_piece_scene.instantiate()
 		add_child(piece)
-		piece.setup(shapes[i], i, TRAY_SLOTS[i])
+		piece.setup(shapes[i], i, tray_slots[i])
+		if game_mode == "battle":
+			piece.tray_scale *= COMPACT_SCALE
 		tray_pieces[i] = piece
 		
 		# Pop in animation
@@ -504,8 +512,6 @@ func _spawn_new_tray() -> void:
 
 func _input(event: InputEvent) -> void:
 	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible:
-		return
-	if game_mode == "defense" and defense.phase != "puzzle":
 		return
 		
 	if event is InputEventMouseButton:
@@ -532,8 +538,6 @@ func _input(event: InputEvent) -> void:
 
 func _on_pointer_down(screen_pos: Vector2, touch_id: int) -> void:
 	if dragging_piece != null:
-		return
-	if game_mode == "defense" and defense.phase != "puzzle":
 		return
 		
 	var best_piece: BlockPiece = null
@@ -644,6 +648,8 @@ func _commit_placement(piece: BlockPiece) -> bool:
 
 	if game_mode == "adventure" and _update_stage_after_move(lines, clear_info["gems"]):
 		return true
+	if game_mode == "battle":
+		battle.on_player_move()
 	if _is_tray_empty():
 		_spawn_new_tray()
 	else:
@@ -686,6 +692,8 @@ func _process_line_clears(lines: int, _cells: int, center_pos: Vector2) -> void:
 	if combo_count >= 1:
 		_show_combo_banner(combo_count, combo_grace_moves)
 	_spawn_combo_popup(lines, total_gain, center_pos)
+	if game_mode == "battle":
+		battle.player_attack(total_gain, lines, combo_count, board.get_occupied_count() == 0)
 	# Shockwave (and a flash for bigger ones) that grows with the combo and the lines cleared
 	if combo_count >= 2 or lines >= 2:
 		var strength: float = clampf(0.6 + combo_count * 0.2 + (lines - 1) * 0.5, 1.0, 3.0)
@@ -815,8 +823,8 @@ func _combo_banner_style(col: Color) -> StyleBoxFlat:
 	return sb
 
 func _show_combo_banner(c: int, grace: int = 3) -> void:
-	if game_mode == "defense":
-		return # the defense HUD sits where the combo badge would be
+	if game_mode == "battle":
+		return # the battle stage sits where the combo badge would be
 	if c <= 0:
 		_hide_combo_banner()
 		return
@@ -982,8 +990,8 @@ func _check_piece_usability_and_game_over() -> void:
 	if remaining_pieces > 0 and not any_can_fit:
 		if game_mode == "adventure":
 			_finish_stage(false, "stuck")
-		elif game_mode == "defense":
-			defense.board_stuck() # ends this puzzle phase; the next one gets a new board
+		elif game_mode == "battle":
+			_finish_battle(battle.stage, "stuck")
 		elif not has_revived_this_game:
 			_trigger_revive_chance()
 		else:
@@ -1058,8 +1066,8 @@ func _on_profile_setup_completed() -> void:
 	start_screen.visible = true
 
 func _open_home_screen() -> void:
-	defense.stop()
-	defense.visible = false
+	battle.stop()
+	battle.visible = false
 	_dismiss_tutorial_hint()
 	SoundManager.play_click()
 	if not start_screen.visible and not is_game_over and not game_id.is_empty():
@@ -1287,51 +1295,55 @@ func _on_go_secondary_pressed() -> void:
 		_open_home_screen()
 
 # =========================================================
-# Block Defense
+# Monster Battle
 # =========================================================
 
-func _start_defense() -> void:
+func _start_battle() -> void:
 	start_screen.visible = false
-	start_new_game(false, "defense")
+	start_new_game(false, "battle")
 
-func _on_defense_puzzle(fresh_board: bool) -> void:
-	# Back from a wave (or the start): the board shows again; after a stuck board, a new one
-	if not fresh_board:
-		_check_piece_usability_and_game_over()
+# The battle shrinks the board and tray to COMPACT_SCALE and moves them down so the stage fits
+# above; every other mode uses the normal layout
+func _apply_layout(compact: bool) -> void:
+	var s: float = COMPACT_SCALE if compact else 1.0
+	BlockPiece.board_scale = s
+	for n in _layout_home:
+		n.position = _layout_home[n][0]
+		n.scale = _layout_home[n][1]
+	tray_slots = TRAY_SLOTS.duplicate()
+	combo_aura.visible = false if compact else combo_aura.visible
+	if not compact:
 		return
-	board.reset_board()
-	_clear_tray()
-	var pattern := BlockData.generate_start_pattern()
-	if not pattern.is_empty():
-		var seq := game_seq
-		var delay := board.place_start_pattern(pattern)
-		guarantee_first_clear = true
-		await get_tree().create_timer(delay).timeout
-		if seq != game_seq or is_game_over:
-			return
-	_spawn_new_tray()
+	# Board and its frame: centred, top at 540
+	var bg_w: float = board_background.size.x * s
+	board_background.scale = Vector2.ONE * s
+	board_background.position = Vector2((720.0 - bg_w) * 0.5, 540.0)
+	var inset: Vector2 = (board.position - _layout_home[board_background][0]) * s
+	board.scale = Vector2.ONE * s
+	board.position = board_background.position + inset
+	combo_aura.scale = Vector2.ONE * s
+	combo_aura.position = board_background.position - (_layout_home[board_background][0] - _layout_home[combo_aura][0]) * s
+	# Tray plates and slots: same centres across, lower and smaller
+	$TrayPlates.scale = Vector2.ONE * s
+	$TrayPlates.position = Vector2(360.0 * (1.0 - s), 1100.0 - 960.0 * s)
+	for i in range(tray_slots.size()):
+		tray_slots[i] = $TrayPlates.position + TRAY_SLOTS[i] * s
 
-func _on_defense_wave() -> void:
-	# The battlefield covers the board: drop whatever is held back into the tray
-	_dismiss_tutorial_hint()
-	if dragging_piece != null and is_instance_valid(dragging_piece):
-		dragging_piece.return_to_tray()
-	dragging_piece = null
-	drag_touch_id = -1
-	board.hide_ghost_preview()
-
-func _finish_defense(waves: int) -> void:
+func _finish_battle(stage_reached: int, reason: String) -> void:
 	if is_game_over:
 		return
 	is_game_over = true
+	battle.stop()
 	last_game_over_msec = Time.get_ticks_msec()
-	var best: int = maxi(Achievements.get_stat("defense_best_wave"), waves)
-	var new_best: bool = waves > Achievements.get_stat("defense_best_wave")
+	var cleared: int = stage_reached - 1
+	var best: int = maxi(Achievements.get_stat("battle_best_stage"), stage_reached)
+	var new_best: bool = stage_reached > Achievements.get_stat("battle_best_stage")
 	Achievements.add_stat("games_played", 1)
-	Achievements.max_stat("defense_best_wave", waves)
-	Analytics.log_event("defense_result", {
+	Achievements.max_stat("battle_best_stage", stage_reached)
+	Analytics.log_event("battle_result", {
 		"game_id": game_id,
-		"waves": waves,
+		"stage": stage_reached,
+		"reason": reason,
 		"score": score,
 		"moves": move_count,
 		"duration_s": snappedf((last_game_over_msec - game_start_msec) / 1000.0, 0.1)
@@ -1339,15 +1351,14 @@ func _finish_defense(waves: int) -> void:
 	Analytics.flush()
 	SoundManager.play_gameover()
 	SettingsManager.vibrate(120)
-	await get_tree().create_timer(0.4).timeout
-	defense.visible = false
+	await get_tree().create_timer(0.5).timeout
 	_restore_game_over_texts()
 	go_title.text = "GAME OVER"
-	$UI/GameOverModal/Card/ScoreSub.text = "막아낸 웨이브"
-	go_final_score.text = "%d" % waves
-	go_best_score.text = "최고 기록: %d웨이브" % best
-	go_new_badge.visible = new_best and waves > 0
-	go_rank_status.text = "성이 무너졌어요."
+	$UI/GameOverModal/Card/ScoreSub.text = "도달한 스테이지"
+	go_final_score.text = "STAGE %d" % stage_reached
+	go_best_score.text = "최고 기록: STAGE %d · 잡은 몬스터 %d" % [best, cleared]
+	go_new_badge.visible = new_best and stage_reached > 1
+	go_rank_status.text = "놓을 수 있는 블록이 없어요." if reason == "stuck" else "체력이 바닥났어요."
 	go_btn_view_rank.visible = false
 	go_btn_retry.text = "다시 도전"
 	game_over_panel.visible = true
@@ -1474,9 +1485,8 @@ func _on_leaderboard_score_submitted(res: Dictionary) -> void:
 		go_rank_status.text = "실시간 랭킹 확인 가능"
 
 func _add_score(amount: int, kind: String = "place") -> void:
-	if game_mode == "defense":
-		score += amount # no records; the points raise the army
-		defense.add_points(amount)
+	if game_mode == "battle":
+		score += amount # no records; clear points are the damage (see _process_line_clears)
 		return
 	score += amount
 	if game_mode == "adventure":

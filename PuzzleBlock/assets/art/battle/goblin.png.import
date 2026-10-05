@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b0rulbxpfyosc"
-path="res://.godot/imported/boss.png-fa9508d2c86e5461208c09b080c3e99c.ctex"
+uid="uid://cfh5lg03me6g5"
+path="res://.godot/imported/goblin.png-9490260756096d956c57b79be5a68c87.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/defense/boss.png"
-dest_files=["res://.godot/imported/boss.png-fa9508d2c86e5461208c09b080c3e99c.ctex"]
+source_file="res://assets/art/battle/goblin.png"
+dest_files=["res://.godot/imported/goblin.png-9490260756096d956c57b79be5a68c87.ctex"]
 
 [params]
 
