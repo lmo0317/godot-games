@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dm4m063eltfqj"
-path="res://.godot/imported/sniper.png-2e1ad995952c00b5e6a66d2a3a966e9e.ctex"
+uid="uid://dbu8ea8jsrlgh"
+path="res://.godot/imported/mage.png-55bfec9c9472b4625d1cecad77ceeee9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/defense/sniper.png"
-dest_files=["res://.godot/imported/sniper.png-2e1ad995952c00b5e6a66d2a3a966e9e.ctex"]
+source_file="res://assets/art/defense/mage.png"
+dest_files=["res://.godot/imported/mage.png-55bfec9c9472b4625d1cecad77ceeee9.ctex"]
 
 [params]
 

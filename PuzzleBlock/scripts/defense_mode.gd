@@ -2,14 +2,14 @@ class_name DefenseMode
 extends Control
 # Block Defense: puzzle and battle take turns on the whole (portrait) screen.
 #  1. Puzzle phase (PUZZLE_TIME seconds): the player breaks blocks on the normal board. The HUD in
-#     the header shows the wave, the castle's HP, the time left and what the points so far buy.
-#  2. The points of the phase turn into allies automatically: a spearman per SOLDIER_COST points
-#     and a sniper per SNIPER_COST (up to the caps; extra points repair the castle).
-#  3. Wave phase: the battlefield covers the screen. Monsters walk down the road from the top;
-#     spearmen stand in a row of lanes above the wall at the bottom and block their lane, snipers
-#     shoot from the wall. A lane with no spearman lets monsters reach the wall. Clear the wave to
-#     go back to the puzzle; allies that survive stay. Every BOSS_EVERY waves a wizard boss comes.
-#  The run ends when the castle falls; the score is the number of waves held off.
+#     the header shows the wave, the wall's HP, the time left and what the points so far buy.
+#  2. The points of the phase turn into defenders automatically: an archer per ARCHER_COST points
+#     and a mage per MAGE_COST (up to the wall's SLOTS; extra points repair the wall).
+#  3. Wave phase: the battlefield covers the screen. Monsters walk down the road from the top to
+#     the wall at the bottom and hit it. Every defender stands on the wall either side of the gate
+#     and shoots: archers fast single arrows, mages slower fireballs that burst on everything
+#     nearby. Clear the wave to go back to the puzzle; defenders stay. Every BOSS_EVERY waves a
+#     wizard boss comes. The run ends when the wall falls; the score is the waves held off.
 # Characters are pixel art scaled up with nearest filtering so the pixels stay crisp.
 # MainGame runs the board and calls add_points() / board_stuck(); this node owns the rest.
 
@@ -18,56 +18,52 @@ signal puzzle_started(fresh_board: bool)
 signal defeated(waves_cleared: int)
 
 const PUZZLE_TIME: float = 40.0
-const SOLDIER_COST: int = 120
-const SNIPER_COST: int = 300
-const MAX_SOLDIERS: int = 8
-const MAX_SNIPERS: int = 6
+const ARCHER_COST: int = 100
+const MAGE_COST: int = 250
 const CASTLE_HP: int = 300
 const BOSS_EVERY: int = 5
 const FIELD_TOP: float = 92.0
-const FIELD_SIZE := Vector2(720, 1100)
-# On-screen height of each pixel-art character (nearest filtering keeps the pixels crisp)
-const HEIGHTS := {"soldier": 112.0, "sniper": 104.0, "slime": 84.0, "goblin": 112.0, "boss": 180.0}
-# Columns: monsters walk down one of these x lanes; a spearman blocks the lane he stands in
-const LANES: Array[float] = [80.0, 160.0, 240.0, 320.0, 400.0, 480.0, 560.0, 640.0]
-const LANE_ORDER: Array[int] = [3, 4, 2, 5, 1, 6, 0, 7]   # centre lanes are filled first
-const SNIPER_X: Array[float] = [310.0, 410.0, 210.0, 510.0, 110.0, 610.0]
-const BLOCK_REACH: float = 44.0   # a spearman blocks monsters this close to his lane
-const GUARD_RANGE: float = 380.0  # spearmen step sideways to meet monsters this close to the wall
-const STEP_SPEED: float = 170.0
+const FIELD_SIZE := Vector2(720, 1188)
+# Spots on the wall walkway, either side of the gate (x), filled from the gate outward
+const SLOTS: Array[float] = [272.0, 448.0, 200.0, 520.0, 128.0, 592.0, 56.0, 664.0]
+const SPAWN_X := Vector2(70.0, 650.0)   # monsters enter anywhere across the top
 
 const TEX := {
-	"soldier": preload("res://assets/art/defense/soldier.png"),
-	"sniper": preload("res://assets/art/defense/sniper.png"),
+	"archer": preload("res://assets/art/defense/archer.png"),
+	"mage": preload("res://assets/art/defense/mage.png"),
 	"slime": preload("res://assets/art/defense/slime.png"),
 	"goblin": preload("res://assets/art/defense/goblin.png"),
 	"boss": preload("res://assets/art/defense/boss.png"),
 	"wall": preload("res://assets/art/defense/wall.png"),
 	"field": preload("res://assets/art/defense/field.png"),
 }
+const SPARK: Texture2D = preload("res://assets/sprites/sparkle.png")
+# On-screen height of each pixel-art character (nearest filtering keeps the pixels crisp)
+const HEIGHTS := {"archer": 92.0, "mage": 92.0, "slime": 80.0, "goblin": 104.0, "boss": 170.0}
 # Monster stats at wave 1; HP and damage grow by MONSTER_GROWTH per wave
 const MONSTERS := {
-	"slime": {"hp": 40.0, "dps": 8.0, "speed": 100.0},
-	"goblin": {"hp": 75.0, "dps": 14.0, "speed": 135.0},
-	"boss": {"hp": 520.0, "dps": 30.0, "speed": 55.0},
+	"slime": {"hp": 40.0, "dps": 8.0, "speed": 70.0},
+	"goblin": {"hp": 75.0, "dps": 14.0, "speed": 95.0},
+	"boss": {"hp": 520.0, "dps": 30.0, "speed": 38.0},
 }
 const MONSTER_GROWTH: float = 1.13
-# Attacks land as separate hits so each one can be seen (damage per second stays the same)
-const SOLDIER := {"hp": 70.0, "dps": 16.0, "interval": 0.6}
-const SNIPER := {"damage": 22.0, "interval": 1.3}
 const MONSTER_HIT_INTERVAL: float = 0.8
-const SPARK: Texture2D = preload("res://assets/sprites/sparkle.png")
+# Defenders: archers hit one target often, mages hit everything around the target
+const UNITS := {
+	"archer": {"damage": 13.0, "interval": 0.75, "splash": 0.0},
+	"mage": {"damage": 26.0, "interval": 1.7, "splash": 80.0},
+}
+const UNIT_GROWTH: float = 0.06   # defenders hit this much harder each wave
 
-var phase: String = "idle"       # idle / puzzle / wave / over
+var phase: String = "idle"       # idle / puzzle / wave / between / over
 var paused: bool = false
 var speed: float = 1.0
 var wave: int = 1
 var castle_hp: float = CASTLE_HP
 var time_left: float = PUZZLE_TIME
 var phase_points: int = 0
-var soldiers: Array = []         # {node, hp, max_hp}
-var snipers: Array = []          # {node, cooldown}
-var monsters: Array = []         # {node, kind, hp, max_hp, dps, speed, bar}
+var units: Array = []            # {node, kind, cool}
+var monsters: Array = []         # {node, kind, hp, max_hp, dps, speed, walk, cool, bar}
 var _spawn_queue: Array = []
 var _spawn_clock: float = 0.0
 var _board_was_stuck: bool = false
@@ -106,7 +102,7 @@ func begin() -> void:
 	castle_hp = CASTLE_HP
 	speed = 1.0
 	_speed_btn.text = "2배속"
-	for list in [soldiers, snipers, monsters]:
+	for list in [units, monsters]:
 		for u in list:
 			u["node"].queue_free()
 		list.clear()
@@ -131,6 +127,9 @@ func board_stuck() -> void:
 	_board_was_stuck = true
 	_end_puzzle()
 
+func count(kind: String) -> int:
+	return units.filter(func(u): return u["kind"] == kind).size()
+
 func _start_puzzle(fresh: bool) -> void:
 	phase = "puzzle"
 	time_left = PUZZLE_TIME
@@ -141,32 +140,26 @@ func _start_puzzle(fresh: bool) -> void:
 	puzzle_started.emit(fresh)
 
 func _end_puzzle() -> void:
-	# Points become allies; anything over the caps repairs the castle
-	var new_soldiers: int = phase_points / SOLDIER_COST
-	var new_snipers: int = phase_points / SNIPER_COST
+	# Points become defenders while there are free spots on the wall; the rest repairs it
+	var new_archers: int = phase_points / ARCHER_COST
+	var new_mages: int = phase_points / MAGE_COST
+	var added := {"archer": 0, "mage": 0}
 	var overflow := 0
-	for i in range(new_soldiers):
-		if soldiers.size() < MAX_SOLDIERS:
-			_add_soldier()
-		else:
-			overflow += 1
-	for i in range(new_snipers):
-		if snipers.size() < MAX_SNIPERS:
-			_add_sniper()
-		else:
-			overflow += 1
+	for kind in ["mage", "archer"]:
+		for i in range(new_mages if kind == "mage" else new_archers):
+			if units.size() < SLOTS.size():
+				_add_unit(kind)
+				added[kind] += 1
+			else:
+				overflow += 1
 	castle_hp = minf(CASTLE_HP, castle_hp + overflow * 20)
-	# Survivors heal up a bit between waves
-	for s in soldiers:
-		s["hp"] = minf(s["max_hp"], s["hp"] + s["max_hp"] * 0.5)
-	_start_wave(new_soldiers, new_snipers)
+	_start_wave(added["archer"], added["mage"])
 
-func _start_wave(new_soldiers: int, new_snipers: int) -> void:
+func _start_wave(new_archers: int, new_mages: int) -> void:
 	phase = "wave"
 	hud.visible = false
 	field.visible = true
-	_layout_army()
-	var k: float = pow(MONSTER_GROWTH, wave - 1)
+	_layout_units()
 	_spawn_queue.clear()
 	for i in range(3 + wave):
 		_spawn_queue.append("slime")
@@ -176,7 +169,7 @@ func _start_wave(new_soldiers: int, new_snipers: int) -> void:
 		_spawn_queue.append("boss")
 	_spawn_clock = 0.6
 	_field_title.text = "WAVE %d" % wave
-	_banner("WAVE %d" % wave, "병사 +%d · 저격수 +%d" % [new_soldiers, new_snipers])
+	_banner("WAVE %d" % wave, "궁수 +%d · 마법사 +%d" % [new_archers, new_mages])
 	_refresh_field()
 	wave_started.emit()
 
@@ -213,94 +206,49 @@ func _process(delta: float) -> void:
 
 func _simulate(dt: float) -> void:
 	var k: float = pow(MONSTER_GROWTH, wave - 1)
-	# Spawning at the top of the road
 	if not _spawn_queue.is_empty():
 		_spawn_clock -= dt
 		if _spawn_clock <= 0.0:
 			_spawn_monster(_spawn_queue.pop_front(), k)
 			_spawn_clock = 0.8
-	_guard(dt)
-	# Monsters walk down their lane until a spearman in the lane or the wall stops them
-	var wall_y: float = _wall_top() + 18.0
+	# Monsters walk down to the wall and slam it
+	var stop_y: float = _wall_top() + 14.0
 	for m in monsters:
 		var node: Sprite2D = m["node"]
-		var blocker: Dictionary = _blocker(node.position.x)
-		var stop_y: float = wall_y
-		if not blocker.is_empty():
-			stop_y = blocker["node"].position.y - _height(blocker["node"]) * 0.55
 		if node.position.y < stop_y:
 			node.position.y = minf(stop_y, node.position.y + m["speed"] * dt)
 			m["walk"] += dt
 			node.rotation = sin(m["walk"] * 9.0) * 0.07
-		else:
-			node.rotation = 0.0
-			m["cool"] -= dt
-			if m["cool"] > 0.0:
-				continue
-			# Body slam at whatever stops it
-			m["cool"] = MONSTER_HIT_INTERVAL
-			var dmg: float = m["dps"] * MONSTER_HIT_INTERVAL
-			_bump(node, 7.0)
-			if not blocker.is_empty():
-				blocker["hp"] -= dmg
-				_flash(blocker["node"], Color(2.2, 0.7, 0.7))
-				_number(blocker["node"].position + Vector2(0, -_height(blocker["node"]) * 0.7), dmg, Color(1.0, 0.45, 0.4))
-				if blocker["hp"] <= 0.0:
-					_kill_soldier(blocker)
-			else:
-				castle_hp = maxf(0.0, castle_hp - dmg)
-				_flash(_wall_rect, Color(1.8, 0.8, 0.8))
-				_number(node.position + Vector2(0, 30), dmg, Color(1.0, 0.45, 0.4))
-				_refresh_field()
-				if castle_hp <= 0.0:
-					_castle_fallen()
-					return
-	# Spearmen thrust at a monster that reached them in their lane
-	for s in soldiers:
-		s["cool"] -= dt
-		if s["cool"] > 0.0:
 			continue
-		var target: Dictionary = _monster_at(s["node"].position, 150.0)
-		if not target.is_empty():
-			s["cool"] = SOLDIER["interval"]
-			var dmg: float = SOLDIER["dps"] * SOLDIER["interval"] * (1.0 + 0.04 * (wave - 1))
-			_bump(s["node"], -10.0)
-			_impact(target, dmg, Color(0.75, 0.9, 1.0))
-	# Snipers shoot the monster closest to the wall
-	for sn in snipers:
-		sn["cooldown"] -= dt
-		if sn["cooldown"] <= 0.0 and not monsters.is_empty():
-			var t: Dictionary = _lowest_monster()
-			if not t.is_empty():
-				sn["cooldown"] = SNIPER["interval"]
-				_bump(sn["node"], 5.0)
-				_shoot(sn["node"].position + Vector2(0, -_height(sn["node"]) * 0.8), t, SNIPER["damage"] * (1.0 + 0.05 * (wave - 1)))
+		node.rotation = 0.0
+		m["cool"] -= dt
+		if m["cool"] > 0.0:
+			continue
+		m["cool"] = MONSTER_HIT_INTERVAL
+		var dmg: float = m["dps"] * MONSTER_HIT_INTERVAL
+		_bump(node, 8.0)
+		castle_hp = maxf(0.0, castle_hp - dmg)
+		_flash(_wall_rect, Color(1.8, 0.8, 0.8))
+		_number(node.position + Vector2(0, 26), dmg, Color(1.0, 0.45, 0.4))
+		_refresh_field()
+		if castle_hp <= 0.0:
+			_castle_fallen()
+			return
+	# Every defender fires at the monster closest to the wall
+	for u in units:
+		u["cool"] -= dt
+		if u["cool"] > 0.0:
+			continue
+		var t: Dictionary = _closest_monster()
+		if t.is_empty():
+			continue
+		var st: Dictionary = UNITS[u["kind"]]
+		u["cool"] = st["interval"]
+		_bump(u["node"], -6.0)
+		_fire(u, t, st["damage"] * (1.0 + UNIT_GROWTH * (wave - 1)), st["splash"])
 	_update_bars()
 	if _spawn_queue.is_empty() and monsters.is_empty() and phase == "wave":
 		_wave_cleared()
-
-# Each spearman takes the nearest unclaimed monster coming at the wall and side-steps into its
-# lane to block it; with nothing coming he walks back to his own lane
-func _guard(dt: float) -> void:
-	var line_y: float = _wall_top() + 4.0
-	var threats: Array = monsters.filter(func(m): return m["node"].position.y > line_y - GUARD_RANGE)
-	threats.sort_custom(func(a, b): return a["node"].position.y > b["node"].position.y)
-	var free: Array = soldiers.duplicate()
-	var goals: Dictionary = {}
-	for m in threats:
-		if free.is_empty():
-			break
-		var mx: float = m["node"].position.x
-		var best: Dictionary = {}
-		for sd in free:
-			if best.is_empty() or absf(sd["node"].position.x - mx) < absf(best["node"].position.x - mx):
-				best = sd
-		free.erase(best)
-		goals[best["node"].get_instance_id()] = mx
-	for sd in soldiers:
-		var node: Sprite2D = sd["node"]
-		var gx: float = goals.get(node.get_instance_id(), sd.get("home", node.position.x))
-		node.position.x = move_toward(node.position.x, gx, STEP_SPEED * dt)
 
 func _wall_scale() -> float:
 	return FIELD_SIZE.x / TEX["wall"].get_width()
@@ -311,28 +259,10 @@ func _wall_top() -> float:
 func _height(node: Sprite2D) -> float:
 	return node.texture.get_height() * node.scale.y
 
-# The spearman standing in the lane at x, if any
-func _blocker(x: float) -> Dictionary:
-	for s in soldiers:
-		if absf(s["node"].position.x - x) <= BLOCK_REACH:
-			return s
-	return {}
-
-# A monster in the spearman's lane that is within reach above him
-func _monster_at(pos: Vector2, reach: float) -> Dictionary:
+func _closest_monster() -> Dictionary:
 	var best: Dictionary = {}
 	for m in monsters:
-		var mp: Vector2 = m["node"].position
-		if absf(mp.x - pos.x) > BLOCK_REACH or pos.y - mp.y > reach:
-			continue
-		if best.is_empty() or mp.y > best["node"].position.y:
-			best = m
-	return best
-
-func _lowest_monster() -> Dictionary:
-	var best: Dictionary = {}
-	for m in monsters:
-		if m["node"].position.y < 0.0:
+		if m["node"].position.y < 20.0:
 			continue # not on screen yet
 		if best.is_empty() or m["node"].position.y > best["node"].position.y:
 			best = m
@@ -350,35 +280,56 @@ func _damage_monster(m: Dictionary, dmg: float) -> void:
 		tw.tween_property(node, "scale", node.scale * 1.25, 0.3)
 		tw.chain().tween_callback(node.queue_free)
 
-func _kill_soldier(s: Dictionary) -> void:
-	soldiers.erase(s)
-	var node: Sprite2D = s["node"]
-	var tw := node.create_tween().set_parallel(true)
-	tw.tween_property(node, "modulate", Color(1, 0.3, 0.3, 0.0), 0.35)
-	tw.tween_property(node, "position:y", node.position.y + 20.0, 0.35)
-	tw.chain().tween_callback(node.queue_free)
-
-# A crossbow bolt flies up at the target
-func _shoot(from: Vector2, target: Dictionary, dmg: float) -> void:
-	var bolt := Line2D.new()
-	bolt.width = 7.0
-	bolt.default_color = Color(1.0, 0.97, 0.7)
-	bolt.points = PackedVector2Array([Vector2.ZERO, Vector2(-34, 0)])
-	var glow := Gradient.new()
-	glow.set_color(0, Color(1.0, 1.0, 0.9, 1.0))
-	glow.set_color(1, Color(1.0, 0.8, 0.3, 0.0))
-	bolt.gradient = glow
-	bolt.position = from
-	bolt.z_index = 5
-	_units_layer.add_child(bolt)
+# Archers shoot an arrow; mages throw a fireball that bursts on everything near the target
+func _fire(u: Dictionary, target: Dictionary, dmg: float, splash: float) -> void:
+	var from: Vector2 = u["node"].position + Vector2(0, -_height(u["node"]) * 0.7)
 	var to: Vector2 = target["node"].position + Vector2(0, -_height(target["node"]) * 0.5)
-	bolt.rotation = (to - bolt.position).angle()
-	var tw := bolt.create_tween()
-	tw.tween_property(bolt, "position", to, maxf(0.08, bolt.position.distance_to(to) / 1400.0) / speed)
+	var shot: Node2D
+	if splash > 0.0:
+		var orb := Sprite2D.new()
+		orb.texture = SPARK
+		orb.modulate = Color(1.0, 0.55, 0.15)
+		orb.scale = Vector2.ONE * 1.3
+		shot = orb
+	else:
+		# Bright arrow with a fading trail so it reads at a glance
+		var arrow := Line2D.new()
+		arrow.width = 9.0
+		arrow.points = PackedVector2Array([Vector2.ZERO, Vector2(-48, 0)])
+		arrow.begin_cap_mode = Line2D.LINE_CAP_ROUND
+		var g := Gradient.new()
+		g.set_color(0, Color(1.0, 1.0, 0.75))
+		g.set_color(1, Color(1.0, 0.8, 0.2, 0.0))
+		arrow.gradient = g
+		arrow.rotation = (to - from).angle()
+		shot = arrow
+	shot.position = from
+	shot.z_index = 5
+	_units_layer.add_child(shot)
+	var tw := shot.create_tween()
+	tw.tween_property(shot, "position", to, maxf(0.1, from.distance_to(to) / (1300.0 if splash <= 0.0 else 900.0)) / speed)
 	tw.tween_callback(func():
-		bolt.queue_free()
-		if monsters.has(target):
-			_impact(target, dmg, Color(1.0, 0.9, 0.5)))
+		shot.queue_free()
+		if splash > 0.0:
+			_burst(to, splash)
+			for m in monsters.duplicate():
+				if m["node"].position.distance_to(target["node"].position if monsters.has(target) else to) <= splash:
+					_impact(m, dmg, Color(1.0, 0.6, 0.2))
+		elif monsters.has(target):
+			_impact(target, dmg, Color(1.0, 0.95, 0.6)))
+
+func _burst(at: Vector2, radius: float) -> void:
+	var ring := Sprite2D.new()
+	ring.texture = SPARK
+	ring.modulate = Color(1.0, 0.5, 0.1, 0.9)
+	ring.position = at
+	ring.z_index = 6
+	ring.scale = Vector2.ONE * 0.5
+	_units_layer.add_child(ring)
+	var tw := ring.create_tween().set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2.ONE * radius / 22.0, 0.22)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.25)
+	tw.chain().tween_callback(ring.queue_free)
 
 # A hit on a monster: damage, a flash, a spark and the number
 func _impact(m: Dictionary, dmg: float, col: Color) -> void:
@@ -438,37 +389,26 @@ func _sprite(kind: String) -> Sprite2D:
 	_units_layer.add_child(s)
 	return s
 
-func _add_soldier() -> void:
-	var node := _sprite("soldier")
-	node.position = Vector2(FIELD_SIZE.x * 0.5, FIELD_SIZE.y + 40.0)
-	soldiers.append({"node": node, "hp": SOLDIER["hp"], "max_hp": SOLDIER["hp"], "cool": 0.0, "bar": _bar(node)})
-
-func _add_sniper() -> void:
-	var node := _sprite("sniper")
-	node.position = Vector2(FIELD_SIZE.x * 0.5, FIELD_SIZE.y + 40.0)
-	snipers.append({"node": node, "cooldown": rng.randf_range(0.2, 1.0)})
+func _add_unit(kind: String) -> void:
+	var node := _sprite(kind)
+	node.position = Vector2(FIELD_SIZE.x * 0.5, FIELD_SIZE.y + 60.0)
+	units.append({"node": node, "kind": kind, "cool": rng.randf_range(0.1, 0.6)})
 
 func _spawn_monster(kind: String, k: float) -> void:
 	var st: Dictionary = MONSTERS[kind]
 	var node := _sprite(kind)
-	var lane: float = LANES[rng.randi() % LANES.size()] + rng.randf_range(-10.0, 10.0)
-	if kind == "boss":
-		lane = FIELD_SIZE.x * 0.5
-	node.position = Vector2(lane, -10.0)
+	var x: float = FIELD_SIZE.x * 0.5 if kind == "boss" else rng.randf_range(SPAWN_X.x, SPAWN_X.y)
+	node.position = Vector2(x, -10.0)
 	var hp: float = st["hp"] * k
 	monsters.append({"node": node, "kind": kind, "hp": hp, "max_hp": hp, "dps": st["dps"] * k,
 		"speed": st["speed"], "walk": rng.randf() * 3.0, "cool": 0.3, "bar": _bar(node)})
 
-# Spearmen stand in a row just above the wall, centre lanes first; snipers on the wall
-func _layout_army() -> void:
-	var front_y: float = _wall_top() + 4.0
-	for i in range(soldiers.size()):
-		var target := Vector2(LANES[LANE_ORDER[i]], front_y)
-		soldiers[i]["home"] = target.x
-		soldiers[i]["node"].create_tween().tween_property(soldiers[i]["node"], "position", target, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	for i in range(snipers.size()):
-		var target := Vector2(SNIPER_X[i], _wall_top() + 120.0)
-		snipers[i]["node"].create_tween().tween_property(snipers[i]["node"], "position", target, 0.5)
+# Defenders stand on the wall walkway, filling the spots next to the gate first
+func _layout_units() -> void:
+	var y: float = _wall_top() + 30.0
+	for i in range(units.size()):
+		var target := Vector2(SLOTS[i], y)
+		units[i]["node"].create_tween().tween_property(units[i]["node"], "position", target, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _bar(owner: Sprite2D) -> Panel:
 	var bg := Panel.new()
@@ -480,22 +420,19 @@ func _bar(owner: Sprite2D) -> Panel:
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fill.position = Vector2(1, 1)
 	fill.size = Vector2(58, 6)
+	fill.add_theme_stylebox_override("panel", UIKit.box(Color(1.0, 0.4, 0.35), Color.TRANSPARENT, 2))
 	bg.add_child(fill)
 	_units_layer.add_child(bg)
 	owner.tree_exiting.connect(bg.queue_free)
 	return bg
 
 func _update_bars() -> void:
-	for list in [soldiers, monsters]:
-		for u in list:
-			var bg: Panel = u["bar"]
-			var node: Sprite2D = u["node"]
-			bg.position = node.position + Vector2(-30, -_height(node) - 10)
-			var ratio: float = clampf(u["hp"] / u["max_hp"], 0.0, 1.0)
-			var fill: Panel = bg.get_child(0)
-			fill.size.x = 58.0 * ratio
-			var col: Color = Color(0.35, 0.9, 0.45) if list == soldiers else Color(1.0, 0.4, 0.35)
-			fill.add_theme_stylebox_override("panel", UIKit.box(col, Color.TRANSPARENT, 2))
+	for m in monsters:
+		var bg: Panel = m["bar"]
+		var node: Sprite2D = m["node"]
+		bg.position = node.position + Vector2(-30, -_height(node) - 10)
+		var fill: Panel = bg.get_child(0)
+		fill.size.x = 58.0 * clampf(m["hp"] / m["max_hp"], 0.0, 1.0)
 
 # =========================================================
 # HUD and screens
@@ -516,15 +453,15 @@ func _build_hud() -> void:
 	_wave_label.position = Vector2(20, 10)
 	_wave_label.size = Vector2(200, 40)
 	hud.add_child(_wave_label)
-	var castle_icon := TextureRect.new()
-	castle_icon.texture = TEX["soldier"]
-	castle_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	castle_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	castle_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	castle_icon.position = Vector2(300, 8)
-	castle_icon.size = Vector2(40, 40)
-	castle_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(castle_icon)
+	var icon := TextureRect.new()
+	icon.texture = TEX["archer"]
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.position = Vector2(300, 8)
+	icon.size = Vector2(40, 40)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(icon)
 	var castle_bg := Panel.new()
 	castle_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	castle_bg.position = Vector2(346, 20)
@@ -623,11 +560,9 @@ func _build_field() -> void:
 func _refresh_hud() -> void:
 	_wave_label.text = "WAVE %d" % wave
 	_set_castle_bar(_castle_fill, 266.0)
-	_castle_label.text = "성 %d / %d" % [ceili(castle_hp), CASTLE_HP]
-	var s: int = phase_points / SOLDIER_COST
-	var n: int = phase_points / SNIPER_COST
-	_points_label.text = "모은 점수 %s  →  병사 +%d · 저격수 +%d" % [UIKit.format_number(phase_points), s, n]
-	_army_label.text = "지금 병력: 병사 %d · 저격수 %d   (병사 %d점, 저격수 %d점마다)" % [soldiers.size(), snipers.size(), SOLDIER_COST, SNIPER_COST]
+	_castle_label.text = "성벽 %d / %d" % [ceili(castle_hp), CASTLE_HP]
+	_points_label.text = "모은 점수 %s  →  궁수 +%d · 마법사 +%d" % [UIKit.format_number(phase_points), phase_points / ARCHER_COST, phase_points / MAGE_COST]
+	_army_label.text = "지금 병력: 궁수 %d · 마법사 %d  (궁수 %d점, 마법사 %d점마다 · 최대 %d명)" % [count("archer"), count("mage"), ARCHER_COST, MAGE_COST, SLOTS.size()]
 	_refresh_timer()
 
 func _refresh_timer() -> void:

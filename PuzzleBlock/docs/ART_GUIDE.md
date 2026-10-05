@@ -71,6 +71,8 @@ clean 2D chibi game sprite, bold dark navy outline, flat cel shading with light 
 
 ### 디펜스 픽셀 아트 (Codex, 2026-10-05)
 
+아군(궁수·마법사)은 뒷모습이 별로라는 피드백으로 앞모습 꼬마 스타일로 다시 그림. 아군 스타일 문구: `adorable cute chibi PIXEL ART unit for a cute mobile tower-defense game, classic 16-bit pixel art with chunky visible square pixels (like a 40x40 sprite scaled up), very big round head and tiny body (2-head-tall proportions), big shiny eyes, happy friendly expression, bright saturated colors, 1-pixel dark outline, simple 2-3 tone shading, no anti-aliasing, no gradients, no blur. FRONT VIEW facing the viewer, full body, standing pose.` (+ 투명 배경 문구)
+
 세로 디펜스(위에서 내려오는 몬스터, 아래 성벽)용. 공통 스타일 문구(배경 제외):
 
 ```text
@@ -79,8 +81,8 @@ cute chibi PIXEL ART game sprite in the style of classic 16-bit RPGs, chunky vis
 
 | 파일 | 주제 |
 |---|---|
-| `soldier.png` | spearman soldier seen FROM BEHIND, facing UP, spear upright, blue square shield, steel helmet, blue tunic |
-| `sniper.png` | crossbow sniper seen FROM BEHIND, facing UP, aiming a crossbow upward, green hood and cloak |
+| `archer.png` | (아래 귀여운 꼬마 스타일) cute little archer girl, green hood, small wooden bow, quiver on the back, holding the bow ready |
+| `mage.png` | (아래 귀여운 꼬마 스타일) cute little mage boy, big blue pointy wizard hat and blue robe, short wand with a glowing orange star tip |
 | `slime.png` | green slime monster seen FROM THE FRONT (moving down toward the viewer), angry eyes, tiny fangs |
 | `goblin.png` | goblin warrior seen FROM THE FRONT, green skin, big pointy ears, wooden club raised, ragged leather armor |
 | `boss.png` | evil wizard boss seen FROM THE FRONT, purple robe and big pointed hat with gold trim, white hair, staff with glowing orange crystal |
@@ -111,7 +113,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 빛줄기 | `assets/sprites/combo/rays.png` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 뒤 | 완료 |
 | 대결 기사·마법사 | `assets/art/battle/knight.png`, `wizard.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 대결 무대 | 완료 |
 | 대결 스킬 이펙트 | `assets/art/battle/fx_slash.png`, `fx_fireball.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 기사 검격, 마법사 화염구·메테오 | 완료 |
-| 디펜스 아군(픽셀) | `assets/art/defense/soldier.png`, `sniper.png` | Codex 생성 | 위 픽셀 아트 프롬프트 | 웨이브 화면, 홈 카드·HUD 아이콘 | 완료 |
+| 디펜스 아군(픽셀) | `assets/art/defense/archer.png`, `mage.png` | Codex 생성(gpt-5.5) | 위 픽셀 아트 프롬프트 | 웨이브 화면, 홈 카드·HUD 아이콘 | 완료 |
 | 디펜스 몬스터(픽셀) | `assets/art/defense/slime.png`, `goblin.png`, `boss.png` | Codex 생성 | 위 픽셀 아트 프롬프트 | 웨이브 화면 | 완료 |
 | 디펜스 성벽·전장(픽셀) | `assets/art/defense/wall.png`, `field.png` | Codex 생성 | 위 픽셀 아트 프롬프트 | 웨이브 화면 | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |

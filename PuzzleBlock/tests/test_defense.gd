@@ -1,6 +1,6 @@
 extends Node
 # Headless test for Block Defense: the timed puzzle phase collects points, points turn into
-# spearmen and snipers, the wave covers the board and blocks input, an army clears an early wave
+# archers and mages on the wall, the wave covers the board and blocks input, they clear an early wave
 # and the puzzle comes back, a stuck board ends the phase early, and a castle with no defenders
 # falls and shows the result.
 # Run: Godot_console.exe --headless --path . res://tests/test_defense.tscn
@@ -48,11 +48,11 @@ func _run() -> void:
 	main._commit_placement(piece)
 	_expect(d.phase_points > 0, "points collected in the phase (%d)" % d.phase_points)
 
-	# Points become allies when time runs out; the wave covers the board and input is closed
-	d.phase_points = DefenseMode.SOLDIER_COST * 4 + 5
+	# Points become defenders when time runs out; the wave covers the board and input is closed
+	d.phase_points = DefenseMode.ARCHER_COST * 4 + 5
 	d.time_left = 0.01
 	await _wait_until(func(): return d.phase == "wave")
-	_expect(d.soldiers.size() == 4 and d.snipers.size() == 1, "480+ points -> 4 spearmen, 1 sniper (%d, %d)" % [d.soldiers.size(), d.snipers.size()])
+	_expect(d.count("archer") == 4 and d.count("mage") == 1, "405 points -> 4 archers, 1 mage (%d, %d)" % [d.count("archer"), d.count("mage")])
 	_expect(d.field.visible and not d.hud.visible, "the battlefield covers the screen during the wave")
 	var p2 := _any_piece()
 	if p2 != null:
@@ -70,13 +70,10 @@ func _run() -> void:
 	_expect(d.phase == "wave", "a stuck board starts the wave right away")
 	await _wait_until(func(): return d.phase == "puzzle" or d.phase == "over", 60.0)
 
-	# No defenders and a weak castle: it falls and the result shows
-	for s in d.soldiers:
-		s["node"].queue_free()
-	d.soldiers.clear()
-	for s in d.snipers:
-		s["node"].queue_free()
-	d.snipers.clear()
+	# No defenders and a weak wall: it falls and the result shows
+	for u in d.units:
+		u["node"].queue_free()
+	d.units.clear()
 	d.castle_hp = 5.0
 	d.phase_points = 0
 	d.time_left = 0.01
