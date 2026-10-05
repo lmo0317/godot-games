@@ -1,7 +1,7 @@
 class_name MonsterBattle
 extends Control
 # Monster Battle (Puzzle & Dragons style): the puzzle stays exactly as in classic, on a board
-# shrunk to 85% (MainGame's compact layout); the stage above it shows one monster at a time.
+# shrunk to 95% (MainGame's compact layout); the stage above it shows one monster at a time.
 # - Points from a clear are its damage to the monster (more lines and a combo hit harder).
 # - The monster attacks after a countdown of the player's moves ("N턴 후 공격").
 # - Beat it and the next, stronger monster comes; every BOSS_EVERY stages a boss.
@@ -12,7 +12,7 @@ signal defeated(stage: int)
 signal player_hit(damage: int)
 
 const STAGE_TOP: float = 90.0
-const STAGE_SIZE := Vector2(720, 437)
+const STAGE_SIZE := Vector2(720, 400)
 const PLAYER_HP: int = 300
 const HEAL_ON_CLEAR: int = 40
 const BOSS_EVERY: int = 5

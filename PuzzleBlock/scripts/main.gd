@@ -69,7 +69,10 @@ var tutorial_trays: int = 0
 var tutorial_hint: TutorialHint = null
 # Monster Battle (MonsterBattle): clears hit a monster above a board shrunk to COMPACT_SCALE
 var battle: MonsterBattle
-const COMPACT_SCALE: float = 0.85
+const COMPACT_SCALE: float = 0.95      # board in the battle
+const TRAY_COMPACT_SCALE: float = 0.75 # tray in the battle (smaller, so the board can stay big)
+const COMPACT_BOARD_TOP: float = 498.0
+const COMPACT_TRAY_TOP: float = 1112.0
 var tray_slots: Array[Vector2] = []
 var _layout_home: Dictionary = {}   # node -> [position, scale] of the normal layout
 
@@ -493,7 +496,7 @@ func _spawn_new_tray() -> void:
 		add_child(piece)
 		piece.setup(shapes[i], i, tray_slots[i])
 		if game_mode == "battle":
-			piece.tray_scale *= COMPACT_SCALE
+			piece.tray_scale *= TRAY_COMPACT_SCALE
 		tray_pieces[i] = piece
 		
 		# Pop in animation
@@ -1302,8 +1305,8 @@ func _start_battle() -> void:
 	start_screen.visible = false
 	start_new_game(false, "battle")
 
-# The battle shrinks the board and tray to COMPACT_SCALE and moves them down so the stage fits
-# above; every other mode uses the normal layout
+# The battle shrinks the board (COMPACT_SCALE) and the tray (TRAY_COMPACT_SCALE) and moves them
+# down so the stage fits above; every other mode uses the normal layout
 func _apply_layout(compact: bool) -> void:
 	var s: float = COMPACT_SCALE if compact else 1.0
 	BlockPiece.board_scale = s
@@ -1314,20 +1317,21 @@ func _apply_layout(compact: bool) -> void:
 	combo_aura.visible = false if compact else combo_aura.visible
 	if not compact:
 		return
-	# Board and its frame: centred, top at 540
+	# Board and its frame: centred under the stage
 	var bg_w: float = board_background.size.x * s
 	board_background.scale = Vector2.ONE * s
-	board_background.position = Vector2((720.0 - bg_w) * 0.5, 540.0)
+	board_background.position = Vector2((720.0 - bg_w) * 0.5, COMPACT_BOARD_TOP)
 	var inset: Vector2 = (board.position - _layout_home[board_background][0]) * s
 	board.scale = Vector2.ONE * s
 	board.position = board_background.position + inset
 	combo_aura.scale = Vector2.ONE * s
 	combo_aura.position = board_background.position - (_layout_home[board_background][0] - _layout_home[combo_aura][0]) * s
 	# Tray plates and slots: same centres across, lower and smaller
-	$TrayPlates.scale = Vector2.ONE * s
-	$TrayPlates.position = Vector2(360.0 * (1.0 - s), 1100.0 - 960.0 * s)
+	var ts: float = TRAY_COMPACT_SCALE
+	$TrayPlates.scale = Vector2.ONE * ts
+	$TrayPlates.position = Vector2(360.0 * (1.0 - ts), COMPACT_TRAY_TOP - 960.0 * ts)
 	for i in range(tray_slots.size()):
-		tray_slots[i] = $TrayPlates.position + TRAY_SLOTS[i] * s
+		tray_slots[i] = $TrayPlates.position + TRAY_SLOTS[i] * ts
 
 func _finish_battle(stage_reached: int, reason: String) -> void:
 	if is_game_over:
