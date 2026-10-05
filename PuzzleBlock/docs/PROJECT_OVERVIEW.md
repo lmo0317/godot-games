@@ -88,7 +88,7 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `settings_modal.gd` | 게임/프로필/업적 탭: 옵션 토글·스킨, 프로필 편집·초기화, 업적 목록 |
 | `drag_scroll.gd` (`DragScroll`) | 버튼이 가득한 스크롤 영역을 끌어서 스크롤. 일정 거리 이상 끌면 눌린 버튼을 취소해 클릭으로 처리되지 않음 |
 | `profile_setup_modal.gd`, `revive_modal.gd` | 첫 실행 프로필 설정, 5초 부활 팝업 |
-| `versus_match.gd` (`VersusMatch`) | 컴퓨터와 캐릭터 체력 대전: 위쪽 표시(양쪽 캐릭터·체력 바·컴퓨터 보드 미니맵), 데미지·치명타 계산, 공격 연출(튀어나가기·빛 덩어리·흔들림·데미지 숫자), 컴퓨터 보드와 수 고르기(난이도별). 내 보드는 `MainGame`이 돌리고, 블록을 놓을 때마다 `player_cleared()`와 `cpu_turn()`을 부름 |
+| `versus_match.gd` (`VersusMatch`) | 컴퓨터와 대결(기사 vs 마법사): 보드 위 무대(두 캐릭터·이름·체력 바), 데미지·치명타·스킬 단계, 스킬 연출(기사 돌진 검격, 마법사 화염구·메테오, 데미지 숫자), 보이지 않는 컴퓨터 보드와 수 고르기. 내 보드는 `MainGame`이 돌리고 블록을 놓을 때마다 `player_cleared()`와 `cpu_turn()`을 부름 |
 | `tutorial_hint.gd` (`TutorialHint`) | 첫 판 안내: 손가락이 트레이 블록을 줄을 완성하는 자리로 끌어다 놓는 동작을 반복하고 한 줄 문구를 띄움. 입력을 막지 않고, 언제 보여 줄지는 `MainGame`이 정함 |
 | `score_counter.gd` (`ScoreCounter`) | 게임 화면 위쪽 가운데의 큰 점수. 광택 숫자 그림으로 그리고 새 점수까지 굴러 올라감(놓기는 짧게, 콤보는 길게 크게, 퍼펙트 클리어는 가장 길게 금빛). 최고 점수는 그 위 금색 한 줄(왕관·점수·신기록까지 남은 점수) |
 | `combo_popup.gd` (`ComboPopup`) | 줄을 지울 때 뜨는 칭찬 문구·`Combo N`·점수. `assets/sprites/combo/`의 글자 그림을 조합하고 빛줄기·반짝이를 뒤에 깔아 차례로 튀어나옴 |
@@ -173,6 +173,7 @@ GODOT_ANDROID_KEYSTORE_RELEASE_PATH=<keystore> GODOT_ANDROID_KEYSTORE_RELEASE_US
 | `generate_original_blocks.py` | 클래식 블록 |
 | `generate_skins.py` | 캔디·네온·보석 스킨 |
 | `generate_avatars.py` | 프로필 아바타 8종(블록 색별 표정 캐릭터) |
+| `import_battle_art.py` | Codex로 그린 대결 그림(기사·마법사·검격·화염구) 원본을 여백 자르고 256px로 줄여 `assets/art/battle/`에 넣음 |
 | `generate_combo_text.py` | 콤보 연출 글자 그림: `Combo`, 금색 숫자, 점수 숫자, 칭찬 문구 5종, 빛줄기 (Arial Rounded MT Bold로 그림) |
 | `generate_ui_assets.py` | 홈·설정·왕관·사운드·닫기·잠금 공통 UI 아이콘 |
 | `generate_assets.py`, `generate_faceted_assets.py` | 효과음·초기 스프라이트·초기 블록 |

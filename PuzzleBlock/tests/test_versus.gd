@@ -1,5 +1,5 @@
 extends Node
-# Headless test for the battle mode: damage sizes, the same start board on both sides, a clear
+# Headless test for the battle mode (knight vs wizard): damage sizes, skill tiers, the same start board on both sides, a clear
 # taking the computer's HP, the computer placing one piece after each of the player's, nothing
 # ever landing on the player's board, and every way a match ends.
 # Run: Godot_console.exe --headless --path . res://tests/test_versus.tscn
@@ -28,6 +28,9 @@ func _run() -> void:
 	_expect(VersusMatch.damage_for(2, 1, false) == 25, "two lines hit 25")
 	_expect(VersusMatch.damage_for(1, 4, false) == 28, "combo 4 adds 18")
 	_expect(VersusMatch.damage_for(1, 1, true) == 70, "perfect clear adds 60")
+	_expect(VersusMatch.skill_tier(1, 1, false) == 0, "one line is the basic skill")
+	_expect(VersusMatch.skill_tier(2, 1, false) == 1 and VersusMatch.skill_tier(1, 3, false) == 1, "two lines or combo 3 is the strong skill")
+	_expect(VersusMatch.skill_tier(3, 1, false) == 2 and VersusMatch.skill_tier(1, 1, true) == 2, "three lines or a perfect clear is the ultimate")
 
 	main = MainScene.instantiate()
 	add_child(main)
@@ -61,10 +64,11 @@ func _run() -> void:
 		for y in range(8):
 			stones += 1 if main.board.grid_state[x][y] == "stone" else 0
 	_expect(stones == 0, "nothing lands on the player's board")
+	_expect(not main.combo_banner.visible, "no combo badge in a battle")
 
 	# Computer KO -> win
 	vs.hp[VersusMatch.CPU] = 1
-	vs._attack(VersusMatch.ME, 10, Vector2(360, 600))
+	vs._cast(VersusMatch.ME, 10, 0)
 	await _wait_for_result()
 	_expect(main.go_title.text == "WIN!", "computer KO shows WIN! (got %s)" % main.go_title.text)
 	_expect(vs.finished, "the battle is over")
@@ -73,7 +77,7 @@ func _run() -> void:
 	main._start_versus("easy")
 	await _wait_for_tray()
 	vs.hp[VersusMatch.ME] = 1
-	vs._attack(VersusMatch.CPU, 10, Vector2(600, 150))
+	vs._cast(VersusMatch.CPU, 10, 0)
 	await _wait_for_result()
 	_expect(main.go_title.text == "LOSE", "player KO shows LOSE (got %s)" % main.go_title.text)
 

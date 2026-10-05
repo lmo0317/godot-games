@@ -23,22 +23,24 @@ static func _tex(name: String) -> Texture2D:
 	return _cache[name]
 
 # tier: 0 none, 1..5 Good!..Unbelievable!  combo: streak (shown from 2)  tint: rays colour
-func setup(tier: int, combo: int, gain: int, tint: Color) -> void:
+# numbers: false shows the praise word only (no "Combo N", no points)
+func setup(tier: int, combo: int, gain: int, tint: Color, numbers: bool = true) -> void:
 	z_index = 120
 	var rows: Array = []   # [node, height, kind]
 	if tier > 0:
 		var p := _row([_tex("praise_%d" % clampi(tier, 1, PRAISE_COUNT))], 0.0)
 		p.set_meta("boost", 1.15)
 		rows.append([p, 84.0, "praise"])
-	if combo >= 2:
+	if combo >= 2 and numbers:
 		var digits: Array = [COMBO_WORD]
 		for ch in str(combo):
 			digits.append(_tex("gold_" + ch))
 		rows.append([_row(digits, -30.0, 2.0), 128.0, "combo"])
-	var score_tex: Array = [_tex("score_plus")]
-	for ch in str(gain):
-		score_tex.append(_tex("score_" + ch))
-	rows.append([_row(score_tex, -15.0), 54.0, "score"])
+	if numbers:
+		var score_tex: Array = [_tex("score_plus")]
+		for ch in str(gain):
+			score_tex.append(_tex("score_" + ch))
+		rows.append([_row(score_tex, -15.0), 54.0, "score"])
 
 	var widest := 0.0
 	var total_h := 0.0

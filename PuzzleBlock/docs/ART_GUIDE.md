@@ -43,6 +43,7 @@
 | 스킨 | Pillow 코드 | `tools/generate_skins.py` |
 | 로고·스토어 이미지 | Pillow 코드 + 실제 캡처 | `tools/generate_store_assets.py`, `store/` |
 | 테마 배경 | 기존 생성 이미지 유지 | `assets/art/` |
+| 대결 캐릭터·스킬 이펙트 | Codex 그림 생성(`codex exec`, 투명 PNG) → `tools/import_battle_art.py` | `assets/art/battle/` |
 | 스토어 스크린샷 | 실제 게임 캡처 | `store/` |
 | 콤보 연출 글자·빛줄기 | Pillow 코드 | `tools/generate_combo_text.py` |
 
@@ -51,6 +52,21 @@
 ```text
 subtle dark navy mobile puzzle-game backdrop, low contrast, soft depth, empty center for gameplay, restrained lighting, no text, no letters, no watermark, no logos
 ```
+
+## 대결 그림 (Codex)
+
+2026-10-05 사용자 요청으로 Codex CLI(`codex exec -s workspace-write`, 이미지 생성 도구)로 그렸습니다. 기사를 먼저 그리고, 나머지는 `-i knight.png --`로 기사를 참고 이미지로 넘겨 그림체를 맞췄습니다(`-i` 뒤에 `--`가 없으면 프롬프트까지 그림 파일로 읽음). 공통 스타일 문구:
+
+```text
+clean 2D chibi game sprite, bold dark navy outline, flat cel shading with light from top-left, bright saturated colors. TRANSPARENT background (PNG with alpha), no ground, no shadow, no text, no letters, no watermark, no logo. Square canvas, subject centered with small margin.
+```
+
+| 파일 | 주제 |
+|---|---|
+| `knight.png` | cute chibi knight hero, full body, ready pose, sword and small round shield, FACING RIGHT, silver armor with blue accents, big head small body, friendly face |
+| `wizard.png` | cute chibi wizard rival, full body, casting pose, wooden staff with glowing orange crystal, FACING LEFT, purple robe and big pointed purple hat with gold trim, mischievous confident face |
+| `fx_slash.png` | sword slash effect only: big crescent arc of light, white core, cyan-blue glow, small sparkles |
+| `fx_fireball.png` | fireball effect only: yellow-white core, orange and red flames trailing to the RIGHT (flies left), embers |
 
 ## 사용자가 거절한 것
 
@@ -70,4 +86,6 @@ subtle dark navy mobile puzzle-game backdrop, low contrast, soft depth, empty ce
 | 콤보 연출 글자 | `assets/sprites/combo/combo_word.png`, `gold_0~9`, `score_0~9`, `score_plus`, `praise_1~5` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 | 완료 |
 | 큰 점수 숫자 | `assets/sprites/combo/big_0~9.png`, `big_comma.png` | 코드 | `generate_combo_text.py` | 게임 화면 위 점수 | 완료 |
 | 빛줄기 | `assets/sprites/combo/rays.png` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 뒤 | 완료 |
+| 대결 기사·마법사 | `assets/art/battle/knight.png`, `wizard.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 대결 무대 | 완료 |
+| 대결 스킬 이펙트 | `assets/art/battle/fx_slash.png`, `fx_fireball.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 기사 검격, 마법사 화염구·메테오 | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |

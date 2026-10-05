@@ -155,6 +155,13 @@ func _ready() -> void:
 	versus.visible = false
 	versus.cpu_defeated.connect(func(reason: String): _finish_versus("cpu_" + reason))
 	versus.player_defeated.connect(func(reason: String): _finish_versus("player_" + reason))
+	versus.impact.connect(func(side: int, strength: int):
+		# The knight being hit shakes the screen; hitting the wizard gives a light shake
+		if side == VersusMatch.ME:
+			apply_screen_shake(5.0 + 3.0 * strength, 0.18)
+			SettingsManager.vibrate(30 + 20 * strength)
+		else:
+			apply_screen_shake(2.0 + 2.0 * strength, 0.12))
 	for plate in $TrayPlates.get_children():
 		plate.add_theme_stylebox_override("panel", UIKit.tray_plate())
 	_load_best_score()
@@ -818,6 +825,8 @@ func _combo_banner_style(col: Color) -> StyleBoxFlat:
 	return sb
 
 func _show_combo_banner(c: int, grace: int = 3) -> void:
+	if game_mode == "versus":
+		return # the battle stage sits where the combo badge would be
 	if c <= 0:
 		_hide_combo_banner()
 		return
@@ -888,9 +897,13 @@ func _spawn_combo_popup(lines: int, gain: int, center_pos: Vector2) -> void:
 	var tint: Color = Color(0.6, 0.8, 1.0) if tier == 0 else PRAISE_TINTS[tier - 1]
 	if combo_count >= FEVER_COMBO:
 		tint = Color(1.0, 0.6, 0.2)
+	# In a battle the clear only shows its praise; damage shows on the stage instead
+	var numbers: bool = game_mode != "versus"
+	if not numbers and tier == 0:
+		return
 	var popup := ComboPopup.new()
 	add_child(popup)
-	popup.setup(tier, combo_count, gain, tint)
+	popup.setup(tier, combo_count, gain, tint, numbers)
 	# Keep the words on the board even when the clear is at an edge
 	var margin: float = popup.half_width + 10.0
 	var left: float = board.to_global(Vector2.ZERO).x + margin
