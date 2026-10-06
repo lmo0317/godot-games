@@ -194,8 +194,6 @@ func _ready() -> void:
 	# Keep the home screen behind the popups in sibling order so they get input first
 	$UI.move_child(start_screen, settings_modal.get_index())
 	start_screen.play_pressed.connect(_on_start_play_pressed)
-	start_screen.daily_pressed.connect(_on_start_daily_pressed)
-	start_screen.adventure_pressed.connect(_open_adventure_select)
 	start_screen.battle_pressed.connect(_start_battle)
 	battle = LaneBattle.new()
 	$UI.add_child(battle)

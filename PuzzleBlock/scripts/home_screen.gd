@@ -1,11 +1,10 @@
 class_name HomeScreen
 extends ColorRect
-# Full-screen home: profile bar, logo, best score, play button, mode cards and ranking.
+# Full-screen home: profile bar, logo, two game buttons (블록 기사단 on top, the block game under it)
+# and ranking.
 # main.gd fills it through refresh() and listens to the signals.
 
 signal play_pressed
-signal daily_pressed
-signal adventure_pressed
 signal battle_pressed
 signal ranking_pressed
 signal settings_pressed
@@ -25,8 +24,6 @@ var sub_label: Label
 var sound_btn: Button
 var best_value: Label
 var rank_value: Label
-var daily_status: Label
-var adventure_status: Label
 var battle_status: Label
 var logo: Control
 var ranking_button: Button
@@ -52,17 +49,14 @@ func _ready() -> void:
 	add_child(bg)
 	_build_top_bar()
 	_build_logo()
-	_build_best_panel()
-	_build_play_button()
-	_build_mode_cards()
 	_build_battle_card()
+	_build_classic_card()
 	_build_ranking_button()
 	var footer := UIKit.label("퍼즐블록 · Godot 4.7", UIKit.TYPE_SMALL, Color(UIKit.MUTED, 0.72), HORIZONTAL_ALIGNMENT_CENTER)
 	_place(footer, 0, 1198, W, 32)
 	add_child(footer)
 
-# info: nickname, sub, avatar, best, rank, daily_best (-1 = not played today), stars, stars_total,
-#       next_stage, muted
+# info: nickname, sub, avatar, best, rank, muted (other keys are ignored)
 func refresh(info: Dictionary) -> void:
 	avatar.texture = info.get("avatar")
 	name_label.text = str(info.get("nickname", "플레이어"))
@@ -70,9 +64,6 @@ func refresh(info: Dictionary) -> void:
 	best_value.text = UIKit.format_number(int(info.get("best", 0)))
 	var rank: int = int(info.get("rank", -1))
 	rank_value.text = "전체 %d위" % rank if rank > 0 else "기록 없음"
-	var daily_best: int = int(info.get("daily_best", -1))
-	daily_status.text = "오늘 최고 %s점" % UIKit.format_number(daily_best) if daily_best > 0 else "오늘 첫 도전!"
-	adventure_status.text = "★ %d / %d  ·  %d단계" % [int(info.get("stars", 0)), int(info.get("stars_total", 60)), int(info.get("next_stage", 1))]
 	var best_stage: int = Achievements.get_stat("battle_best_stage")
 	battle_status.text = "최고 STAGE %d" % best_stage if best_stage > 0 else "도전!"
 	set_muted(bool(info.get("muted", false)))
@@ -141,88 +132,111 @@ func _build_logo() -> void:
 	tw.tween_property(logo, "position:y", LOGO_Y - 8.0, 1.6).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(logo, "position:y", LOGO_Y, 1.6).set_trans(Tween.TRANS_SINE)
 
-func _build_best_panel() -> void:
-	var panel := Panel.new()
-	panel.add_theme_stylebox_override("panel", UIKit.inset(24))
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_place(panel, MARGIN, 506, W - MARGIN * 2, 124)
-	add_child(panel)
-	var best_title := UIKit.label("최고 점수", UIKit.TYPE_BODY, UIKit.MUTED)
-	_place(best_title, 30, 18, 280, 26)
-	panel.add_child(best_title)
-	best_value = UIKit.label("0", 48, UIKit.GOLD)
-	_place(best_value, 30, 46, 340, 60)
-	panel.add_child(best_value)
-	rank_title = UIKit.label("클래식 랭킹", UIKit.TYPE_BODY, UIKit.MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
-	_place(rank_title, 330, 18, 280, 26)
-	panel.add_child(rank_title)
-	rank_value = UIKit.label("", 28, UIKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
-	_place(rank_value, 330, 50, 280, 52)
-	panel.add_child(rank_value)
+const CARD_H: float = 220.0
+const BATTLE_Y: float = 508.0
+const CLASSIC_Y: float = 752.0
+const RANKING_Y: float = 1000.0
 
-func _build_play_button() -> void:
-	var play := Button.new()
-	play.text = "▶  게임 시작"
-	UIKit.style_button(play, "primary", 38, 28)
-	_place(play, MARGIN, 666, W - MARGIN * 2, 124)
-	play.pivot_offset = play.size * 0.5
-	play.pressed.connect(func(): play_pressed.emit())
-	add_child(play)
-
-func _build_mode_cards() -> void:
-	var card_w: float = (W - MARGIN * 2 - 20) * 0.5
-	daily_status = _mode_card(MARGIN, "오늘의 챌린지", "모두 같은 블록으로 겨루기", UIKit.PURPLE, "purple", func(): daily_pressed.emit())
-	adventure_status = _mode_card(MARGIN + card_w + 20, "어드벤처", "목표가 있는 스테이지 20개", UIKit.CYAN, "cyan", func(): adventure_pressed.emit())
-
-func _mode_card(x: float, title: String, desc: String, accent: Color, block_color: String, on_press: Callable) -> Label:
-	var card := Button.new()
-	UIKit.style_raised(card, Color(0.11, 0.14, 0.23), Color(accent, 0.85), accent.darkened(0.7), 24)
-	_place(card, x, 812, (W - MARGIN * 2 - 20) * 0.5, 156)
-	card.pressed.connect(on_press)
-	add_child(card)
-
-	var chip := TextureRect.new()
-	chip.texture = BlockSkins.texture(block_color, "classic")
-	chip.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_place(chip, 24, 18, 26, 26)
-	card.add_child(chip)
-	var t := UIKit.label(title, 26)
-	_place(t, 24, 46, 270, 36)
-	card.add_child(t)
-	var d := UIKit.label(desc, UIKit.TYPE_SMALL, UIKit.MUTED)
-	_place(d, 24, 82, 270, 26)
-	card.add_child(d)
-	var status := UIKit.label("", 20, accent)
-	_place(status, 24, 114, 270, 30)
-	card.add_child(status)
-	return status
-
+# Top button: 블록 기사단, a little pixel battle scene inside the card
 func _build_battle_card() -> void:
-	# Full-width card under the two mode cards: 블록 기사단 (lane battle)
-	var accent: Color = Color(1.0, 0.45, 0.45)
+	var accent: Color = Color(1.0, 0.5, 0.42)
 	var card := Button.new()
-	UIKit.style_raised(card, Color(0.11, 0.14, 0.23), Color(accent, 0.85), accent.darkened(0.7), 24)
-	_place(card, MARGIN, 988, W - MARGIN * 2, 84)
+	UIKit.style_raised(card, Color(0.2, 0.12, 0.14), Color(accent, 0.9), accent.darkened(0.6), 26)
+	_place(card, MARGIN, BATTLE_Y, W - MARGIN * 2, CARD_H)
 	card.pressed.connect(func(): battle_pressed.emit())
 	add_child(card)
-	var icon := TextureRect.new()
-	icon.texture = preload("res://assets/art/lane/knight.png")
-	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_place(icon, 14, 12, 44, 60)
-	card.add_child(icon)
-	var t := UIKit.label("블록 기사단", 26)
-	_place(t, 64, 8, 300, 36)
-	card.add_child(t)
-	var d := UIKit.label("블록을 깨 금화로 병사 소환", UIKit.TYPE_SMALL, UIKit.MUTED)
-	_place(d, 64, 44, 360, 26)
+	# The battlefield picture, clipped to the card's rounded shape
+	var mask := Panel.new()
+	mask.add_theme_stylebox_override("panel", UIKit.box(Color.WHITE, Color.TRANSPARENT, 22))
+	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mask.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_place(mask, 4, 4, card.size.x - 8, CARD_H - 8 - UIKit.BUTTON_DEPTH)
+	card.add_child(mask)
+	var lane: Texture2D = preload("res://assets/art/lane/lane.png")
+	var bg := TextureRect.new()
+	bg.texture = lane
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_SCALE
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var k: float = 3.0
+	bg.size = Vector2(lane.get_width(), lane.get_height()) * k
+	bg.position = Vector2((mask.size.x - bg.size.x) * 0.5, mask.size.y - bg.size.y + 10)
+	mask.add_child(bg)
+	# Darker on the left so the title reads well
+	var shade := TextureRect.new()
+	var g := GradientTexture2D.new()
+	g.gradient = Gradient.new()
+	g.gradient.set_color(0, Color(0.05, 0.04, 0.1, 0.78))
+	g.gradient.set_color(1, Color(0.05, 0.04, 0.1, 0.0))
+	g.fill_to = Vector2(1, 0)
+	shade.texture = g
+	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	shade.stretch_mode = TextureRect.STRETCH_SCALE
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_place(shade, 0, 0, mask.size.x * 0.62, mask.size.y)
+	mask.add_child(shade)
+	var ground: float = mask.size.y - 14
+	for u in [["knight", 352.0], ["spearman", 404.0], ["slime", 500.0], ["goblin", 556.0]]:
+		var t: Texture2D = load("res://assets/art/lane/%s.png" % u[0])
+		var sp := TextureRect.new()
+		sp.texture = t
+		sp.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		sp.stretch_mode = TextureRect.STRETCH_SCALE
+		sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sp.size = Vector2(t.get_width(), t.get_height()) * 2.0
+		sp.position = Vector2(u[1] - sp.size.x * 0.5, ground - sp.size.y)
+		mask.add_child(sp)
+	var title := _outlined("블록 기사단", 44)
+	_place(title, 26, 22, 360, 56)
+	card.add_child(title)
+	var d := _outlined("블록을 깨 금화로 병사 소환", UIKit.TYPE_SMALL, Color(0.92, 0.94, 1.0))
+	_place(d, 28, 82, 360, 28)
 	card.add_child(d)
-	battle_status = UIKit.label("", 20, accent, HORIZONTAL_ALIGNMENT_RIGHT)
-	_place(battle_status, 380, 26, 236, 30)
+	battle_status = _outlined("", 24, UIKit.GOLD)
+	_place(battle_status, 28, 148, 300, 34)
 	card.add_child(battle_status)
+
+# Second button: the block game (classic), with its best score and rank
+func _build_classic_card() -> void:
+	var card := Button.new()
+	UIKit.style_raised(card, Color(0.11, 0.2, 0.4), Color(UIKit.ACCENT_HI, 0.9), UIKit.ACCENT.darkened(0.6), 26)
+	_place(card, MARGIN, CLASSIC_Y, W - MARGIN * 2, CARD_H)
+	card.pressed.connect(func(): play_pressed.emit())
+	add_child(card)
+	# A few pieces made of real block tiles
+	var cells := [[0, 0, "cyan"], [0, 1, "cyan"], [0, 2, "cyan"], [1, 2, "cyan"], [2, 1, "yellow"], [3, 1, "yellow"], [2, 2, "yellow"], [3, 2, "yellow"], [3, 0, "pink"]]
+	for c in cells:
+		var chip := TextureRect.new()
+		chip.texture = BlockSkins.texture(c[2], "classic")
+		chip.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_place(chip, 34 + c[0] * 40, 46 + c[1] * 40, 38, 38)
+		card.add_child(chip)
+	var title := UIKit.label("블록 게임", 44)
+	_place(title, 220, 22, 360, 56)
+	card.add_child(title)
+	var d := UIKit.label("8×8 블록 퍼즐", UIKit.TYPE_SMALL, Color(0.8, 0.86, 1.0))
+	_place(d, 222, 82, 360, 28)
+	card.add_child(d)
+	var best_title := UIKit.label("최고 점수", UIKit.TYPE_SMALL, Color(0.8, 0.86, 1.0))
+	_place(best_title, 222, 124, 200, 26)
+	card.add_child(best_title)
+	best_value = UIKit.label("0", 36, UIKit.GOLD)
+	_place(best_value, 222, 148, 220, 44)
+	card.add_child(best_value)
+	rank_title = UIKit.label("클래식 랭킹", UIKit.TYPE_SMALL, Color(0.8, 0.86, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	_place(rank_title, 400, 124, 214, 26)
+	card.add_child(rank_title)
+	rank_value = UIKit.label("", 26, UIKit.TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
+	_place(rank_value, 400, 150, 214, 40)
+	card.add_child(rank_value)
+
+func _outlined(text: String, size_px: int, col: Color = UIKit.TEXT) -> Label:
+	var l := UIKit.label(text, size_px, col)
+	l.add_theme_constant_override("outline_size", 8)
+	l.add_theme_color_override("font_outline_color", Color(0.06, 0.04, 0.1))
+	return l
 
 func set_ranking_visible(on: bool, show_rank: bool = true) -> void:
 	# show_rank: our own server knows the player's rank; Toss's leaderboard does not tell us
@@ -250,7 +264,7 @@ func _build_ranking_button() -> void:
 	var btn := Button.new()
 	ranking_button = btn
 	UIKit.style_button(btn, "secondary", 24, 24)
-	_place(btn, MARGIN, 1088, W - MARGIN * 2, 88)
+	_place(btn, MARGIN, RANKING_Y, W - MARGIN * 2, 88)
 	btn.pressed.connect(func(): ranking_pressed.emit())
 	add_child(btn)
 	# Crown + label centered as one group
