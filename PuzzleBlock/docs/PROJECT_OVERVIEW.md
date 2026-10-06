@@ -88,7 +88,7 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `settings_modal.gd` | 게임/프로필/업적 탭: 옵션 토글·스킨, 프로필 편집·초기화, 업적 목록 |
 | `drag_scroll.gd` (`DragScroll`) | 버튼이 가득한 스크롤 영역을 끌어서 스크롤. 일정 거리 이상 끌면 눌린 버튼을 취소해 클릭으로 처리되지 않음 |
 | `profile_setup_modal.gd`, `revive_modal.gd` | 첫 실행 프로필 설정, 5초 부활 팝업 |
-| `monster_battle.gd` (`MonsterBattle`) | 몬스터 배틀: 위쪽 전투 무대(몬스터·체력 바·공격 카운트다운·내 체력), 클리어 점수만큼 데미지(검격), 수마다 카운트다운과 몬스터 공격(화염구), 스테이지·보스 진행, 결과 신호. 보드 95%·트레이 75%로 줄이는 배치는 `MainGame._apply_layout()` |
+| `lane_battle.gd` (`LaneBattle`) | 블록 기사단: 위쪽 옆모습 전장(내 성·적 요새·유닛·체력 바)과 소환 줄(금화·병사 버튼). 블록을 놓을 때마다 한 턴(걷기 또는 한 대씩 주고받기), 줄 클리어 금화, 적 요새의 몬스터 소환, 스테이지·보스 진행, 결과 신호. 보드 82%·트레이 75% 배치는 `MainGame._apply_layout()` |
 | `tutorial_hint.gd` (`TutorialHint`) | 첫 판 안내: 손가락이 트레이 블록을 줄을 완성하는 자리로 끌어다 놓는 동작을 반복하고 한 줄 문구를 띄움. 입력을 막지 않고, 언제 보여 줄지는 `MainGame`이 정함 |
 | `score_counter.gd` (`ScoreCounter`) | 게임 화면 위쪽 가운데의 큰 점수. 광택 숫자 그림으로 그리고 새 점수까지 굴러 올라감(놓기는 짧게, 콤보는 길게 크게, 퍼펙트 클리어는 가장 길게 금빛). 최고 점수는 그 위 금색 한 줄(왕관·점수·신기록까지 남은 점수) |
 | `combo_popup.gd` (`ComboPopup`) | 줄을 지울 때 뜨는 칭찬 문구·`Combo N`·점수. `assets/sprites/combo/`의 글자 그림을 조합하고 빛줄기·반짝이를 뒤에 깔아 차례로 튀어나옴 |
@@ -173,7 +173,7 @@ GODOT_ANDROID_KEYSTORE_RELEASE_PATH=<keystore> GODOT_ANDROID_KEYSTORE_RELEASE_US
 | `generate_original_blocks.py` | 클래식 블록 |
 | `generate_skins.py` | 캔디·네온·보석 스킨 |
 | `generate_avatars.py` | 프로필 아바타 8종(블록 색별 표정 캐릭터) |
-| `import_battle_art.py` | Codex로 그린 그림(대결: 기사·마법사·검격·화염구, 몬스터 배틀: 슬라임·고블린·전장 배경) 원본을 여백 자르고 줄여 `assets/art/battle/`, `assets/art/defense/`에 넣음 |
+| `import_lane_art.py` | Codex로 그린 블록 기사단 픽셀 아트(캐릭터 8종 한 장 시트, 성 2개, 전장 배경)를 원래 도트 크기로 되돌리고 잘라 `assets/art/lane/`에 넣음 |
 | `generate_combo_text.py` | 콤보 연출 글자 그림: `Combo`, 금색 숫자, 점수 숫자, 칭찬 문구 5종, 빛줄기 (Arial Rounded MT Bold로 그림) |
 | `generate_ui_assets.py` | 홈·설정·왕관·사운드·닫기·잠금 공통 UI 아이콘 |
 | `generate_assets.py`, `generate_faceted_assets.py` | 효과음·초기 스프라이트·초기 블록 |
@@ -196,7 +196,7 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path . res://tests/test_solva
 | `test_adventure` | 스테이지 데이터 검증, 봇이 20개 스테이지 모두 클리어 | |
 | `test_skins` | 스킨 텍스처, 설정 저장, 보드·트레이 즉시 반영 | |
 | `test_autoplay` | 실제 게임 자동 플레이, 이벤트 전송, 퍼펙트 클리어, 챌린지, 서버 재연산 통과 | ✅ |
-| `test_battle` | 몬스터 배틀: 줄인 배치(보드·잡은 블록·트레이), 클리어 데미지, 카운트다운 공격, 스테이지 진행, 체력 0 → 결과, 클래식은 원래 배치 | |
+| `test_lane` | 블록 기사단: 줄인 배치, 한 수에 몬스터 걸음, 수·클리어 금화, 소환(금화 부족 시 실패, 턴 안 씀), 붙으면 서로 한 대씩, 요새 파괴 → 2스테이지, 성 붕괴 → 결과, 클래식은 원래 배치 | |
 | `test_tutorial` | 첫 판 안내: 처음 하는 사람에게 나옴, 가리킨 자리가 줄을 지움, 블록을 잡으면 사라짐, 지우면 끝나고 저장됨, 본 사람·이미 해 본 사람·챌린지에는 안 나옴 | |
 | `test_magnet` | 자석 스냅: 미리보기가 0.9칸 안의 가장 가까운 빈자리에 붙음(보드 가장자리 밖에서 안으로, 먼 곳은 안 붙음), 들고 있는 블록은 손가락을 따라감, 놓으면 미리보기 자리에 배치·기록 | |
 | `test_achievements` | 업적 해금·저장, 설정 탭 전환, 끌어서 스크롤 | |

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cfh5lg03me6g5"
-path="res://.godot/imported/goblin.png-9490260756096d956c57b79be5a68c87.ctex"
+uid="uid://lrjb8vk6b1uu"
+path="res://.godot/imported/archer.png-15577427ca63bab8c1b96a24a6bcd359.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/battle/goblin.png"
-dest_files=["res://.godot/imported/goblin.png-9490260756096d956c57b79be5a68c87.ctex"]
+source_file="res://assets/art/lane/archer.png"
+dest_files=["res://.godot/imported/archer.png-15577427ca63bab8c1b96a24a6bcd359.ctex"]
 
 [params]
 

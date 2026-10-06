@@ -6,7 +6,7 @@ const CELL_GAP: float = 2.0
 const CELL_SPACING: float = 78.0 # CELL_SIZE + CELL_GAP
 const DEFAULT_TRAY_SCALE: float = 0.58
 const DRAG_OFFSET_Y: float = -110.0
-# Held pieces match the board's scale (the monster battle shrinks the board)
+# Held pieces match the board's scale (the lane battle shrinks the board)
 static var board_scale: float = 1.0
 
 var shape_data: Dictionary = {}

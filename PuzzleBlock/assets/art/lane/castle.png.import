@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ybh0xf1rbe8w"
-path="res://.godot/imported/fx_slash.png-8eee2f8e353f189628f573d9e09ff1fe.ctex"
+uid="uid://dqhe0bulkp3ij"
+path="res://.godot/imported/castle.png-7fa83bc232600927e492299380ba63e9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/battle/fx_slash.png"
-dest_files=["res://.godot/imported/fx_slash.png-8eee2f8e353f189628f573d9e09ff1fe.ctex"]
+source_file="res://assets/art/lane/castle.png"
+dest_files=["res://.godot/imported/castle.png-7fa83bc232600927e492299380ba63e9.ctex"]
 
 [params]
 

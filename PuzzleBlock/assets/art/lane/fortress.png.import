@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dfxjl0tfit26e"
-path="res://.godot/imported/fx_fireball.png-3104c7eaacfe47b36f4bd97ee3777cbb.ctex"
+uid="uid://b6rl1c0kothtn"
+path="res://.godot/imported/fortress.png-423a5f81a5d2f48ed8946fb804a185d6.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/battle/fx_fireball.png"
-dest_files=["res://.godot/imported/fx_fireball.png-3104c7eaacfe47b36f4bd97ee3777cbb.ctex"]
+source_file="res://assets/art/lane/fortress.png"
+dest_files=["res://.godot/imported/fortress.png-423a5f81a5d2f48ed8946fb804a185d6.ctex"]
 
 [params]
 

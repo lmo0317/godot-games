@@ -43,8 +43,7 @@
 | 스킨 | Pillow 코드 | `tools/generate_skins.py` |
 | 로고·스토어 이미지 | Pillow 코드 + 실제 캡처 | `tools/generate_store_assets.py`, `store/` |
 | 테마 배경 | 기존 생성 이미지 유지 | `assets/art/` |
-| 대결 캐릭터·이펙트 | Codex 그림 생성(`codex exec`, 투명 PNG) → `tools/import_battle_art.py` | `assets/art/battle/` |
-| 몬스터 배틀 몬스터·배경·이펙트 | Codex 카툰(대결 그림과 같은 그림체) → `tools/import_battle_art.py` | `assets/art/battle/` |
+| 블록 기사단 캐릭터·성·전장 | Codex 픽셀 아트(캐릭터는 **한 장 시트**) → `tools/import_lane_art.py`로 도트 복원 | `assets/art/lane/` |
 | 스토어 스크린샷 | 실제 게임 캡처 | `store/` |
 | 콤보 연출 글자·빛줄기 | Pillow 코드 | `tools/generate_combo_text.py` |
 
@@ -54,21 +53,27 @@
 subtle dark navy mobile puzzle-game backdrop, low contrast, soft depth, empty center for gameplay, restrained lighting, no text, no letters, no watermark, no logos
 ```
 
-## 대결 그림 (Codex)
+## 블록 기사단 픽셀 아트 (Codex, 2026-10-06 승인)
 
-2026-10-05 사용자 요청으로 Codex CLI(`codex exec -s workspace-write`, 이미지 생성 도구)로 그렸습니다. 기사를 먼저 그리고, 나머지는 `-i knight.png --`로 기사를 참고 이미지로 넘겨 그림체를 맞췄습니다(`-i` 뒤에 `--`가 없으면 프롬프트까지 그림 파일로 읽음). 공통 스타일 문구:
+여러 번 거절된 끝에 처음 통과한 방법입니다(공통 방법은 `art-director` 스킬 3b).
+
+- **스타일**: 옆에서 본 레트로 16비트 도트, 약 2.5등신(큰 눈 꼬마 그림 아님), 1px 어두운 외곽선, 명암 2단계, 빛은 왼쪽 위.
+- **한 장 시트**: 캐릭터 8종을 한 그림에 같이 그려 픽셀 크기·색·그림체를 맞춤. 아군은 오른쪽, 몬스터는 왼쪽을 봄.
+- **도트 복원**: `python tools/import_lane_art.py <원본 폴더>` — 시트 하나에 블록 크기 하나로 줄이고 붙은 덩어리별로 자름.
+- **게임 표시**: 유닛·성 모두 **2배**, 배경 3배, nearest.
+- 생성: `bash ~/.claude/skills/art-director/scripts/codex_image.sh <폴더> <이름> "<주제> <스타일 문구>"`
+
+스타일 문구(주제 뒤에 붙임, 배경은 첫 문장 대신 "Fully opaque"):
 
 ```text
-clean 2D chibi game sprite, bold dark navy outline, flat cel shading with light from top-left, bright saturated colors. TRANSPARENT background (PNG with alpha), no ground, no shadow, no text, no letters, no watermark, no logo. Square canvas, subject centered with small margin.
+TRANSPARENT background (PNG with alpha). Wide canvas. Retro 16-bit PIXEL ART like a classic side-scrolling defense game: every art pixel is a crisp perfectly square block of the same size (no anti-aliasing, no blur, no gradients), one shared limited palette, 1-pixel dark outline, simple 2-tone shading with light from the top-left, cute simple tiny proportions (about 2.5 heads tall, NOT big-eyed chibi), readable silhouettes. No text, no letters, no numbers, no watermark, no logo.
 ```
 
-| 파일 | 주제 |
+| 원본 | 주제 |
 |---|---|
-| `knight.png` | cute chibi knight hero, full body, ready pose, sword and small round shield, FACING RIGHT, silver armor with blue accents, big head small body, friendly face |
-| `wizard.png` | cute chibi wizard rival, full body, casting pose, wooden staff with glowing orange crystal, FACING LEFT, purple robe and big pointed purple hat with gold trim, mischievous confident face |
-| `fx_slash.png` | sword slash effect only: big crescent arc of light, white core, cyan-blue glow, small sparkles |
-| `fx_fireball.png` | fireball effect only: yellow-white core, orange and red flames trailing to the RIGHT (flies left), embers |
-
+| `sheet.png` | a SPRITE SHEET of 8 tiny game characters standing in ONE horizontal row, evenly spaced with clear gaps, all the same height (each about 24x24 art pixels), all standing on the same baseline, full body side view. From left to right: 1 a knight with sword and round shield, 2 an archer with a bow, 3 a mage with a staff and pointed hat, 4 a spearman with a long spear — these four FACE RIGHT; then 5 a green slime, 6 a goblin with a wooden club, 7 a skeleton warrior with a rusty sword, 8 a big orc with an axe — these four FACE LEFT. |
+| `bases.png` | two tiny pixel-art buildings side by side, same scale, same baseline, clear gap: LEFT a small friendly stone castle tower with a blue flag and a wooden door facing right; RIGHT a small dark spiky enemy fortress of purple-black stone with a red banner, door facing left. Each about 48x56 art pixels. |
+| `lane.png` | a WIDE side-view battle lane background (about 2:1): soft blue sky with a few chunky pixel clouds, distant layered hills, a tree line, and in the lower third a flat strip of grass with a dirt path running left to right. Calm and slightly muted so small characters stand out. No characters, no buildings. |
 
 ### (보관) 블록 디펜스 도트 (코드로 그림, 2026-10-05) — 모드 삭제로 지금은 쓰지 않음
 
@@ -89,6 +94,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 
 - 2026-10-05: Codex로 그린 디펜스 픽셀 아트 — 그림마다 픽셀 크기가 달랐고(성벽 3배, 캐릭터 1~1.6배), 디테일이 많은 큰 머리 꼬마 그림이라 "구리다". 정면 아군도 거절(아군은 뒷모습). 디펜스는 코드 도트로 바꿈.
 - 2026-10-05: 성문과 겹치는 유닛 배치.
+- 2026-10-06: 몬스터 배틀의 카툰 그림(큰 머리 꼬마)과 코드 도트 캐릭터 — 블록 기사단에서 Codex 한 장 시트 픽셀 아트로 교체.
 
 - 2026-09: 홍보 이미지처럼 화려하고 시선을 빼앗는 게임 배경. 배경은 플레이 영역보다 조용해야 함.
 
@@ -106,8 +112,8 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 콤보 연출 글자 | `assets/sprites/combo/combo_word.png`, `gold_0~9`, `score_0~9`, `score_plus`, `praise_1~5` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 | 완료 |
 | 큰 점수 숫자 | `assets/sprites/combo/big_0~9.png`, `big_comma.png` | 코드 | `generate_combo_text.py` | 게임 화면 위 점수 | 완료 |
 | 빛줄기 | `assets/sprites/combo/rays.png` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 뒤 | 완료 |
-| 대결 기사·마법사 | `assets/art/battle/knight.png`, `wizard.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 대결 무대 | 완료 |
-| 대결 스킬 이펙트 | `assets/art/battle/fx_slash.png`, `fx_fireball.png` | Codex 생성 | 위 "대결 그림" 프롬프트 | 기사 검격, 마법사 화염구·메테오 | 완료 |
-| 몬스터 배틀 몬스터 | `assets/art/battle/slime.png`, `goblin.png`, `wizard.png`(보스) | Codex 생성 | 위 "대결 그림" 프롬프트(슬라임·고블린은 디펜스 1차 카툰 프롬프트) | 몬스터 배틀 무대, 홈 카드 아이콘 | 완료 |
-| 몬스터 배틀 배경 | `assets/art/battle/battlefield.jpg` (900px) | Codex 생성 | 전장 배경 프롬프트 | 몬스터 배틀 무대 | 완료 |
+| 블록 기사단 병사 | `assets/art/lane/knight.png`, `archer.png`, `mage.png`, `spearman.png` | Codex 시트 | 위 `sheet.png` | 전장 유닛, 소환 버튼, 홈 카드(기사) | 완료 |
+| 블록 기사단 몬스터 | `assets/art/lane/slime.png`, `goblin.png`, `skeleton.png`, `orc.png` | Codex 시트 | 위 `sheet.png` | 전장 유닛 | 완료 |
+| 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
+| 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |

@@ -1,8 +1,8 @@
 extends Node
-# Headless test for Monster Battle: the compact layout (board and tray at 85%), a clear hurting
-# the monster, the attack countdown hurting the player, the next stage after a kill, the end when
-# the player's HP runs out, and the normal layout coming back for classic.
-# Run: Godot_console.exe --headless --path . res://tests/test_battle.tscn
+# Headless test for 블록 기사단 (LaneBattle): the compact layout, gold from clears, summoning,
+# one battle turn per placed piece (walking and trading one hit), the next stage when the enemy
+# fortress falls, the end when the castle falls, and the normal layout coming back for classic.
+# Run: Godot_console.exe --headless --path . res://tests/test_lane.tscn
 
 const MainScene: PackedScene = preload("res://scenes/main.tscn")
 const USER_FILES: Array[String] = [
@@ -29,38 +29,67 @@ func _run() -> void:
 	main.profile_setup_modal.visible = false
 	SoundManager.is_muted = true
 	SettingsManager.tutorial_state = "done"
-	var b: MonsterBattle = main.battle
+	var b: LaneBattle = main.battle
 
 	main._start_battle()
 	await _wait_until(func(): return not main._is_tray_empty() and not b.finished)
-	_expect(b.visible and b.stage == 1 and b.hp == MonsterBattle.PLAYER_HP, "battle starts at stage 1 with full HP")
+	_expect(b.visible and b.stage == 1 and b.castle_hp == LaneBattle.CASTLE_HP and b.gold == LaneBattle.START_GOLD, "battle starts at stage 1")
+	_expect(b._count(-1) == 1, "the fortress sends a first monster")
 	_expect(is_equal_approx(main.board.scale.x, MainGame.COMPACT_SCALE), "board is shrunk in the battle")
 	_expect(is_equal_approx(BlockPiece.board_scale, MainGame.COMPACT_SCALE), "held pieces match the board scale")
 	_expect(main.tray_slots[0].y > MainGame.TRAY_SLOTS[0].y, "tray moved down")
+	var tray_bottom: float = main.tray_slots[0].y + 80.0
+	_expect(tray_bottom < 1280.0, "tray stays on screen")
 
-	# A clear hits the monster
-	var hp0: float = b.m_hp
+	# A placed piece is one turn: the monster walks toward the castle
+	var enemy: Dictionary = b.units[0]
+	var x0: float = enemy["node"].position.x
+	var g0: int = b.gold
+	_place_dot_no_clear()
+	await get_tree().create_timer(0.4).timeout
+	_expect(enemy["node"].position.x < x0, "the monster walks on a turn (%.0f -> %.0f)" % [x0, enemy["node"].position.x])
+	_expect(b.gold == g0 + LaneBattle.GOLD_PER_MOVE, "a move pays a little gold")
+
+	# A clear pays gold
+	g0 = b.gold
 	_place_dot_clearing_row()
 	await get_tree().create_timer(0.3).timeout
-	_expect(b.m_hp < hp0, "a clear hurts the monster (%.0f -> %.0f)" % [hp0, b.m_hp])
+	_expect(b.gold >= g0 + LaneBattle.GOLD_PER_LINE + LaneBattle.GOLD_PER_MOVE, "a clear pays gold (%d -> %d)" % [g0, b.gold])
 
-	# The countdown runs out: the monster hits the player
-	b.countdown = 1
-	var php: int = b.hp
+	# Summoning spends gold and does not use a turn
+	b.gold = 60
+	var t0: int = b.turn
+	_expect(b.summon("knight") and b.gold == 10 and b._count(1) == 1, "summon a knight for 50")
+	_expect(not b.summon("knight"), "no summon without gold")
+	_expect(b.turn == t0, "summoning is not a turn")
+
+	# Next to each other they trade one hit per turn
+	var knight: Dictionary = b.units.filter(func(u): return u["side"] == 1)[0]
+	knight["node"].position.x = 300.0
+	enemy["node"].position.x = 330.0
+	var khp: float = knight["hp"]
+	var ehp: float = enemy["hp"]
 	_place_dot_no_clear()
-	await get_tree().create_timer(0.8).timeout
-	_expect(b.hp < php, "the monster attacks when its countdown ends (%d -> %d)" % [php, b.hp])
-	_expect(b.countdown == b.monster["every"], "countdown resets after the attack")
+	await get_tree().create_timer(0.3).timeout
+	_expect(knight["hp"] < khp and enemy["hp"] < ehp, "both sides hit once (%.0f/%.0f, %.0f/%.0f)" % [knight["hp"], khp, enemy["hp"], ehp])
+	_expect(is_equal_approx(knight["node"].position.x, 300.0), "a fighting unit does not walk")
 
-	# Finishing the monster moves to the next stage
-	b.m_hp = 1.0
-	_place_dot_clearing_row()
+	# Breaking the fortress moves to the next stage
+	enemy["hp"] = 0.0
+	b._kill(enemy)
+	knight["node"].position.x = LaneBattle.ENEMY_BASE_X - 20.0
+	b.fortress_hp = 1.0
+	_place_dot_no_clear()
 	await _wait_until(func(): return b.stage == 2 and not b.switching, 4.0)
-	_expect(b.stage == 2, "beating the monster moves to stage 2")
+	_expect(b.stage == 2 and b.fortress_hp > LaneBattle.FORTRESS_HP, "a broken fortress leads to a stronger stage 2")
 
-	# Out of HP: the run ends with the result window
-	b.hp = 1
-	b.countdown = 1
+	# The castle falls: the run ends with the result window
+	for u in b.units.duplicate():
+		if u["side"] == 1:
+			b._kill(u)
+	var e2: Dictionary = b.units.filter(func(u): return u["side"] == -1)[0]
+	e2["node"].position.x = LaneBattle.ALLY_BASE_X + 10.0
+	b.castle_hp = 1
 	_place_dot_no_clear()
 	await _wait_until(func(): return main.game_over_panel.visible, 5.0)
 	_expect(main.go_title.text == "GAME OVER" and main.go_final_score.text == "STAGE 2", "result shows the stage (%s / %s)" % [main.go_title.text, main.go_final_score.text])
@@ -113,7 +142,7 @@ func _finish() -> void:
 		elif FileAccess.file_exists(p):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
 	if failures.is_empty():
-		print("BATTLE OK")
+		print("LANE OK")
 	else:
 		for f in failures:
 			printerr("FAIL: " + f)

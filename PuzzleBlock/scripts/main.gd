@@ -67,12 +67,13 @@ var score_counter: ScoreCounter
 var tutorial_active: bool = false
 var tutorial_trays: int = 0
 var tutorial_hint: TutorialHint = null
-# Monster Battle (MonsterBattle): clears hit a monster above a board shrunk to COMPACT_SCALE
-var battle: MonsterBattle
-const COMPACT_SCALE: float = 0.95      # board in the battle
-const TRAY_COMPACT_SCALE: float = 0.75 # tray in the battle (smaller, so the board can stay big)
-const COMPACT_BOARD_TOP: float = 498.0
-const COMPACT_TRAY_TOP: float = 1112.0
+# 블록 기사단 (LaneBattle): a lane battle above a board shrunk to COMPACT_SCALE; every placed piece
+# is one battle turn and clears earn gold for soldiers
+var battle: LaneBattle
+const COMPACT_SCALE: float = 0.82      # board in the battle
+const TRAY_COMPACT_SCALE: float = 0.75 # tray in the battle
+const COMPACT_BOARD_TOP: float = 536.0
+const COMPACT_TRAY_TOP: float = 1074.0
 var tray_slots: Array[Vector2] = []
 var _layout_home: Dictionary = {}   # node -> [position, scale] of the normal layout
 
@@ -195,13 +196,13 @@ func _ready() -> void:
 	start_screen.daily_pressed.connect(_on_start_daily_pressed)
 	start_screen.adventure_pressed.connect(_open_adventure_select)
 	start_screen.battle_pressed.connect(_start_battle)
-	battle = MonsterBattle.new()
+	battle = LaneBattle.new()
 	$UI.add_child(battle)
 	$UI.move_child(battle, start_screen.get_index())
 	battle.visible = false
 	battle.defeated.connect(func(stage_reached: int): _finish_battle(stage_reached, "ko"))
-	battle.player_hit.connect(func(dmg: int):
-		apply_screen_shake(6.0 + minf(dmg, 60) * 0.12, 0.2)
+	battle.castle_hit.connect(func(dmg: int):
+		apply_screen_shake(4.0 + minf(dmg, 60) * 0.1, 0.15)
 		SettingsManager.vibrate(60)
 		combo_fx.flash(Color(1.0, 0.3, 0.25), 0.18))
 	tray_slots = TRAY_SLOTS.duplicate()
@@ -377,7 +378,7 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 		header_title.text = "STAGE %d" % stage["id"]
 		stage_progress = 0
 	elif game_mode == "battle":
-		header_title.text = "몬스터 배틀"
+		header_title.text = "블록 기사단"
 	else:
 		header_title.text = "퍼즐블록"
 
@@ -696,7 +697,7 @@ func _process_line_clears(lines: int, _cells: int, center_pos: Vector2) -> void:
 		_show_combo_banner(combo_count, combo_grace_moves)
 	_spawn_combo_popup(lines, total_gain, center_pos)
 	if game_mode == "battle":
-		battle.player_attack(total_gain, lines, combo_count, board.get_occupied_count() == 0)
+		battle.on_clear(lines, total_gain)
 	# Shockwave (and a flash for bigger ones) that grows with the combo and the lines cleared
 	if combo_count >= 2 or lines >= 2:
 		var strength: float = clampf(0.6 + combo_count * 0.2 + (lines - 1) * 0.5, 1.0, 3.0)
@@ -1298,7 +1299,7 @@ func _on_go_secondary_pressed() -> void:
 		_open_home_screen()
 
 # =========================================================
-# Monster Battle
+# 블록 기사단 (lane battle)
 # =========================================================
 
 func _start_battle() -> void:
@@ -1360,9 +1361,9 @@ func _finish_battle(stage_reached: int, reason: String) -> void:
 	go_title.text = "GAME OVER"
 	$UI/GameOverModal/Card/ScoreSub.text = "도달한 스테이지"
 	go_final_score.text = "STAGE %d" % stage_reached
-	go_best_score.text = "최고 기록: STAGE %d · 잡은 몬스터 %d" % [best, cleared]
+	go_best_score.text = "최고 기록: STAGE %d · 부순 요새 %d" % [best, cleared]
 	go_new_badge.visible = new_best and stage_reached > 1
-	go_rank_status.text = "놓을 수 있는 블록이 없어요." if reason == "stuck" else "체력이 바닥났어요."
+	go_rank_status.text = "놓을 수 있는 블록이 없어요." if reason == "stuck" else "성이 무너졌어요."
 	go_btn_view_rank.visible = false
 	go_btn_retry.text = "다시 도전"
 	game_over_panel.visible = true
@@ -1490,7 +1491,7 @@ func _on_leaderboard_score_submitted(res: Dictionary) -> void:
 
 func _add_score(amount: int, kind: String = "place") -> void:
 	if game_mode == "battle":
-		score += amount # no records; clear points are the damage (see _process_line_clears)
+		score += amount # no records; clears pay gold instead (see _process_line_clears)
 		return
 	score += amount
 	if game_mode == "adventure":

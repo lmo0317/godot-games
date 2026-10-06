@@ -199,7 +199,7 @@ func _mode_card(x: float, title: String, desc: String, accent: Color, block_colo
 	return status
 
 func _build_battle_card() -> void:
-	# Full-width card under the two mode cards: Monster Battle
+	# Full-width card under the two mode cards: 블록 기사단 (lane battle)
 	var accent: Color = Color(1.0, 0.45, 0.45)
 	var card := Button.new()
 	UIKit.style_raised(card, Color(0.11, 0.14, 0.23), Color(accent, 0.85), accent.darkened(0.7), 24)
@@ -207,16 +207,17 @@ func _build_battle_card() -> void:
 	card.pressed.connect(func(): battle_pressed.emit())
 	add_child(card)
 	var icon := TextureRect.new()
-	icon.texture = preload("res://assets/art/battle/slime.png")
+	icon.texture = preload("res://assets/art/lane/knight.png")
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_place(icon, 14, 12, 44, 60)
 	card.add_child(icon)
-	var t := UIKit.label("몬스터 배틀", 26)
+	var t := UIKit.label("블록 기사단", 26)
 	_place(t, 64, 8, 300, 36)
 	card.add_child(t)
-	var d := UIKit.label("줄을 지워 몬스터를 공격", UIKit.TYPE_SMALL, UIKit.MUTED)
+	var d := UIKit.label("블록을 깨 금화로 병사 소환", UIKit.TYPE_SMALL, UIKit.MUTED)
 	_place(d, 64, 44, 360, 26)
 	card.add_child(d)
 	battle_status = UIKit.label("", 20, accent, HORIZONTAL_ALIGNMENT_RIGHT)
