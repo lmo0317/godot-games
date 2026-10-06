@@ -73,6 +73,7 @@ TRANSPARENT background (PNG with alpha). Wide canvas. Retro 16-bit PIXEL ART lik
 |---|---|
 | `sheet.png` | a SPRITE SHEET of 8 tiny game characters standing in ONE horizontal row, evenly spaced with clear gaps, all the same height (each about 24x24 art pixels), all standing on the same baseline, full body side view. From left to right: 1 a knight with sword and round shield, 2 an archer with a bow, 3 a mage with a staff and pointed hat, 4 a spearman with a long spear — these four FACE RIGHT; then 5 a green slime, 6 a goblin with a wooden club, 7 a skeleton warrior with a rusty sword, 8 a big orc with an axe — these four FACE LEFT. |
 | `bases.png` | two tiny pixel-art buildings side by side, same scale, same baseline, clear gap: LEFT a small friendly stone castle tower with a blue flag and a wooden door facing right; RIGHT a small dark spiky enemy fortress of purple-black stone with a red banner, door facing left. Each about 48x56 art pixels. |
+| `foes.png` (2026-10-07, `-i sheet.png --`로 원래 시트를 참고 이미지로 넘김) | a SPRITE SHEET of 2 tiny game monsters standing in ONE horizontal row with a clear gap, drawn in EXACTLY the same style, pixel size, outline and palette as the attached reference sheet (each about 24x24 art pixels). 1 a purple bat flying with wings spread wide, small fangs, FACING LEFT; 2 an armored skeleton warrior wearing a dented iron helmet and holding a big iron shield and a short sword, FACING LEFT. |
 | `lane.png` | a WIDE side-view battle lane background (about 2:1): soft blue sky with a few chunky pixel clouds, distant layered hills, a tree line, and in the lower third a flat strip of grass with a dirt path running left to right. Calm and slightly muted so small characters stand out. No characters, no buildings. |
 
 ### (보관) 블록 디펜스 도트 (코드로 그림, 2026-10-05) — 모드 삭제로 지금은 쓰지 않음
@@ -114,6 +115,8 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 빛줄기 | `assets/sprites/combo/rays.png` | 코드 | `generate_combo_text.py` | 줄 클리어 팝업 뒤 | 완료 |
 | 블록 기사단 병사 | `assets/art/lane/knight.png`, `archer.png`, `mage.png`, `spearman.png` | Codex 시트 | 위 `sheet.png` | 전장 유닛, 소환 버튼, 홈 카드(기사) | 완료 |
 | 블록 기사단 몬스터 | `assets/art/lane/slime.png`, `goblin.png`, `skeleton.png`, `orc.png` | Codex 시트 | 위 `sheet.png` | 전장 유닛 | 완료 |
+| 박쥐·갑옷 해골 | `assets/art/lane/bat.png` (66×29), `armored.png` (47×43) | Codex 시트(원래 시트 참고) | 위 `foes.png` | 전장 유닛(날아다님·갑옷) | 완료 |
+| 날개·방패 표시 | `LaneBattle._pixel_icon()` (7px) | 코드 | 문자열 도트 | 박쥐·갑옷 해골 머리 위 | 완료 |
 | 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
 | 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |

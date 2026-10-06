@@ -8,6 +8,8 @@ overlap without clipping.
   combo_1..combo_12  mallet notes climbing a pentatonic scale, one per combo step
   fever              riser into a bright chord (fever starts)
   perfect            sparkling arpeggio over a low boom (board emptied)
+  b_*                블록 기사단 battle sounds (played quietly, see LaneBattle._sfx):
+                     b_hit, b_arrow, b_magic, b_death, b_cannon, b_horn, b_roar, b_summon, b_castle
 
 Usage: python tools/generate_sfx.py
 """
@@ -181,6 +183,81 @@ def main():
     for k, name in enumerate(["C5", "E5", "G5", "C6", "E6", "G6"]):
         mix(x, bell(note(name), 0.9), at=0.05 + 0.07 * k, gain=0.35)
     write("perfect", reverb(x, 0.32), PEAK_DB + 1.0)
+    battle_sounds()
+
+
+def noise_lp(dur, cutoff_start, cutoff_end, decay):
+    """Noise through a one-pole low-pass whose cutoff sweeps, with an exponential decay."""
+    n = int(RATE * dur)
+    out, lp = [], 0.0
+    for i in range(n):
+        p = i / n
+        k = cutoff_start + (cutoff_end - cutoff_start) * p
+        lp += (random.uniform(-1, 1) - lp) * k
+        out.append(lp * math.exp(-(i / RATE) * decay))
+    return out
+
+
+def sweep(f0, f1, dur, decay, shape="sin"):
+    n = int(RATE * dur)
+    out, ph = [], 0.0
+    for i in range(n):
+        t = i / RATE
+        f = f0 + (f1 - f0) * (i / n)
+        ph += 2 * math.pi * f / RATE
+        v = math.sin(ph) if shape == "sin" else (2 * ((ph / (2 * math.pi)) % 1.0) - 1)
+        out.append(v * math.exp(-t * decay) * min(1.0, t / 0.003))
+    return out
+
+
+def battle_sounds():
+    random.seed(11)
+    # Melee hit: low thump + a short bright click
+    x = sweep(160, 60, 0.14, 30)
+    mix(x, noise_lp(0.05, 0.6, 0.2, 70), gain=0.6)
+    write("b_hit", x)
+    # Arrow: quick airy whoosh with a tick at the end
+    x = noise_lp(0.12, 0.08, 0.5, 18)
+    mix(x, sweep(2400, 1800, 0.02, 120), at=0.1, gain=0.5)
+    write("b_arrow", x)
+    # Magic: sparkly zap falling in pitch
+    x = sweep(1400, 300, 0.25, 12)
+    mix(x, bell(note("E6"), 0.25), gain=0.25)
+    write("b_magic", x)
+    # Death: soft poof + falling blip
+    x = noise_lp(0.25, 0.3, 0.04, 14)
+    mix(x, sweep(700, 180, 0.16, 16), gain=0.5)
+    write("b_death", x)
+    # Cannon: big boom with a crackling tail
+    x = sweep(90, 35, 0.8, 5)
+    mix(x, noise_lp(0.6, 0.5, 0.03, 6), gain=0.7)
+    write("b_cannon", reverb(x, 0.25), PEAK_DB + 1.0)
+    # Horn: two low brassy notes (big wave coming)
+    x = []
+    for at, f in ((0.0, note("D3")), (0.38, note("A3"))):
+        n = sweep(f, f, 0.5, 1.5, "saw")
+        for i in range(len(n)):
+            n[i] *= min(1.0, i / (RATE * 0.05))
+        mix(x, n, at=at, gain=0.6)
+    write("b_horn", reverb(x, 0.3))
+    # Roar: growling low noise with a wobble (boss)
+    n = int(RATE * 0.9)
+    x, lp = [], 0.0
+    for i in range(n):
+        t = i / RATE
+        lp += (random.uniform(-1, 1) - lp) * 0.08
+        growl = math.sin(2 * math.pi * (85 + 25 * math.sin(2 * math.pi * 9 * t)) * t)
+        env = min(1.0, t / 0.08) * math.exp(-max(0.0, t - 0.4) * 5)
+        x.append((0.7 * lp + 0.5 * growl) * env)
+    write("b_roar", reverb(x, 0.25))
+    # Summon: tiny rising two-note chime
+    x = mallet(note("G5"), 0.18, 0.2)
+    mix(x, mallet(note("D6"), 0.2, 0.2), at=0.06, gain=0.8)
+    write("b_summon", x)
+    # Castle hit: heavy stone thud
+    x = sweep(110, 45, 0.3, 14)
+    mix(x, noise_lp(0.2, 0.25, 0.05, 20), gain=0.7)
+    write("b_castle", x)
 
 
 if __name__ == "__main__":

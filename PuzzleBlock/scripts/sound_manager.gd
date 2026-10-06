@@ -35,6 +35,8 @@ func _ready() -> void:
 		_load_sound("combo_%d" % i, "res://assets/sfx/combo_%d.wav" % i)
 	_load_sound("fever", "res://assets/sfx/fever.wav")
 	_load_sound("perfect", "res://assets/sfx/perfect.wav")
+	for k in ["b_hit", "b_arrow", "b_magic", "b_death", "b_cannon", "b_horn", "b_roar", "b_summon", "b_castle"]:
+		_load_sound(k, "res://assets/sfx/%s.wav" % k)
 
 func _load_sound(key: String, path: String) -> void:
 	if ResourceLoader.exists(path):
@@ -53,6 +55,21 @@ func play(key: String, pitch_scale: float = 1.0, volume_db: float = 0.0) -> void
 		player.pitch_scale = pitch_scale
 		player.volume_db = volume_db
 		player.play()
+
+# Battle sounds never cut off a puzzle sound: they play only when a player is free, and keep
+# BATTLE_SPARE players free for the puzzle
+const BATTLE_SPARE: int = 4
+func play_battle(key: String, volume_db: float = -8.0) -> void:
+	if is_muted or not sounds.has(key):
+		return
+	var free: Array = players.filter(func(p): return not p.playing)
+	if free.size() <= BATTLE_SPARE:
+		return
+	var p: AudioStreamPlayer = free[0]
+	p.stream = sounds[key]
+	p.pitch_scale = 1.0
+	p.volume_db = volume_db
+	p.play()
 
 func _get_available_player() -> AudioStreamPlayer:
 	for p in players:

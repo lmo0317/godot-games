@@ -5,6 +5,8 @@ Raw files (prompts in docs/ART_GUIDE.md, "블록 기사단 픽셀 아트"):
              slime, goblin, skeleton, orc (face left) - drawn together so they share one style
   bases.png  ally castle (left) and enemy fortress (right)
   lane.png   wide side-view background
+  foes.png   (optional) two more monsters drawn with sheet.png as the style reference:
+             bat (flying), armored skeleton
 
 Each image is brought back to its own pixel grid (the size of one art pixel is measured from runs
 of equal colour) and the sprites are cut apart by their connected opaque areas. The game draws them
@@ -22,6 +24,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, "assets", "art", "lane")
 UNITS = ["knight", "archer", "mage", "spearman", "slime", "goblin", "skeleton", "orc"]
 BASES = ["castle", "fortress"]
+FOES = ["bat", "armored"]
 
 
 def block_size(img):
@@ -112,6 +115,13 @@ def main():
     save(bases[0], BASES[0])
     save(bases[-1], BASES[1])
     save(to_grid(Image.open(os.path.join(src, "lane.png")), opaque=True), "lane")
+    foes_path = os.path.join(src, "foes.png")
+    if os.path.exists(foes_path):
+        foes = split(to_grid(Image.open(foes_path)))
+        if len(foes) != len(FOES):
+            sys.exit(f"expected {len(FOES)} sprites in foes.png, found {len(foes)}")
+        for name, sp in zip(FOES, foes):
+            save(sp, name)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 extends Node
 # Headless test for 블록 기사단 (LaneBattle): the compact layout, real-time walking and fighting,
-# gold over time and from clears, summoning, pausing for settings, the next stage when the enemy
-# fortress falls, the end when the castle falls, and the normal layout coming back for classic.
+# gold over time and from clears, the wallet limit and income upgrade, summon cooldowns, knockback,
+# the cannon, enemy traits (flying, armor), charge/hold, the big wave and the boss at half the
+# fortress, pausing for settings, the next stage, the end when the castle falls, and classic's layout.
 # Run: Godot_console.exe --headless --path . res://tests/test_lane.tscn
 
 const MainScene: PackedScene = preload("res://scenes/main.tscn")
@@ -34,7 +35,7 @@ func _run() -> void:
 	main._start_battle()
 	await _wait_until(func(): return not main._is_tray_empty() and not b.finished)
 	_expect(b.visible and b.stage == 1 and b.castle_hp == LaneBattle.CASTLE_HP and b.gold == LaneBattle.START_GOLD, "battle starts at stage 1")
-	_expect(b._count(-1) == 1, "the fortress sends a first monster")
+	_expect(b._count(-1) >= 1, "the fortress sends a first monster")
 	_expect(is_equal_approx(main.board.scale.x, MainGame.COMPACT_SCALE), "board is shrunk in the battle")
 	_expect(is_equal_approx(BlockPiece.board_scale, MainGame.COMPACT_SCALE), "held pieces match the board scale")
 	_expect(main.tray_slots[0].y > MainGame.TRAY_SLOTS[0].y, "tray moved down")
@@ -74,11 +75,21 @@ func _run() -> void:
 	await get_tree().create_timer(0.3).timeout
 	_expect(b.gold >= g0 + LaneBattle.GOLD_PER_LINE, "a clear pays gold (%d -> %d)" % [g0, b.gold])
 
-	# Summoning spends gold
-	b.gold = 60
+	# Summoning spends gold and starts that soldier's cooldown
+	b.gold = 200
 	b._gold_acc = 0.0
-	_expect(b.summon("knight") and b.gold == 10 and b._count(1) == 1, "summon a knight for 50")
+	_expect(b.summon("knight") and b.gold == 150 and b._count(1) == 1, "summon a knight for 50")
+	_expect(not b.summon("knight") and b.gold == 150, "the knight is on cooldown")
+	b.gold = 10
+	b.cooldown["knight"] = 0.0
 	_expect(not b.summon("knight"), "no summon without gold")
+
+	# Wallet: gold stops at the limit, the upgrade raises it
+	b.gold = b.wallet_max()
+	await get_tree().create_timer(0.6).timeout
+	_expect(b.gold == LaneBattle.WALLET_MAX[0], "gold stops at the wallet limit (%d)" % b.gold)
+	_expect(b.upgrade_wallet() and b.wallet == 1 and b.gold == LaneBattle.WALLET_MAX[0] - LaneBattle.WALLET_COST[0], "income upgrade")
+	_expect(b.wallet_max() == LaneBattle.WALLET_MAX[1], "a bigger wallet")
 
 	# Next to each other they fight on their attack timers
 	var knight: Dictionary = b.units.filter(func(u): return u["side"] == 1)[0]
@@ -89,12 +100,74 @@ func _run() -> void:
 	await get_tree().create_timer(1.5).timeout
 	_expect(knight["hp"] < khp and enemy["hp"] < ehp, "both sides hit (%.0f/%.0f, %.0f/%.0f)" % [knight["hp"], khp, enemy["hp"], ehp])
 
+	# Knockback when the HP drops past a mark
+	knight["hp"] = 999.0
+	knight["max_hp"] = 999.0
+	var gob := b._spawn("goblin", -1, 1.0)
+	gob["node"].position.x = 420.0
+	var gx: float = gob["node"].position.x
+	b._hurt(gob, gob["max_hp"] * 0.6, true)
+	_expect(gob["stun"] > 0.0, "a big hit knocks back")
+	await get_tree().create_timer(0.4).timeout
+	_expect(gob["node"].position.x > gx + 10.0, "knocked back toward its fortress (%.0f -> %.0f)" % [gx, gob["node"].position.x])
+
+	# Cannon: clears charge it, one tap hurts every monster
+	b.cannon = 0.0
+	b.on_clear(3, 200)
+	_expect(b.cannon > 40.0, "clears charge the cannon (%.0f)" % b.cannon)
+	_expect(not b.fire_cannon(), "the cannon waits until full")
+	b.cannon = 100.0
+	var ghp: float = gob["hp"]
+	_expect(b.fire_cannon() and b.cannon == 0.0, "fire the cannon")
+	_expect(gob["hp"] < ghp, "the cannon hurts monsters")
+
+	# Traits: melee soldiers ignore bats, archers hit them; armor halves damage except spears
+	var bat := b._spawn("bat", -1, 1.0)
+	bat["node"].position.x = knight["node"].position.x + 20.0
+	_expect(b._nearest_opponent(knight) != bat, "a knight cannot reach a bat")
+	var archer := b._spawn("archer", 1, 1.0)
+	archer["node"].position.x = bat["node"].position.x - 5.0
+	_expect(b._nearest_opponent(archer) == bat, "an archer can target a bat")
+	var arm := b._spawn("armored", -1, 1.0)
+	var spear := b._spawn("spearman", 1, 1.0)
+	_expect(is_equal_approx(b._damage(knight, arm), knight["atk"] * 0.5), "armor halves a knight's hit")
+	_expect(is_equal_approx(b._damage(spear, arm), spear["atk"] * 2.0), "spears break armor")
+
+	# Hold: soldiers fall back to the hold line
+	b.toggle_march()
+	_expect(not b.charging, "switch to hold")
+	for u in b.units.duplicate():
+		if u["side"] == -1:
+			b._kill(u)
+	spear["node"].position.x = 450.0
+	spear["stun"] = 0.0
+	b.trickle_timer = 99.0
+	b.wave_timer = 99.0
+	await get_tree().create_timer(1.5).timeout
+	_expect(spear["node"].position.x < 450.0, "held soldiers walk back (%.0f)" % spear["node"].position.x)
+	b.toggle_march()
+
+	# The horn and a big wave
+	b.wave_timer = 0.05
+	var before: int = b._count(-1)
+	await get_tree().create_timer(1.6).timeout
+	_expect(b._count(-1) >= before + 2, "a big wave arrives (%d -> %d)" % [before, b._count(-1)])
+
+	# The boss comes when the fortress drops to half
+	b.fortress_hp = b.fortress_max * 0.49
+	await get_tree().create_timer(0.3).timeout
+	_expect(b.boss_out and b.units.any(func(u): return u.get("boss", false)), "the boss appears at half the fortress")
+
 	# Breaking the fortress moves to the next stage
 	for u in b.units.duplicate():
 		if u["side"] == -1:
 			b._kill(u)
-	b.spawn_timer = 99.0
+	b.trickle_timer = 99.0
+	b.wave_timer = 99.0
+	b._pending.clear()
+	await get_tree().create_timer(0.6).timeout # let the boss shockwave knockback finish
 	knight["hp"] = 999.0
+	knight["stun"] = 0.0
 	knight["node"].position.x = LaneBattle.ENEMY_BASE_X - 20.0
 	b.fortress_hp = 1.0
 	await _wait_until(func(): return b.stage == 2 and not b.switching, 4.0)
@@ -104,7 +177,7 @@ func _run() -> void:
 	for u in b.units.duplicate():
 		if u["side"] == 1:
 			b._kill(u)
-	var e2: Dictionary = b.units.filter(func(u): return u["side"] == -1)[0]
+	var e2 := b._spawn("goblin", -1, 1.0)
 	e2["node"].position.x = LaneBattle.ALLY_BASE_X + 10.0
 	b.castle_hp = 1
 	await _wait_until(func(): return main.game_over_panel.visible, 5.0)

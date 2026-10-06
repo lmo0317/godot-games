@@ -204,10 +204,12 @@ func _ready() -> void:
 	battle.settings_pressed.connect(_open_settings)
 	battle.sound_pressed.connect(_on_sound_toggled)
 	_sync_battle_menu()
+	# A hit on the castle shakes and flashes red; 0 = a big moment (cannon, boss) that only shakes
 	battle.castle_hit.connect(func(dmg: int):
 		apply_screen_shake(4.0 + minf(dmg, 60) * 0.1, 0.15)
-		SettingsManager.vibrate(60)
-		combo_fx.flash(Color(1.0, 0.3, 0.25), 0.18))
+		if dmg > 0:
+			SettingsManager.vibrate(60)
+			combo_fx.flash(Color(1.0, 0.3, 0.25), 0.18))
 	tray_slots = TRAY_SLOTS.duplicate()
 	for n in [board, board_background, combo_aura, $TrayPlates]:
 		_layout_home[n] = [n.position, n.scale]
