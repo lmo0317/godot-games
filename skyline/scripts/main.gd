@@ -353,10 +353,7 @@ func _save_meta() -> void:
 func _hud_panel(pos: Vector2, size: Vector2) -> Panel:
 	## Dark see-through window with a light rim, like the status boxes of pocket management games.
 	var p := Panel.new()
-	var sb := UIKit.box(Color(0.08, 0.1, 0.2, 0.82), Color(0.86, 0.88, 0.95), 8, 3)
-	sb.shadow_color = Color(0, 0, 0, 0.3)
-	sb.shadow_size = 4
-	p.add_theme_stylebox_override("panel", sb)
+	p.add_theme_stylebox_override("panel", UIKit.hud())
 	p.position = pos
 	p.size = size
 	p.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -386,23 +383,22 @@ func _side_button(icon: String, text: String, pos: Vector2, cb: Callable) -> But
 
 
 func _icon_filter(name: String) -> CanvasItem.TextureFilter:
-	## Pixel icons shown at whole-number sizes stay crisp; building pictures shrunk into buttons
-	## are smoothed.
-	return CanvasItem.TEXTURE_FILTER_NEAREST if name.begins_with("ui_") or not Art.has(name) else CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	## Painted pictures are smoothed; the few old pixel icons from the atlas stay crisp.
+	return CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if Art.has(name) else CanvasItem.TEXTURE_FILTER_NEAREST
 
 
 func _build_hud() -> void:
 	# top-left: town rank and the goal for the next one
 	var rank_box := _hud_panel(Vector2(16, 12), Vector2(470, 64))
 	var chip := PanelContainer.new()
-	var csb := UIKit.box(UIKit.ACCENT, Color(1, 0.9, 0.7), 6, 2)
+	var csb := UIKit.box(UIKit.ACCENT, UIKit.RIM, 9, 3)
 	chip.add_theme_stylebox_override("panel", csb)
 	chip.position = Vector2(10, 12)
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rank_box.add_child(chip)
 	rank_label = UIKit.outlined(UIKit.label("마을", 20), 4)
 	chip.add_child(rank_label)
-	goals_label = UIKit.label("", 17, UIKit.TEXT)
+	goals_label = UIKit.outlined(UIKit.label("", 17, UIKit.TEXT), 4)
 	goals_label.position = Vector2(104, 4)
 	goals_label.size = Vector2(356, 56)
 	goals_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -414,7 +410,7 @@ func _build_hud() -> void:
 	date_label.position = Vector2(8, 2)
 	date_label.size = Vector2(284, 34)
 	date_box.add_child(date_label)
-	delta_label = UIKit.label("", 17, UIKit.GREEN, HORIZONTAL_ALIGNMENT_CENTER)
+	delta_label = UIKit.outlined(UIKit.label("", 17, UIKit.GREEN, HORIZONTAL_ALIGNMENT_CENTER), 4)
 	delta_label.position = Vector2(8, 34)
 	delta_label.size = Vector2(284, 26)
 	date_box.add_child(delta_label)
@@ -434,7 +430,7 @@ func _build_hud() -> void:
 	money_label.position = Vector2(56, 4)
 	money_label.size = Vector2(238, 44)
 	res.add_child(money_label)
-	pop_label = UIKit.label("", 19, UIKit.TEXT)
+	pop_label = UIKit.outlined(UIKit.label("", 19, UIKit.TEXT), 4)
 	pop_label.position = Vector2(14, 50)
 	pop_label.size = Vector2(284, 32)
 	res.add_child(pop_label)
@@ -779,7 +775,7 @@ func _shop_card(kind: String, id: int) -> Button:
 	v.add_child(pic)
 	v.add_child(UIKit.outlined(UIKit.label(title, 22, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER), 4))
 	v.add_child(UIKit.outlined(UIKit.label(price, 20, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER), 4))
-	var d := UIKit.label(desc, 15, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	var d := UIKit.outlined(UIKit.label(desc, 15, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER), 3)
 	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	d.custom_minimum_size = Vector2(190, 0)
 	v.add_child(d)
@@ -801,10 +797,7 @@ func _glyph_button(kind: String) -> Button:
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(84, 76)
 	b.size = Vector2(84, 76)
-	if kind == "ok":
-		UIKit.style_raised(b, Color(0.42, 0.78, 0.2), Color(0.85, 1.0, 0.6), Color(0.15, 0.35, 0.05), 12)
-	else:
-		UIKit.style_button(b, "danger", 20, 12)
+	UIKit.style_button(b, "ok" if kind == "ok" else "danger", 20, 12)
 	var g := Glyph.new()
 	g.kind = kind
 	g.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1400,10 +1393,7 @@ func _on_arrow(p: Vector2, cell: int) -> bool:
 func _build_toast() -> void:
 	## Bottom message bar with the town advisor, like pocket management games: hints and news.
 	toast_panel = PanelContainer.new()
-	var sb := UIKit.box(Color(0.86, 0.95, 0.74, 0.95), Color(0.36, 0.56, 0.26), 10, 3)
-	sb.shadow_color = Color(0, 0, 0, 0.3)
-	sb.shadow_size = 4
-	toast_panel.add_theme_stylebox_override("panel", sb)
+	toast_panel.add_theme_stylebox_override("panel", UIKit.bubble())
 	toast_panel.position = Vector2(16, H - 116)
 	toast_panel.size = Vector2(900, 104)
 	toast_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1416,7 +1406,7 @@ func _build_toast() -> void:
 	face.custom_minimum_size = Vector2(88, 88)
 	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	face.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	face.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(face)
 	toast_label = UIKit.label("", 19, MSG_TEXT)
@@ -1735,8 +1725,8 @@ func _apply_camera() -> void:
 	var b := map.active_bounds()
 	cam = cam.clamp(b.position, b.end)
 	world.scale = Vector2(zoom, zoom)
-	# sprites are stored at 2x: below zoom 2 they are shrunk, so smooth them; at 2 and up keep hard pixels
-	world.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if zoom < 1.99 else CanvasItem.TEXTURE_FILTER_NEAREST
+	# painted sprites (stored at 2x) are always smoothed
+	world.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	world.position = (VIEW.get_center() - cam * zoom).round()
 	fx.queue_redraw()
 

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cdgfct1ky4nql"
-path="res://.godot/imported/ui_hand.png-c03f095033f206ba0eded69c7db2f32a.ctex"
+uid="uid://bqnywr5a63ttu"
+path="res://.godot/imported/bubble.png-4cf3716dc5860188ecfb7ca18ebefbc3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/px/ui_hand.png"
-dest_files=["res://.godot/imported/ui_hand.png-c03f095033f206ba0eded69c7db2f32a.ctex"]
+source_file="res://assets/ui/bubble.png"
+dest_files=["res://.godot/imported/bubble.png-4cf3716dc5860188ecfb7ca18ebefbc3.ctex"]
 
 [params]
 

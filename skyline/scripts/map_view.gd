@@ -1,13 +1,13 @@
 class_name MapView
 extends Node2D
-## Draws the city in isometric view like Kairosoft town games (one map tile = a 64x32 diamond); the
+## Draws the city in isometric view, painted base-builder look (one map tile = a 64x32 diamond); the
 ## parent node scales and moves it (camera). Buildings are low and stand on a yard tile, so they do
 ## not hide each other.
 ## Three layers, back to front:
 ##   this node      ground: grass, water, roads, lots and yards, coverage tint, map edge
 ##   Buildings      sprites from the back row to the front row
 ##   Overlays       fires, warnings, broken roads, previews, selection
-## Sprites come from assets/sprites/px (tools/codex_art.py, tools/generate_ground.py) and are stored
+## Sprites come from assets/sprites/px (tools/paint_art.py, tools/generate_ground.py) and are stored
 ## at 2x detail: drawn at half size, so at the normal 2x zoom one sprite pixel is one screen pixel.
 
 const TW := 64
@@ -207,7 +207,7 @@ func _draw() -> void:
 		if city.terrain[i] == Defs.T.WATER:
 			_tile(self, "water%d_%d" % [_shore_mask(p), frame], i, tint)
 		else:
-			_tile(self, "grass%d" % ((p.x * 7 + p.y * 13) % 3), i, tint)
+			_tile(self, "grass%d" % ((p.x + p.y) % 2), i, tint)     # light / dark checker
 		if o == Defs.ROAD or ghost_roads.has(i):
 			var see := tint if o == Defs.ROAD else Color(1, 1, 1, 0.8)
 			_tile(self, ("bridge%d" if city.terrain[i] == Defs.T.WATER else "road%d") % _road_mask(p), i, see)

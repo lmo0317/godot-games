@@ -10,7 +10,7 @@ var font: Font
 
 func _ready() -> void:
 	font = UIKit.FONT
-	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 
 func pop_text(at: Vector2, text: String, color: Color, coin: bool = false) -> void:
