@@ -32,6 +32,7 @@ var ghost_radius := 0
 var ghost_roads := {}           # cells drawn as road while a road is being placed
 var handle_cell := -1           # green arrows around this cell: drag here
 var hide_cell := -1             # a building lifted for moving is not drawn in place
+var fade_trees := false         # while editing, forests are see-through so the ground shows
 var preview_ok := Color(0.4, 1.0, 0.5, 0.45)
 var overlay := ""               # "", "power", "water", "svc:<bit>" or "land"
 var selected := -1
@@ -286,7 +287,10 @@ func _draw_buildings(ci: CanvasItem) -> void:
 			var i := City.idx(x, s - x)
 			var name := sprite_for(i) if i != hide_cell else ""
 			if name != "":
-				_spr(ci, name, i, Color.WHITE if city.is_active(i) else LOCKED)
+				var tint := Color.WHITE if city.is_active(i) else LOCKED
+				if fade_trees and name == "forest":
+					tint.a = 0.35
+				_spr(ci, name, i, tint)
 	if ghost_cell >= 0 and ghost != "":
 		_spr(ci, ghost, ghost_cell, Color(1, 1, 1, 0.85))
 
