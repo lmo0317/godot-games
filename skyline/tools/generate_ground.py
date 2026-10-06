@@ -1,6 +1,6 @@
 """Draws the isometric ground tiles into assets/sprites/px/ in the painted base-builder look (soft
-cartoon shading, smooth edges, bright colors): a lawn in a light/dark checker, stone-edged asphalt
-roads, turquoise water with a sandy shore, wooden bridges and the three zoned plots.
+cartoon shading, smooth edges, bright colors): a lush lawn in a light/dark checker, paved stone
+roads, deep blue sea with waves, foam and a sandy beach, wooden bridges and the three zoned plots.
 
 Tiles are 128x64 diamonds: a 64x32 map tile at 2x detail (the game draws them at half size).
 Every pixel is computed from its position on the tile in grid space (gx, gy in 0..1; gx grows toward
@@ -9,7 +9,8 @@ Each tile is computed at 4x and shrunk, so edges are smooth. Neighbor masks: N (
 S (y+1) = 4, W (x-1) = 8.
 
   grass0, grass1            lawn, light and dark squares of the checker (the map alternates them)
-  water<m>_<f>              water with a sandy shore toward land on the mask sides, frames f = 0, 1
+  water<m>_<f>              sea with a sandy beach toward land on the mask sides, frames f = 0, 1
+                            (the game draws these around the island)
   road<m>, bridge<m>        road / wooden bridge pieces by neighbor mask
   lot_r, lot_c, lot_i       zoned plots (also the yard under buildings): lawn with a hedge, stone
                             paving, concrete yard with hazard stripes
@@ -36,15 +37,19 @@ def hexc(h):
 
 GRASS = [hexc("#8fd14f"), hexc("#7fc243")]          # checker light / dark
 GRASS_SPOT = hexc("#a4de62")
-WATER_DEEP = hexc("#2f9fd8")
-WATER_LIGHT = hexc("#5cc8ef")
+GRASS_BLADE = hexc("#6aad35")
+FLOWERS = [hexc("#fff3a0"), hexc("#ffffff"), hexc("#ffb3c8")]
+WATER_DEEP = hexc("#1f8fd6")
+WATER_MID = hexc("#35b2ea")
+WATER_LIGHT = hexc("#7fdcf6")
 FOAM = hexc("#e9f8ff")
 SAND = hexc("#f1d79b")
 SAND_D = hexc("#d9b673")
-ASPHALT = hexc("#8a93a0")
-ASPHALT_D = hexc("#707a87")
-CURB = hexc("#e6dfcf")
-CURB_D = hexc("#b9b09c")
+STONE = hexc("#d8cfbf")           # paving stones
+STONE_D = hexc("#b9ae9a")
+GROUT = hexc("#9a8f7d")
+CURB = hexc("#efe8d8")
+CURB_D = hexc("#a7997f")
 WOOD = hexc("#c98f55")
 WOOD_D = hexc("#9a6638")
 HEDGE = hexc("#4f9a35")
@@ -104,15 +109,47 @@ def flat(color):
     return np.ones(GX.shape + (3,)) * color
 
 
+def periodic_spots(seed, count, radius):
+    """Small round marks scattered so the pattern repeats every tile (no seams)."""
+    rng = np.random.default_rng(seed)
+    f = np.zeros_like(GX)
+    for _ in range(count):
+        cx, cy = rng.random(2)
+        dx = (GX - cx + 0.5) % 1 - 0.5
+        dy = ((GY - cy + 0.5) % 1 - 0.5) * 1.0
+        f = np.maximum(f, 1 - smooth(np.sqrt(dx * dx + dy * dy), radius * 0.6, radius))
+    return f
+
+
+def blades(seed, count):
+    """Short grass strokes (thin slanted marks) repeating every tile."""
+    rng = np.random.default_rng(seed)
+    f = np.zeros_like(GX)
+    for _ in range(count):
+        cx, cy = rng.random(2)
+        dx = (GX - cx + 0.5) % 1 - 0.5
+        dy = (GY - cy + 0.5) % 1 - 0.5
+        # a short stroke along the screen's vertical (gx + gy) direction
+        along = (dx + dy)
+        across = (dx - dy)
+        f = np.maximum(f, (1 - smooth(np.abs(across), 0.004, 0.012)) * (1 - smooth(np.abs(along + 0.01), 0.0, 0.03)))
+    return f
+
+
 def lawn(k):
     rgb = flat(GRASS[k])
-    rgb = mix(rgb, GRASS_SPOT, blobs(10 + k, 5, 0.12) * 0.35)
-    rgb = mix(rgb, GRASS[1] * 0.92, blobs(20 + k, 4, 0.10) * 0.25)
+    rgb = mix(rgb, GRASS_SPOT, blobs(10 + k, 5, 0.14) * 0.35)
+    rgb = mix(rgb, GRASS[1] * 0.9, blobs(20 + k, 4, 0.10) * 0.3)
+    rgb = mix(rgb, GRASS_BLADE, blades(30 + k, 14) * 0.55)
+    rgb = mix(rgb, GRASS_SPOT * 1.08, blades(40 + k, 10) * 0.5)
     return rgb
 
 
 def grass_tile(k):
-    return finish(lawn(k))
+    rgb = lawn(k)
+    for n, col in enumerate(FLOWERS):                 # a few tiny flowers
+        rgb = mix(rgb, col, periodic_spots(50 + k * 7 + n, 1, 0.022))
+    return finish(rgb)
 
 
 def edge_dist(mask):
@@ -130,16 +167,21 @@ def edge_dist(mask):
 
 
 def water_tile(mask, frame):
-    depth = smooth(edge_dist(mask), 0.08, 0.6)
-    rgb = mix(WATER_LIGHT, WATER_DEEP, depth)
-    # soft light streaks that move between the two frames
-    phase = frame * 0.5
-    wave = np.sin((GX * 2 + GY * 1 + phase) * np.pi * 2) * np.sin((GY * 3 - GX + phase) * np.pi * 2)
-    rgb = mix(rgb, FOAM, smooth(wave, 0.75, 0.95) * 0.45)
     d = edge_dist(mask)
-    rgb = mix(rgb, FOAM, (1 - smooth(d, 0.10, 0.16)) * 0.8)       # foam line
-    rgb = mix(rgb, SAND, 1 - smooth(d, 0.07, 0.10))               # beach
-    rgb = mix(rgb, SAND_D, (1 - smooth(d, 0.0, 0.05)) * 0.5)
+    depth = smooth(d, 0.1, 0.9)
+    rgb = mix(WATER_LIGHT, WATER_MID, smooth(d, 0.08, 0.35))
+    rgb = mix(rgb, WATER_DEEP, depth)
+    # soft wave crests that drift between the two frames
+    phase = frame * 0.5
+    wave = np.sin((GX * 4 + GY * 2 + phase) * np.pi * 2)
+    patches = blobs(80, 4, 0.16)                      # crests only here and there, not a pattern
+    rgb = mix(rgb, WATER_LIGHT, smooth(wave, 0.80, 0.97) * patches * 0.45)
+    # foam along the beach: a bright line plus bubbles
+    foam = (1 - smooth(d, 0.12, 0.19)) * smooth(d, 0.08, 0.10)
+    bubbles = periodic_spots(70 + frame, 9, 0.025) * (1 - smooth(d, 0.17, 0.24))
+    rgb = mix(rgb, FOAM, np.clip(foam * 0.95 + bubbles * 0.8, 0, 1))
+    rgb = mix(rgb, SAND, 1 - smooth(d, 0.07, 0.095))            # beach
+    rgb = mix(rgb, SAND_D, (1 - smooth(d, 0.0, 0.05)) * 0.45)
     return finish(rgb)
 
 
@@ -160,15 +202,23 @@ def road_dist(mask):
 
 
 def road_tile(mask):
+    """Paved stone road like a town square path: stones with grout lines and a light curb."""
     d = road_dist(mask)
     rgb = lawn(0)
-    curb = 1 - smooth(d, 0.36, 0.38)
-    rgb = mix(rgb, CURB_D, curb)
-    rgb = mix(rgb, CURB, 1 - smooth(d, 0.33, 0.35))
+    rgb = mix(rgb, CURB_D, 1 - smooth(d, 0.37, 0.39))
+    rgb = mix(rgb, CURB, 1 - smooth(d, 0.34, 0.36))
     body = 1 - smooth(d, 0.29, 0.31)
-    tar = mix(ASPHALT, ASPHALT_D, smooth(d, 0.0, 0.3) * 0.6)
-    tar = mix(tar, ASPHALT * 1.08, blobs(60 + mask, 3, 0.08) * 0.25)
-    rgb = mix(rgb, tar, body)
+    n = 6                                             # stones per tile side
+    sx, sy = GX * n, GY * n
+    row = np.floor(sy)
+    sx = sx + (row % 2) * 0.5                         # staggered rows like real paving
+    fx, fy = sx % 1, sy % 1
+    edge = np.minimum(np.minimum(fx, 1 - fx), np.minimum(fy, 1 - fy))
+    cell_id = (np.floor(sx) * 7 + row * 13) % 5
+    stone = mix(STONE, STONE_D, (cell_id / 4.0) * 0.6)
+    stone = mix(stone, STONE * 1.06, smooth(fy, 0.0, 0.5) * (1 - smooth(fy, 0.5, 1.0)) * 0.4)
+    stone = mix(stone, GROUT, 1 - smooth(edge, 0.03, 0.08))
+    rgb = mix(rgb, stone, body)
     return finish(rgb)
 
 

@@ -4,7 +4,7 @@ extends Node2D
 ## parent node scales and moves it (camera). Buildings are low and stand on a yard tile, so they do
 ## not hide each other.
 ## Three layers, back to front:
-##   this node      ground: grass, water, roads, lots and yards, coverage tint, map edge
+##   this node      ground: sea around the island, grass, roads, lots and yards, coverage tint, cliffs
 ##   Buildings      sprites from the back row to the front row
 ##   Overlays       fires, warnings, broken roads, previews, selection
 ## Sprites come from assets/sprites/px (tools/paint_art.py, tools/generate_ground.py) and are stored
@@ -16,7 +16,8 @@ const HW := 32                  # TW / 2
 const HH := 16                  # TH / 2
 const DETAIL := 2.0
 const FOOT := 0.8               # buildings stand on 80% of the tile; the rest is their yard
-const EDGE_H := 10.0            # height of the earth/water side under the front map edges
+const EDGE_H := 12.0            # height of the rock cliff under the front edges of the island
+const SEA_RING := 5             # sea tiles drawn around the island (beyond them the clear color is sea)
 const ZONE_KEY := ["", "r", "c", "i"]
 const ZONE_EMBLEM := ["", "ui_res", "ui_com", "ui_ind"]
 const PLAIN := ["tree", "park", "fountain", "stadium"]     # facilities that bring their own ground
@@ -201,6 +202,7 @@ func _draw() -> void:
 	if city == null:
 		return
 	var frame := int(time * 2.0) % 2
+	_draw_sea(frame)
 	for i in City.CELLS:
 		var p := City.pos(i)
 		var tint := Color.WHITE if city.is_active(i) else LOCKED
@@ -234,8 +236,31 @@ func _emblem(i: int, z: int) -> void:
 		draw_texture_rect(emblem, Rect2((cell_center(i) - size * 0.5 - Vector2(0, 2)).round(), size), false, Color(1, 1, 1, 0.5))
 
 
+func _draw_sea(frame: int) -> void:
+	## The sea around the island: beach and foam on the tiles touching land, then open water.
+	## The highway reaches the island over a long bridge from the left.
+	var n := City.N
+	var bits := [1, 2, 4, 8]
+	for gy in range(-SEA_RING, n + SEA_RING):
+		for gx in range(-SEA_RING, n + SEA_RING):
+			if City.inside(gx, gy):
+				continue
+			var m := 0
+			for k in 4:
+				var q: Vector2i = Vector2i(gx, gy) + City.DIRS[k]
+				if City.inside(q.x, q.y) and city.terrain[City.idx(q.x, q.y)] != Defs.T.WATER:
+					m |= bits[k]
+			var t := Art.tex("water%d_%d" % [m, frame])
+			if t != null:
+				draw_texture_rect(t, Rect2(grid_to_local(Vector2(gx, gy)) - Vector2(HW, HH), Vector2(TW, TH)), false)
+	var hy := City.pos(city.entrance).y
+	var deck := Art.tex("bridge10")
+	for gx in range(-SEA_RING, 0):
+		draw_texture_rect(deck, Rect2(grid_to_local(Vector2(gx, hy)) - Vector2(HW, HH), Vector2(TW, TH)), false)
+
+
 func _draw_map_edge() -> void:
-	## Earth (or water) sides under the two front edges, so the map reads as a block of land.
+	## Rock cliffs under the two front edges of the island, with foam where they meet the sea.
 	var n := City.N
 	for k in n:
 		for side in 2:
@@ -243,11 +268,20 @@ func _draw_map_edge() -> void:
 			var c := cell_center(i)
 			var a := c + (Vector2(HW, 0) if side == 0 else Vector2(-HW, 0))
 			var b := c + Vector2(0, HH)
-			var wet := city.terrain[i] == Defs.T.WATER
-			var col := Color(0.3, 0.5, 0.78) if wet else (Color(0.6, 0.42, 0.27) if side == 0 else Color(0.49, 0.33, 0.21))
+			var lit := 1.0 if side == 0 else 0.82          # the right-facing side gets more light
+			var top := Color(0.78, 0.68, 0.55) * lit
+			var low := Color(0.5, 0.42, 0.36) * lit
 			if not city.is_active(i):
-				col = col * LOCKED
-			draw_colored_polygon(PackedVector2Array([a, b, b + Vector2(0, EDGE_H), a + Vector2(0, EDGE_H)]), col)
+				top = top * LOCKED
+				low = low * LOCKED
+			top.a = 1.0
+			low.a = 1.0
+			var down := Vector2(0, EDGE_H)
+			draw_polygon(PackedVector2Array([a, b, b + down, a + down]), PackedColorArray([top, top, low, low]))
+			# a few darker cracks so it reads as rock
+			var mid := (a + b) * 0.5
+			draw_line(mid + Vector2(0, 3), mid + Vector2(0, EDGE_H - 2), Color(low, 0.6), 1.0)
+			draw_line(a + down, b + down, Color(1, 1, 1, 0.85), 1.5)          # foam at the foot
 
 
 func _draw_overlay() -> void:

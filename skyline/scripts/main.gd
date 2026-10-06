@@ -327,7 +327,9 @@ func _attach_city() -> void:
 	map.selected = -1
 	_set_speed(1)
 	var a := city.active_rect()
-	cam = MapView.grid_to_local(Vector2(a.get_center()) - Vector2(0.5, 0.5))
+	# start looking at the end of the highway, where the first road goes
+	var hp := Vector2(a.position.x + 1, City.pos(city.entrance).y)
+	cam = MapView.grid_to_local(hp.lerp(Vector2(a.get_center()) - Vector2(0.5, 0.5), 0.45))
 	zoom = START_ZOOM
 	_apply_camera()
 	_after_edit()
@@ -981,7 +983,7 @@ func _edit_hint() -> String:
 	var pan := "맵 이동은 두 손가락"
 	match tool:
 		"road":
-			return "도로 %s/칸 (다리 %s) · 손가락으로 그으면 지나간 칸에 깔려요 · %s" % [UIKit.money(Defs.ROAD_COST), UIKit.money(Defs.BRIDGE_COST), pan]
+			return "도로 %s/칸 · 손가락으로 그으면 지나간 칸에 깔려요 · %s" % [UIKit.money(Defs.ROAD_COST), pan]
 		"zone1", "zone2", "zone3":
 			if rect_a >= 0:
 				return _box_summary()

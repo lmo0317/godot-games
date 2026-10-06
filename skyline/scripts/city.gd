@@ -179,15 +179,9 @@ func _generate_once() -> void:
 	variant.resize(CELLS)
 	build = PackedByteArray()
 	build.resize(CELLS)
-	var kind := rng.randi_range(0, 2)
-	if kind == 0:
-		_make_river(rng.randi_range(11, 20), true)
-	elif kind == 1:
-		_make_coast()
-	else:
-		_make_lake()
-	# forests: a few blobs plus scattered trees, never on water
-	for k in rng.randi_range(7, 11):
+	# the whole map is one island (the sea is drawn around it), so no water on the land
+	# forests: a few blobs plus scattered trees
+	for k in rng.randi_range(5, 8):
 		var cx := rng.randi_range(0, N - 1)
 		var cy := rng.randi_range(0, N - 1)
 		var r := rng.randf_range(1.5, 3.8)
@@ -196,9 +190,9 @@ func _generate_once() -> void:
 				if inside(x, y) and Vector2(x - cx, y - cy).length() + rng.randf() * 1.2 < r and terrain[idx(x, y)] == Defs.T.GRASS:
 					terrain[idx(x, y)] = Defs.T.FOREST
 	for i in CELLS:
-		if terrain[i] == Defs.T.GRASS and rng.randf() < 0.03:
+		if terrain[i] == Defs.T.GRASS and rng.randf() < 0.02:
 			terrain[i] = Defs.T.FOREST
-	# highway from the left edge into the starting square
+	# highway from the left edge (over a bridge from the mainland) into the starting square
 	var hy := rng.randi_range(12, 19)
 	var start := active_rect().position.x
 	for x in range(0, start + 2):
