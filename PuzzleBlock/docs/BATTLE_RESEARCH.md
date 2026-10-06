@@ -88,3 +88,67 @@
 - 듀오링고 리그 https://duolingo.deconstructoroffun.com/mechanics/leagues · Royal League https://oldcynic.com/royal-match-royal-league-guide-tips
 - 운빨존많겜 https://www.gamigion.com/lucky/ · 랜덤다이스 PvP https://en.namu.wiki/w/%EB%9E%9C%EB%8D%A4%20%EB%8B%A4%EC%9D%B4%EC%8A%A4(Random%20Dice):%20PvP%20%EB%94%94%ED%8E%9C%EC%8A%A4
 - 모바일 멀티플레이 방식 https://mobilefreetoplay.com/multiplayer-on-mobile-3-approaches/
+
+---
+
+# 위쪽 라인 전투를 재밌게 만드는 법 (2026-10-07 조사)
+
+"퍼즐 말고 위쪽 팔라독 같은 전투가 재미가 하나도 없다"는 피드백으로, 라인 디펜스 게임(냥코 대전쟁, 팔라독, 카툰워즈, Age of War, 스틱 워, 그로우 캐슬, 식물 vs 좀비, 클래시 로얄)을 조사했습니다.
+
+## 지금 재미없는 이유
+
+1. **고를 게 없음**: 쿨다운·지갑 한도가 없어 "돈 모이면 제일 좋은 유닛"이 늘 정답.
+2. **적이 똑같이 하나씩**: 6초마다 1마리, 긴장의 오르내림이 없음.
+3. **손맛이 없음**: 넉백·타격 이펙트·소리가 없음.
+4. **소환 말고 할 일이 없음**: 영웅·대포·명령이 없음.
+
+## 게임별 핵심
+
+| 게임 | 핵심 장치 |
+|---|---|
+| 냥코 대전쟁 | 지갑 한도 + 전투 중 일꾼 레벨업(수입·한도 증가) → 저축 vs 투자. 유닛별 쿨다운(벽 유닛은 싸고 짧게). 넉백 횟수(체력이 1/N 줄 때마다 튕김)로 전선이 밀고 당겨짐. 한 탭 냥코 대포(충전식). 적 성 체력이 떨어지면 보스가 충격파와 함께 등장. 적 속성(빨강·떠있음·검정)과 전용 유닛 |
+| 팔라독 | 고기(소환)·마나(마법) 두 자원. 직접 움직이는 영웅의 오라 안 아군만 강해짐 → 영웅 위치가 전략. 적 성 체력 절반에 포효와 특수 웨이브 |
+| 카툰워즈 | 성에서 화살 직접 조준. 마나 부스터(지금 마나 절반으로 최대치 증가). 불만: 화살·마법사만 올리면 되는 정답 조합, 긴 노가다 |
+| Age of War | 경험치로 시대 진화(유닛·포탑 교체), 쿨다운 있는 화면 전체 필살기 |
+| 스틱 워 | 공격·방어·수비대 버튼 3개로 전군 명령, 유닛 하나 직접 조종 |
+| 그로우 캐슬 | 웨이브 사이 성장. "전투는 반복적이지만 성장 때문에 붙잡힘", "중후반 노가다" |
+| 식물 vs 좀비 | 카드 쿨다운 3단계(7.5/30/50초), 중간·끝 깃발 대웨이브. 해바라기(투자) 값을 내려 저축 고민을 살림 |
+| 클래시 로얄 | 엘릭서 최대 10(넘치면 샘, 낭비 표시), 막판 생산 2~3배 |
+| 손맛(GDC "Juice it or Lose it") | 같은 규칙에 번쩍임·흔들림·숫자·소리·파티클만 더해도 체감이 크게 바뀜. 강타에 40~80ms 멈춤(히트스톱) |
+
+## 우리 전투에 넣을 변경 (재미 대비 수고 순)
+
+| # | 변경 | 근거 | 수고 |
+|---|---|---|---|
+| 1 | 손맛: 피격 번쩍, 죽을 때 튕겨 날아감, 성 피격·보스 등장 흔들림, 강타 50ms 멈춤, 전투 소리 3~4종(작게) | Juice 강연 | 소 |
+| 2 | 넉백: 유닛마다 넉백 1~3회, 체력이 그만큼 줄 때마다 뒤로 튕김 | 냥코 | 소 |
+| 3 | 유닛별 쿨다운(기사 2초·궁수 4·마법사 8·창병 12) + 버튼에 원형 표시 | PvZ, 냥코 | 소 |
+| 4 | 정해진 웨이브(조용함 → 소규모 → 경고 배너 → 대웨이브), 적 요새 체력 50%에 보스 + 충격파 | 팔라독, 냥코, PvZ | 중 |
+| 5 | 원탭 대포: 게이지는 **줄 지우기·콤보**로 참, 가득 차면 탭해 적 전체 넉백·피해 | 냥코 대포, Age of War | 소~중 |
+| 6 | 지갑 한도 + "수입 UP" 버튼(비용 점점 오름) | 냥코 일꾼, 클래시 로얄 | 소 |
+| 7 | 상성 필요한 적 2~3종(박쥐 = 원거리만, 갑옷 해골 = 창병 2배, 슬라임 떼 = 마법사 광역) | 냥코 속성 | 중 |
+| 8 | 돌격/수비 토글 1개 | 스틱 워 | 소~중 |
+| 9 | 깃발 오라: 전장 탭한 곳 주변 아군 강화(쿨다운) | 팔라독 영웅 | 중 |
+| 10 | 스테이지 별 3개 + 스테이지 사이 유닛 강화·해금 | 팔라독, 그로우 캐슬 | 대 |
+| 11 | (선택) 길게 눌러 자동 소환 예약 | — | 소 |
+
+## 핵심 흐름 제안
+
+퍼즐에서 줄을 지우면 금화와 대포 게이지가 오르고(콤보일수록 많이), 금화로 벽(기사)과 딜러를 쿨다운에 맞춰 섞어 뽑거나 수입을 올려 대웨이브에 대비합니다. 경고 배너가 뜨면 대웨이브·보스가 오고, 모아 둔 대포 한 방과 돌격으로 고비를 넘깁니다. 성을 부수면 다음 스테이지에서 새 적 속성이 나와 다른 조합을 요구합니다.
+
+## 위험
+
+- 버튼이 늘면 퍼즐에서 눈을 떼야 함 → 전투 조작은 "소환 4 + 대포 1 + 토글 1"까지, 대웨이브 전 경고 필수
+- 웨이브·속성은 2~3스테이지만 손으로 만들어 재미 확인 후 확장
+- 강화가 세면 노가다 게임이 됨(냥코·카툰워즈·그로우 캐슬 불만)
+- 전투 소리·흔들림이 퍼즐 효과와 겹치지 않게 작게, 큰 사건에만
+
+## 출처
+
+- 냥코 일꾼 https://battlecats.miraheze.org/wiki/Worker_Cat · 탱크냥 https://battle-cats.fandom.com/wiki/Tank_Cat_(Normal_Cat) · 넉백 https://thanksfeanor.pythonanywhere.com/guides/documents/terminology.html · 적 유닛·보스 https://battlecats.miraheze.org/wiki/Enemy_Units · 속성 https://battle-cats.fandom.com/wiki/Red_Alert · 대포 https://tvtropes.org/pmwiki/pmwiki.php/VideoGame/TheBattleCats
+- 팔라독 https://ayumilove.net/paladog-walkthrough-guide/ · https://en.namu.wiki/w/%ED%8C%94%EB%9D%BC%EB%8F%85
+- 카툰워즈 https://en.namu.wiki/w/%EC%B9%B4%ED%88%B0%EC%9B%8C%EC%A6%88
+- Age of War https://ageofwar.pro/ · 스틱 워 https://www.pocketgamer.com/stick-war-legacy/beginners-guide/ · 그로우 캐슬 https://minireview.io/tower-defense/grow-castle-tower-defense
+- PvZ 쿨다운 https://plantsvszombies.wiki.gg/wiki/Recharge · https://en.wikipedia.org/wiki/Plants_vs._Zombies_(video_game)
+- 클래시 로얄 엘릭서 https://clashroyale.fandom.com/wiki/Elixir
+- 손맛 https://eastondev.com/blog/en/posts/dev/20260521-game-feedback-feel/ · 냥코 리뷰 https://reviewsbysupersven.com/the-battle-cats/
