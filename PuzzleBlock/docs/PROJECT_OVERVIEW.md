@@ -1,6 +1,6 @@
 # 퍼즐블록 (PuzzleBlock) — 프로젝트 개요
 
-> 코드 구조와 시스템을 정리한 문서입니다. 이 게임은 저장소의 `PuzzleBlock/` 폴더에 있고, 저장소 공통 지침은 루트의 `CLAUDE.md`에 있습니다. 게임 기획은 [GAME_DESIGN.md](GAME_DESIGN.md), 작업 목록은 [TASKS.md](TASKS.md), 어드벤처 사양은 [ADVENTURE_MODE.md](ADVENTURE_MODE.md), 점수 검증은 [SCORING_RULES.md](SCORING_RULES.md)를 참고하세요.
+> 코드 구조와 시스템을 정리한 문서입니다. 이 게임은 저장소의 `PuzzleBlock/` 폴더에 있고, 저장소 공통 지침은 루트의 `CLAUDE.md`에 있습니다. 게임 기획은 [GAME_DESIGN.md](GAME_DESIGN.md), 작업 목록은 [TASKS.md](TASKS.md), 어드벤처 사양은 [ADVENTURE_MODE.md](ADVENTURE_MODE.md), 점수 검증은 [SCORING_RULES.md](SCORING_RULES.md), 전투·대전 조사는 [BATTLE_RESEARCH.md](BATTLE_RESEARCH.md)를 참고하세요.
 
 ## 1. 한눈에 보기
 
