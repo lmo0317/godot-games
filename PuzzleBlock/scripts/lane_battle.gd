@@ -1,12 +1,13 @@
 class_name LaneBattle
 extends Control
 # "블록 기사단": a side-view lane battle above the normal puzzle (board shrunk by MainGame).
-# - Every piece the player places is one turn: each unit on the lane either walks forward or
-#   hits the enemy in range once, and both sides trade blows at the same time.
-# - Clearing lines earns gold (more for bigger clears and combos), and every piece a little.
-# - Gold buys soldiers with the summon buttons (this does not use a turn).
-# - The enemy fortress sends monsters every few turns. Destroy it to reach the next stage; the run
+# - Real time: units walk at their own speed and hit the first enemy in range on their own attack
+#   timer, while the player keeps solving the puzzle below.
+# - Clearing lines earns gold (more for bigger clears and combos); a little gold also trickles in.
+# - Gold buys soldiers with the summon buttons.
+# - The enemy fortress sends monsters every few seconds. Destroy it to reach the next stage; the run
 #   ends when the castle falls (or the board is stuck, handled by MainGame).
+# The battle pauses while the settings window is open (MainGame sets `paused`).
 # Art: Codex pixel art cut by tools/import_lane_art.py, drawn at whole-number scales.
 
 signal defeated(stage: int)
@@ -27,34 +28,38 @@ const ENEMY_BASE_X: float = 528.0     # where soldiers stand to hit the fortress
 const CASTLE_X: float = 80.0          # building centres, for hit effects and HP bars
 const FORT_X: float = 636.0
 const BASE_BAR_W: float = 132.0
-const STEP: float = 44.0              # walk per turn
 const GAP: float = 26.0               # a unit stops this far behind a friend ahead
 const MAX_UNITS: int = 10
 const CASTLE_HP: int = 400
 const START_GOLD: int = 60
-const GOLD_PER_MOVE: int = 4
+const GOLD_PER_SEC: float = 2.0
 const GOLD_PER_LINE: int = 15
 const GOLD_PER_POINT: float = 0.5
 const BOSS_EVERY: int = 5
 const ALLIES := {
-	"knight": {"name": "기사", "cost": 50, "hp": 60.0, "atk": 12.0, "range": 44.0},
-	"archer": {"name": "궁수", "cost": 80, "hp": 34.0, "atk": 9.0, "range": 140.0, "shot": "arrow"},
-	"mage": {"name": "마법사", "cost": 120, "hp": 30.0, "atk": 14.0, "range": 110.0, "shot": "orb", "splash": 50.0},
-	"spearman": {"name": "창병", "cost": 160, "hp": 110.0, "atk": 16.0, "range": 60.0},
+	# speed: px per second, every: seconds between hits
+	"knight": {"name": "기사", "cost": 50, "hp": 60.0, "atk": 12.0, "range": 44.0, "speed": 34.0, "every": 1.0},
+	"archer": {"name": "궁수", "cost": 80, "hp": 34.0, "atk": 9.0, "range": 140.0, "speed": 30.0, "every": 1.2, "shot": "arrow"},
+	"mage": {"name": "마법사", "cost": 120, "hp": 30.0, "atk": 14.0, "range": 110.0, "speed": 28.0, "every": 1.6, "shot": "orb", "splash": 50.0},
+	"spearman": {"name": "창병", "cost": 160, "hp": 110.0, "atk": 16.0, "range": 60.0, "speed": 26.0, "every": 1.2},
 }
 const ALLY_ORDER: Array[String] = ["knight", "archer", "mage", "spearman"]
 const ENEMIES := {
-	"slime": {"hp": 36.0, "atk": 6.0, "range": 40.0},
-	"goblin": {"hp": 52.0, "atk": 9.0, "range": 44.0},
-	"skeleton": {"hp": 64.0, "atk": 11.0, "range": 44.0},
-	"orc": {"hp": 130.0, "atk": 18.0, "range": 50.0},
+	"slime": {"hp": 36.0, "atk": 6.0, "range": 40.0, "speed": 22.0, "every": 1.2},
+	"goblin": {"hp": 52.0, "atk": 9.0, "range": 44.0, "speed": 30.0, "every": 1.1},
+	"skeleton": {"hp": 64.0, "atk": 11.0, "range": 44.0, "speed": 26.0, "every": 1.2},
+	"orc": {"hp": 130.0, "atk": 18.0, "range": 50.0, "speed": 20.0, "every": 1.5},
 }
 const ENEMY_GROWTH: float = 1.15
 const FORTRESS_HP: float = 200.0
 const FORTRESS_GROWTH: float = 1.25
 
 var stage: int = 1
-var turn: int = 0
+var paused: bool = false
+var spawn_timer: float = 0.0
+var _gold_acc: float = 0.0
+var _clock: float = 0.0
+var _dirty: bool = false
 var gold: int = START_GOLD
 var castle_hp: int = CASTLE_HP
 var fortress_hp: float = FORTRESS_HP
@@ -95,7 +100,8 @@ func _ready() -> void:
 func begin() -> void:
 	rng.randomize()
 	stage = 1
-	turn = 0
+	paused = false
+	_gold_acc = 0.0
 	gold = START_GOLD
 	castle_hp = CASTLE_HP
 	finished = false
@@ -135,55 +141,56 @@ func summon(kind: String) -> bool:
 	_refresh()
 	return true
 
-# One turn per piece the player places
-func on_player_move() -> void:
-	if finished or switching:
-		return
-	turn += 1
-	gold = mini(9999, gold + GOLD_PER_MOVE)
-	_resolve_turn()
-	if not finished and not switching and turn % _spawn_every() == 0 and _count(-1) < MAX_UNITS:
-		_spawn(_pick_enemy(), -1, pow(ENEMY_GROWTH, stage - 1))
-	_refresh()
-
 # =========================================================
-# Turn
+# Real-time battle
 # =========================================================
 
-func _resolve_turn() -> void:
-	var hits: Array = []        # [target dict or "castle"/"fortress", damage, attacker]
-	var moves: Array = []       # [unit, new x]
-	var front_x: Dictionary = {}  # side -> x of the friend just ahead (after its move)
+func _tick(delta: float) -> void:
+	_clock += delta
+	_gold_acc += GOLD_PER_SEC * delta
+	if _gold_acc >= 1.0:
+		gold = mini(9999, gold + int(_gold_acc))
+		_gold_acc -= int(_gold_acc)
+		_dirty = true
+	if not switching:
+		spawn_timer -= delta
+		if spawn_timer <= 0.0:
+			spawn_timer = _spawn_every()
+			if _count(-1) < MAX_UNITS:
+				_spawn(_pick_enemy(), -1, pow(ENEMY_GROWTH, stage - 1))
+	var front_x: Dictionary = {}  # side -> x of the friend just ahead
 	# Front units first, so each one can stop just behind the friend ahead of it
 	var order: Array = units.duplicate()
 	order.sort_custom(func(a, b): return a["node"].position.x * a["side"] > b["node"].position.x * b["side"])
 	for u in order:
-		var x: float = u["node"].position.x
+		var node: Sprite2D = u["node"]
+		var x: float = node.position.x
 		var side: int = u["side"]
+		var base_off: float = -node.texture.get_height() * 0.5
+		u["cd"] = maxf(0.0, u["cd"] - delta)
 		var target = _target_for(u)
 		if target != null:
-			hits.append([target, u["atk"], u])
+			node.offset.y = base_off
 			front_x[side] = x
+			if u["cd"] <= 0.0:
+				u["cd"] = u["every"]
+				_attack_fx(u, target)
+				_apply_hit(target, u["atk"], u)
 			continue
-		# Walk forward, stopping just short of the nearest opponent or the enemy base
+		# Walk forward, stopping just short of the nearest opponent, a friend ahead or the enemy base
 		var limit: float = ENEMY_BASE_X if side == 1 else ALLY_BASE_X
 		var front = _nearest_opponent(u)
 		if front != null:
 			limit = front["node"].position.x - side * minf(u["range"], 40.0)
 		if front_x.has(side):
 			limit = minf(limit, front_x[side] - GAP) if side == 1 else maxf(limit, front_x[side] + GAP)
-		var nx: float = x + side * STEP
+		var nx: float = x + side * u["speed"] * delta
 		nx = minf(nx, limit) if side == 1 else maxf(nx, limit)
 		nx = maxf(nx, x) if side == 1 else minf(nx, x)
+		node.position.x = nx
 		front_x[side] = nx
-		moves.append([u, nx])
-	for m in moves:
-		var node: Sprite2D = m[0]["node"]
-		node.create_tween().tween_property(node, "position:x", m[1], 0.22).set_trans(Tween.TRANS_SINE)
-		_hop(node)
-	for h in hits:
-		_attack_fx(h[2], h[0])
-		_apply_hit(h[0], h[1], h[2])
+		# A small hop while walking
+		node.offset.y = base_off - (absf(sin(_clock * 9.0 + u["phase"])) * 3.0 if absf(nx - x) > 0.01 else 0.0)
 	# Remove the fallen
 	for u in units.duplicate():
 		if u["hp"] <= 0.0:
@@ -194,6 +201,9 @@ func _resolve_turn() -> void:
 		finished = true
 		_banner("성이 무너졌어요", "STAGE %d" % stage)
 		get_tree().create_timer(1.0).timeout.connect(func(): defeated.emit(stage))
+	if _dirty:
+		_dirty = false
+		_refresh()
 
 # The nearest opponent within range ahead, else the enemy base if it is in range
 func _target_for(u: Dictionary):
@@ -223,6 +233,7 @@ func _nearest_opponent(u: Dictionary):
 	return best
 
 func _apply_hit(target, dmg: float, attacker: Dictionary) -> void:
+	_dirty = true
 	if target is String:
 		if target == "fortress":
 			fortress_hp = maxf(0.0, fortress_hp - dmg)
@@ -242,8 +253,9 @@ func _apply_hit(target, dmg: float, attacker: Dictionary) -> void:
 				o["hp"] -= dmg * 0.6
 				_flash(o["node"])
 
-func _spawn_every() -> int:
-	return maxi(2, 4 - (stage - 1) / 3)
+# Seconds between monsters from the fortress
+func _spawn_every() -> float:
+	return maxf(2.5, 6.0 - 0.5 * (stage - 1))
 
 func _pick_enemy() -> String:
 	var pool: Array = ["slime"]
@@ -258,7 +270,7 @@ func _pick_enemy() -> String:
 func _start_stage() -> void:
 	fortress_max = FORTRESS_HP * pow(FORTRESS_GROWTH, stage - 1)
 	fortress_hp = fortress_max
-	turn = 0
+	spawn_timer = _spawn_every()
 	_stage_label.text = "STAGE %d" % stage
 	_spawn(_pick_enemy(), -1, pow(ENEMY_GROWTH, stage - 1))
 	if stage % BOSS_EVERY == 0:
@@ -295,7 +307,8 @@ func _spawn(kind: String, side: int, k: float) -> Dictionary:
 	_units_layer.add_child(node)
 	var hp: float = st["hp"] * k
 	var u := {"node": node, "side": side, "kind": kind, "hp": hp, "max_hp": hp, "atk": st["atk"] * k,
-		"range": st["range"], "shot": st.get("shot", ""), "splash": st.get("splash", 0.0)}
+		"range": st["range"], "shot": st.get("shot", ""), "splash": st.get("splash", 0.0),
+		"speed": st["speed"], "every": st["every"], "cd": st["every"] * 0.5, "phase": rng.randf() * TAU}
 	u["bar"] = _unit_bar(node)
 	units.append(u)
 	node.modulate.a = 0.0
@@ -316,12 +329,6 @@ func _kill(u: Dictionary) -> void:
 func _height(node: Sprite2D) -> float:
 	return node.texture.get_height() * node.scale.y
 
-func _hop(node: Sprite2D) -> void:
-	var base: float = -node.texture.get_height() * 0.5
-	var tw := node.create_tween()
-	tw.tween_property(node, "offset:y", base - 3.0, 0.1)
-	tw.tween_property(node, "offset:y", base, 0.12)
-
 func _flash(node: CanvasItem) -> void:
 	node.modulate = Color(2.0, 1.6, 1.6)
 	node.create_tween().tween_property(node, "modulate", Color.WHITE, 0.2)
@@ -335,9 +342,10 @@ func _attack_fx(u: Dictionary, target) -> void:
 	else:
 		to = target["node"].position + Vector2(0, -_height(target["node"]) * 0.5)
 	if u["shot"] == "":
+		# Lunge with the sprite offset so it never fights the walking position
 		var tw := node.create_tween()
-		tw.tween_property(node, "position:x", node.position.x + u["side"] * 10.0, 0.08)
-		tw.tween_property(node, "position:x", node.position.x, 0.12)
+		tw.tween_property(node, "offset:x", u["side"] * 5.0, 0.08)
+		tw.tween_property(node, "offset:x", 0.0, 0.12)
 		return
 	var shot := ColorRect.new()
 	shot.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -527,7 +535,9 @@ func _refresh() -> void:
 		fill.size.x = 34.0 * clampf(u["hp"] / u["max_hp"], 0.0, 1.0)
 		fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.35, 0.86, 0.43) if u["side"] == 1 else Color(1.0, 0.4, 0.35), Color.TRANSPARENT, 1))
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if not finished and not paused and visible:
+		_tick(delta)
 	for u in units:
 		var node: Sprite2D = u["node"]
 		u["bar"].position = node.position + Vector2(-18, -_height(node) - 8)

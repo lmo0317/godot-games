@@ -1,6 +1,6 @@
 extends Node
-# Headless test for 블록 기사단 (LaneBattle): the compact layout, gold from clears, summoning,
-# one battle turn per placed piece (walking and trading one hit), the next stage when the enemy
+# Headless test for 블록 기사단 (LaneBattle): the compact layout, real-time walking and fighting,
+# gold over time and from clears, summoning, pausing for settings, the next stage when the enemy
 # fortress falls, the end when the castle falls, and the normal layout coming back for classic.
 # Run: Godot_console.exe --headless --path . res://tests/test_lane.tscn
 
@@ -50,45 +50,53 @@ func _run() -> void:
 	main.combo_count = 0
 	main._update_combo_aura()
 
-	# A placed piece is one turn: the monster walks toward the castle
+	# Real time: the monster walks toward the castle and gold trickles in without any move
 	var enemy: Dictionary = b.units[0]
 	var x0: float = enemy["node"].position.x
 	var g0: int = b.gold
-	_place_dot_no_clear()
-	await get_tree().create_timer(0.4).timeout
-	_expect(enemy["node"].position.x < x0, "the monster walks on a turn (%.0f -> %.0f)" % [x0, enemy["node"].position.x])
-	_expect(b.gold == g0 + LaneBattle.GOLD_PER_MOVE, "a move pays a little gold")
+	await get_tree().create_timer(1.2).timeout
+	_expect(enemy["node"].position.x < x0, "the monster walks by itself (%.0f -> %.0f)" % [x0, enemy["node"].position.x])
+	_expect(b.gold > g0, "gold trickles in over time (%d -> %d)" % [g0, b.gold])
+
+	# Settings pause the battle
+	main._open_settings()
+	await get_tree().process_frame
+	var xp: float = enemy["node"].position.x
+	await get_tree().create_timer(0.5).timeout
+	_expect(is_equal_approx(enemy["node"].position.x, xp), "the battle waits while settings are open")
+	main.settings_modal.close()
+	await get_tree().create_timer(0.3).timeout
+	_expect(not b.paused, "the battle goes on after settings")
 
 	# A clear pays gold
 	g0 = b.gold
 	_place_dot_clearing_row()
 	await get_tree().create_timer(0.3).timeout
-	_expect(b.gold >= g0 + LaneBattle.GOLD_PER_LINE + LaneBattle.GOLD_PER_MOVE, "a clear pays gold (%d -> %d)" % [g0, b.gold])
+	_expect(b.gold >= g0 + LaneBattle.GOLD_PER_LINE, "a clear pays gold (%d -> %d)" % [g0, b.gold])
 
-	# Summoning spends gold and does not use a turn
+	# Summoning spends gold
 	b.gold = 60
-	var t0: int = b.turn
+	b._gold_acc = 0.0
 	_expect(b.summon("knight") and b.gold == 10 and b._count(1) == 1, "summon a knight for 50")
 	_expect(not b.summon("knight"), "no summon without gold")
-	_expect(b.turn == t0, "summoning is not a turn")
 
-	# Next to each other they trade one hit per turn
+	# Next to each other they fight on their attack timers
 	var knight: Dictionary = b.units.filter(func(u): return u["side"] == 1)[0]
 	knight["node"].position.x = 300.0
 	enemy["node"].position.x = 330.0
 	var khp: float = knight["hp"]
 	var ehp: float = enemy["hp"]
-	_place_dot_no_clear()
-	await get_tree().create_timer(0.3).timeout
-	_expect(knight["hp"] < khp and enemy["hp"] < ehp, "both sides hit once (%.0f/%.0f, %.0f/%.0f)" % [knight["hp"], khp, enemy["hp"], ehp])
-	_expect(is_equal_approx(knight["node"].position.x, 300.0), "a fighting unit does not walk")
+	await get_tree().create_timer(1.5).timeout
+	_expect(knight["hp"] < khp and enemy["hp"] < ehp, "both sides hit (%.0f/%.0f, %.0f/%.0f)" % [knight["hp"], khp, enemy["hp"], ehp])
 
 	# Breaking the fortress moves to the next stage
-	enemy["hp"] = 0.0
-	b._kill(enemy)
+	for u in b.units.duplicate():
+		if u["side"] == -1:
+			b._kill(u)
+	b.spawn_timer = 99.0
+	knight["hp"] = 999.0
 	knight["node"].position.x = LaneBattle.ENEMY_BASE_X - 20.0
 	b.fortress_hp = 1.0
-	_place_dot_no_clear()
 	await _wait_until(func(): return b.stage == 2 and not b.switching, 4.0)
 	_expect(b.stage == 2 and b.fortress_hp > LaneBattle.FORTRESS_HP, "a broken fortress leads to a stronger stage 2")
 
@@ -99,7 +107,6 @@ func _run() -> void:
 	var e2: Dictionary = b.units.filter(func(u): return u["side"] == -1)[0]
 	e2["node"].position.x = LaneBattle.ALLY_BASE_X + 10.0
 	b.castle_hp = 1
-	_place_dot_no_clear()
 	await _wait_until(func(): return main.game_over_panel.visible, 5.0)
 	_expect(main.go_title.text == "GAME OVER" and main.go_final_score.text == "STAGE 2", "result shows the stage (%s / %s)" % [main.go_title.text, main.go_final_score.text])
 

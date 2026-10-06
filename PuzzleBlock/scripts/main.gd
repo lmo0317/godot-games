@@ -660,8 +660,6 @@ func _commit_placement(piece: BlockPiece) -> bool:
 
 	if game_mode == "adventure" and _update_stage_after_move(lines, clear_info["gems"]):
 		return true
-	if game_mode == "battle":
-		battle.on_player_move()
 	if _is_tray_empty():
 		_spawn_new_tray()
 	else:
@@ -1063,8 +1061,10 @@ func _open_settings(tab: String = "") -> void:
 	if was_in_start_screen:
 		start_screen.visible = false
 	settings_modal.open(tab)
+	battle.paused = true # the real-time battle waits while settings are open
 
 func _on_settings_closed() -> void:
+	battle.paused = false
 	if was_in_start_screen:
 		start_screen.visible = true
 	board.refresh_skin()
