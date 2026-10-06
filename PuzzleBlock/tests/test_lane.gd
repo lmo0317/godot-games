@@ -40,6 +40,15 @@ func _run() -> void:
 	_expect(main.tray_slots[0].y > MainGame.TRAY_SLOTS[0].y, "tray moved down")
 	var tray_bottom: float = main.tray_slots[0].y + 80.0
 	_expect(tray_bottom < 1280.0, "tray stays on screen")
+	_expect(not main.btn_home.visible and not main.header_title.visible, "the header is hidden in the battle")
+	_expect(main.board_background.position.y > b.size.y, "board sits under the lane and summon bar")
+	# The combo glow keeps the shrunk board size
+	main.combo_count = 3
+	main._update_combo_aura()
+	await get_tree().create_timer(0.35).timeout
+	_expect(is_equal_approx(main.combo_aura.scale.x, MainGame.COMPACT_SCALE), "combo glow keeps the board scale (%.3f)" % main.combo_aura.scale.x)
+	main.combo_count = 0
+	main._update_combo_aura()
 
 	# A placed piece is one turn: the monster walks toward the castle
 	var enemy: Dictionary = b.units[0]
@@ -100,6 +109,7 @@ func _run() -> void:
 	await _wait_until(func(): return not main._is_tray_empty())
 	_expect(is_equal_approx(main.board.scale.x, 1.0) and not b.visible, "classic uses the normal layout")
 	_expect(main.tray_slots[0] == MainGame.TRAY_SLOTS[0], "tray back in place")
+	_expect(main.btn_home.visible and main.header_title.visible, "the header comes back for classic")
 	_finish()
 
 func _any_piece() -> BlockPiece:

@@ -11,15 +11,22 @@ extends Control
 
 signal defeated(stage: int)
 signal castle_hit(damage: int)
+# The game's header is hidden in this mode; its home / settings / sound buttons live in the summon bar
+signal home_pressed
+signal settings_pressed
+signal sound_pressed
 
 const LANE_H: float = 330.0
-const BAR_H: float = 96.0
+const BAR_H: float = 100.0
 const PX: float = 2.0                 # unit and base sprites are drawn at x2
 const GROUND: float = 296.0           # feet line in the lane
-const ALLY_START: float = 150.0
-const ENEMY_START: float = 566.0
-const ALLY_BASE_X: float = 140.0      # where enemies hit the castle
-const ENEMY_BASE_X: float = 572.0     # where soldiers hit the fortress
+const ALLY_START: float = 192.0       # just in front of the castle (it ends at x 154)
+const ENEMY_START: float = 520.0      # just in front of the fortress (it starts at x 558)
+const ALLY_BASE_X: float = 190.0      # where enemies stand to hit the castle
+const ENEMY_BASE_X: float = 528.0     # where soldiers stand to hit the fortress
+const CASTLE_X: float = 80.0          # building centres, for hit effects and HP bars
+const FORT_X: float = 636.0
+const BASE_BAR_W: float = 132.0
 const STEP: float = 44.0              # walk per turn
 const GAP: float = 26.0               # a unit stops this far behind a friend ahead
 const MAX_UNITS: int = 10
@@ -66,13 +73,14 @@ var _castle_fill: Panel
 var _castle_label: Label
 var _fort_fill: Panel
 var _fort_label: Label
+var _menu: Dictionary = {}
 var _gold_label: Label
 var _buttons: Dictionary = {}
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	position = Vector2(0, 90)
-	size = Vector2(720, LANE_H + 8 + BAR_H)
+	position = Vector2.ZERO
+	size = Vector2(720, LANE_H + BAR_H)
 	var names: Array = ["castle", "fortress", "lane"]
 	names.append_array(ALLY_ORDER)
 	names.append_array(ENEMIES.keys())
@@ -218,10 +226,10 @@ func _apply_hit(target, dmg: float, attacker: Dictionary) -> void:
 	if target is String:
 		if target == "fortress":
 			fortress_hp = maxf(0.0, fortress_hp - dmg)
-			_number(Vector2(ENEMY_BASE_X + 50, GROUND - 160), dmg, Color(1.0, 0.9, 0.5))
+			_number(Vector2(FORT_X, GROUND - 170), dmg, Color(1.0, 0.9, 0.5))
 		else:
 			castle_hp = maxi(0, castle_hp - roundi(dmg))
-			_number(Vector2(ALLY_BASE_X - 60, GROUND - 160), dmg, Color(1.0, 0.45, 0.4))
+			_number(Vector2(CASTLE_X, GROUND - 170), dmg, Color(1.0, 0.45, 0.4))
 			castle_hit.emit(roundi(dmg))
 		return
 	target["hp"] -= dmg
@@ -323,7 +331,7 @@ func _attack_fx(u: Dictionary, target) -> void:
 	var node: Sprite2D = u["node"]
 	var to: Vector2
 	if target is String:
-		to = Vector2(ENEMY_BASE_X + 40 if target == "fortress" else ALLY_BASE_X - 40, GROUND - 80)
+		to = Vector2(FORT_X if target == "fortress" else CASTLE_X, GROUND - 80)
 	else:
 		to = target["node"].position + Vector2(0, -_height(target["node"]) * 0.5)
 	if u["shot"] == "":
@@ -398,39 +406,59 @@ func _build() -> void:
 	_stage_label.position = Vector2(260, 8)
 	_stage_label.size = Vector2(200, 36)
 	_view.add_child(_stage_label)
-	var cb := _bar(_view, Vector2(16, 46), Vector2(200, 18))
+	# HP bars sit on the ground under each building (the top-right corner is Toss's button area)
+	var cb := _bar(_view, Vector2(CASTLE_X - BASE_BAR_W * 0.5, LANE_H - 26), Vector2(BASE_BAR_W, 20))
 	_castle_fill = cb.get_child(0)
-	_castle_label = _outlined("", 16, Color(0.9, 1.0, 0.9))
-	_castle_label.position = Vector2(16, 64)
-	_castle_label.size = Vector2(200, 22)
-	_view.add_child(_castle_label)
-	var fb := _bar(_view, Vector2(504, 46), Vector2(200, 18))
+	_castle_label = _outlined("", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_castle_label.size = cb.size
+	_castle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cb.add_child(_castle_label)
+	var fb := _bar(_view, Vector2(FORT_X - BASE_BAR_W * 0.5, LANE_H - 26), Vector2(BASE_BAR_W, 20))
 	_fort_fill = fb.get_child(0)
-	_fort_label = _outlined("", 16, Color(1.0, 0.88, 0.88), HORIZONTAL_ALIGNMENT_RIGHT)
-	_fort_label.position = Vector2(504, 64)
-	_fort_label.size = Vector2(200, 22)
-	_view.add_child(_fort_label)
-	# Summon bar: gold on the left, a button per soldier
+	_fort_label = _outlined("", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_fort_label.size = fb.size
+	_fort_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	fb.add_child(_fort_label)
+	# Summon bar right under the lane, full width: menu buttons and gold on the left, soldiers right
 	var bar := Panel.new()
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.position = Vector2(10, LANE_H + 8)
-	bar.size = Vector2(700, BAR_H)
-	bar.add_theme_stylebox_override("panel", UIKit.box(UIKit.SURFACE, UIKit.BORDER, 18, 2))
+	bar.position = Vector2(0, LANE_H)
+	bar.size = Vector2(720, BAR_H)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = UIKit.SURFACE
+	sb.border_color = UIKit.BORDER
+	sb.border_width_top = 3
+	sb.border_width_bottom = 2
+	bar.add_theme_stylebox_override("panel", sb)
 	add_child(bar)
-	var gcap := UIKit.label("금화", UIKit.TYPE_SMALL, UIKit.MUTED)
-	gcap.position = Vector2(18, 12)
-	gcap.size = Vector2(150, 24)
-	bar.add_child(gcap)
-	_gold_label = _outlined("0", 34, UIKit.GOLD)
-	_gold_label.position = Vector2(18, 38)
-	_gold_label.size = Vector2(160, 44)
+	var i_menu := 0
+	for key in ["home", "settings", "sound"]:
+		var mb := TextureButton.new()
+		mb.ignore_texture_size = true
+		mb.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+		mb.position = Vector2(14 + i_menu * 56, 10)
+		mb.size = Vector2(40, 40)
+		mb.focus_mode = Control.FOCUS_NONE
+		mb.pressed.connect(func(): (home_pressed if key == "home" else (settings_pressed if key == "settings" else sound_pressed)).emit())
+		bar.add_child(mb)
+		_menu[key] = mb
+		i_menu += 1
+	var coin := Panel.new()
+	coin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin.position = Vector2(18, 62)
+	coin.size = Vector2(24, 24)
+	coin.add_theme_stylebox_override("panel", UIKit.box(UIKit.GOLD, Color(0.75, 0.5, 0.1), 12, 3))
+	bar.add_child(coin)
+	_gold_label = _outlined("0", 30, UIKit.GOLD)
+	_gold_label.position = Vector2(50, 52)
+	_gold_label.size = Vector2(130, 42)
 	bar.add_child(_gold_label)
 	for i in range(ALLY_ORDER.size()):
 		var kind: String = ALLY_ORDER[i]
 		var st: Dictionary = ALLIES[kind]
 		var btn := Button.new()
-		btn.position = Vector2(186 + i * 128, 8)
-		btn.size = Vector2(116, 80)
+		btn.position = Vector2(192 + i * 130, 10)
+		btn.size = Vector2(120, 80)
 		btn.focus_mode = Control.FOCUS_NONE
 		UIKit.style_button(btn, "primary", 16, 14)
 		btn.pressed.connect(func(): summon(kind))
@@ -454,6 +482,11 @@ func _build() -> void:
 		btn.add_child(c)
 		_buttons[kind] = btn
 
+func set_menu_icons(home: Texture2D, settings: Texture2D, sound: Texture2D) -> void:
+	_menu["home"].texture_normal = home
+	_menu["settings"].texture_normal = settings
+	_menu["sound"].texture_normal = sound
+
 func _bar(parent: Control, pos: Vector2, sz: Vector2) -> Panel:
 	var bg := Panel.new()
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -476,13 +509,13 @@ func _outlined(text: String, size_px: int, col: Color, align: HorizontalAlignmen
 
 func _refresh() -> void:
 	var cr: float = float(castle_hp) / CASTLE_HP
-	_castle_fill.size.x = 196.0 * cr
+	_castle_fill.size.x = (BASE_BAR_W - 4.0) * cr
 	_castle_fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.35, 0.86, 0.43) if cr > 0.3 else Color(1.0, 0.4, 0.35), Color.TRANSPARENT, 7))
-	_castle_label.text = "내 성 %d" % castle_hp
+	_castle_label.text = str(castle_hp)
 	var fr: float = clampf(fortress_hp / fortress_max, 0.0, 1.0)
-	_fort_fill.size.x = 196.0 * fr
+	_fort_fill.size.x = (BASE_BAR_W - 4.0) * fr
 	_fort_fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.92, 0.32, 0.28), Color.TRANSPARENT, 7))
-	_fort_label.text = "적 요새 %d" % ceili(fortress_hp)
+	_fort_label.text = str(ceili(fortress_hp))
 	_gold_label.text = str(gold)
 	for kind in _buttons:
 		var ok: bool = gold >= ALLIES[kind]["cost"] and _count(1) < MAX_UNITS and not finished

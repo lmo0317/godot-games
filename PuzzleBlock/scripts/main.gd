@@ -70,10 +70,11 @@ var tutorial_hint: TutorialHint = null
 # 블록 기사단 (LaneBattle): a lane battle above a board shrunk to COMPACT_SCALE; every placed piece
 # is one battle turn and clears earn gold for soldiers
 var battle: LaneBattle
-const COMPACT_SCALE: float = 0.82      # board in the battle
-const TRAY_COMPACT_SCALE: float = 0.75 # tray in the battle
-const COMPACT_BOARD_TOP: float = 536.0
-const COMPACT_TRAY_TOP: float = 1074.0
+# The header is hidden in the battle (its buttons move into the summon bar) so the lane starts at the top
+const COMPACT_SCALE: float = 0.95      # board in the battle
+const TRAY_COMPACT_SCALE: float = 0.85 # tray in the battle
+const COMPACT_BOARD_TOP: float = 442.0
+const COMPACT_TRAY_TOP: float = 1062.0
 var tray_slots: Array[Vector2] = []
 var _layout_home: Dictionary = {}   # node -> [position, scale] of the normal layout
 
@@ -201,6 +202,10 @@ func _ready() -> void:
 	$UI.move_child(battle, start_screen.get_index())
 	battle.visible = false
 	battle.defeated.connect(func(stage_reached: int): _finish_battle(stage_reached, "ko"))
+	battle.home_pressed.connect(_open_home_screen)
+	battle.settings_pressed.connect(_open_settings)
+	battle.sound_pressed.connect(_on_sound_toggled)
+	_sync_battle_menu()
 	battle.castle_hit.connect(func(dmg: int):
 		apply_screen_shake(4.0 + minf(dmg, 60) * 0.1, 0.15)
 		SettingsManager.vibrate(60)
@@ -389,6 +394,9 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 	battle.visible = false
 	$UI/Header/ScoreBox.visible = not battle_mode
 	$UI/Header/BestBox.visible = not battle_mode
+	for n in [btn_home, header_title, btn_settings, btn_sound]:
+		n.visible = not battle_mode
+	btn_leaderboard.visible = not battle_mode and _has_ranking()
 	_apply_layout(battle_mode)
 	_dismiss_tutorial_hint()
 	tutorial_trays = 0
@@ -873,14 +881,14 @@ func _update_combo_aura() -> void:
 		combo_aura.visible = true
 		combo_aura.modulate = Color(0.2, 0.85, 1.0, 0.85) # Electric cyan neon
 		var tw = create_tween()
-		tw.tween_property(combo_aura, "scale", Vector2(1.015, 1.015), 0.1)
-		tw.tween_property(combo_aura, "scale", Vector2.ONE, 0.1)
+		tw.tween_property(combo_aura, "scale", Vector2.ONE * BlockPiece.board_scale * 1.015, 0.1)
+		tw.tween_property(combo_aura, "scale", Vector2.ONE * BlockPiece.board_scale, 0.1)
 	else:
 		combo_aura.visible = true
 		combo_aura.modulate = Color(1.0, 0.6, 0.15, 1.0) # Fiery gold flame
 		var tw = create_tween()
-		tw.tween_property(combo_aura, "scale", Vector2(1.03, 1.03), 0.12)
-		tw.tween_property(combo_aura, "scale", Vector2.ONE, 0.12)
+		tw.tween_property(combo_aura, "scale", Vector2.ONE * BlockPiece.board_scale * 1.03, 0.12)
+		tw.tween_property(combo_aura, "scale", Vector2.ONE * BlockPiece.board_scale, 0.12)
 
 # Praise for how big the clear was: more lines at once or a longer streak ranks higher.
 # The words are pre-drawn images (assets/sprites/combo/praise_1..5: Good! .. Unbelievable!).
@@ -1121,6 +1129,7 @@ func _update_home_profile_ui() -> void:
 		"muted": SoundManager.is_muted
 	})
 	btn_sound.texture_normal = sound_off_tex if SoundManager.is_muted else sound_on_tex
+	_sync_battle_menu()
 
 func _trigger_game_over() -> void:
 	_dismiss_tutorial_hint()
@@ -1590,6 +1599,11 @@ func _on_sound_toggled() -> void:
 	SettingsManager.set_sound(not muted)
 	btn_sound.texture_normal = sound_off_tex if muted else sound_on_tex
 	start_screen.set_muted(muted)
+	_sync_battle_menu()
+
+func _sync_battle_menu() -> void:
+	if battle != null:
+		battle.set_menu_icons(btn_home.texture_normal, btn_settings.texture_normal, btn_sound.texture_normal)
 
 func _load_best_score() -> void:
 	var cfg = ConfigFile.new()
