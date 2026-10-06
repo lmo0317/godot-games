@@ -30,6 +30,7 @@ var preview := {}               # cell -> true (ok) / false (not allowed)
 var ghost := ""                 # sprite drawn on the hovered cell for facilities
 var ghost_cell := -1
 var ghost_radius := 0
+var ghost_square := false       # power and water reach a square, the services a round area
 var ghost_roads := {}           # cells drawn as road while a road is being placed
 var handle_cell := -1           # green arrows around this cell: drag here
 var hide_cell := -1             # a building lifted for moving is not drawn in place
@@ -412,7 +413,15 @@ func _draw_active_outline(ci: CanvasItem) -> void:
 func _draw_preview(ci: CanvasItem) -> void:
 	for c in preview:
 		ci.draw_colored_polygon(diamond(c), preview_ok if preview[c] else Color(1.0, 0.3, 0.3, 0.45))
-	if ghost_cell >= 0 and ghost_radius > 0:
+	if ghost_cell >= 0 and ghost_radius > 0 and ghost_square:
+		# a square on the grid is a diamond on screen
+		var g := Vector2(City.pos(ghost_cell))
+		var r := ghost_radius + 0.5
+		var pts := PackedVector2Array([grid_to_local(g + Vector2(-r, -r)), grid_to_local(g + Vector2(r, -r)),
+			grid_to_local(g + Vector2(r, r)), grid_to_local(g + Vector2(-r, r))])
+		pts.append(pts[0])
+		ci.draw_polyline(pts, Color(1, 1, 1, 0.9), 2.0)
+	elif ghost_cell >= 0 and ghost_radius > 0:
 		# a circle on the grid is an ellipse on screen
 		var r := (ghost_radius + 0.5) * HW * sqrt(2.0)
 		ci.draw_set_transform(cell_center(ghost_cell), 0.0, Vector2(1.0, float(TH) / TW))

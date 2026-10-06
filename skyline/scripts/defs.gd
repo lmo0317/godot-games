@@ -31,8 +31,8 @@ const SHOP_NAMES := {"bakery": "빵집", "cafe": "카페", "restaurant": "식당
 # Object ids on a cell (obj array). 0 = nothing, 1 = road, 2.. = facilities below.
 const ROAD := 1
 const FAC := {
-	2: {"key": "power", "name": "발전소", "cost": 400, "upkeep": 10, "radius": 7, "rank": 0, "desc": "반경 7칸에 전기를 보내요"},
-	3: {"key": "water_tower", "name": "급수탑", "cost": 300, "upkeep": 6, "radius": 6, "rank": 0, "desc": "반경 6칸에 물을 보내요"},
+	2: {"key": "power", "name": "발전소", "cost": 400, "upkeep": 10, "radius": 6, "rank": 0, "desc": "둘레 가로세로 13칸 네모에 전기를 보내요"},
+	3: {"key": "water_tower", "name": "급수탑", "cost": 300, "upkeep": 6, "radius": 5, "rank": 0, "desc": "둘레 가로세로 11칸 네모에 물을 보내요"},
 	4: {"key": "park", "name": "공원", "cost": 80, "upkeep": 2, "radius": 2, "rank": 0, "desc": "주변 지가 +12, 행복 +"},
 	5: {"key": "tree", "name": "나무", "cost": 10, "upkeep": 0, "radius": 1, "rank": 0, "desc": "주변 지가 +4"},
 	6: {"key": "fountain", "name": "분수", "cost": 200, "upkeep": 3, "radius": 3, "rank": 1, "desc": "주변 지가 +10"},

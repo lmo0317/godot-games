@@ -416,12 +416,13 @@ func _compute_roads() -> void:
 		access_road[i] = best
 
 
-func _stamp(arr: PackedByteArray, center: int, radius: int, value: int, use_or: bool) -> void:
+func _stamp(arr: PackedByteArray, center: int, radius: int, value: int, use_or: bool, square := false) -> void:
+	## Marks the cells around center: a square (power, water: easy to plan on a grid) or a round area.
 	var p := pos(center)
 	var r2 := radius * radius + radius   # a slightly rounder circle
 	for dy in range(-radius, radius + 1):
 		for dx in range(-radius, radius + 1):
-			if dx * dx + dy * dy > r2:
+			if not square and dx * dx + dy * dy > r2:
 				continue
 			var x := p.x + dx
 			var y := p.y + dy
@@ -448,9 +449,9 @@ func _compute_coverage() -> void:
 			continue
 		var f := Defs.fac(o)
 		if o == 2:
-			_stamp(power, i, f["radius"], 1, false)
+			_stamp(power, i, f["radius"], 1, false, true)
 		elif o == 3:
-			_stamp(water, i, f["radius"], 1, false)
+			_stamp(water, i, f["radius"], 1, false, true)
 		elif Defs.SERVICE_BIT.has(o):
 			_stamp(service, i, f["radius"], Defs.SERVICE_BIT[o], true)
 		if Defs.is_landmark(o):

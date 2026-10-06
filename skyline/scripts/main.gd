@@ -1107,6 +1107,7 @@ func _refresh_ghost() -> void:
 	map.ghost = Defs.fac(fac_id)["key"]
 	map.ghost_cell = fac_cell
 	map.ghost_radius = int(Defs.fac(fac_id)["radius"]) if fac_id in [2, 3, 7, 8, 9, 10] else 0
+	map.ghost_square = fac_id in [2, 3]
 	if reason == "" and total > city.money:
 		reason = "돈이 부족해요 (%s)" % UIKit.money(total)
 	build_ok = reason == ""

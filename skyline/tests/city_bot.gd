@@ -137,7 +137,7 @@ func _utilities() -> void:
 		if _count(id) == 0:
 			spot = _free_spot_near(City.pos(city.entrance) + Vector2i(10, 0))
 		else:
-			spot = _best_cover_spot(arr, 1, int(Defs.fac(id)["radius"]))
+			spot = _best_cover_spot(arr, 1, int(Defs.fac(id)["radius"]), true)
 		if spot >= 0 and _try(city.place_facility(spot, id)):
 			city.refresh()
 
@@ -159,8 +159,9 @@ func _services() -> void:
 			city.refresh()
 
 
-func _best_cover_spot(arr: PackedByteArray, bit: int, radius: int) -> int:
-	## Free cell whose circle covers the most zoned cells that lack this service (at least 6).
+func _best_cover_spot(arr: PackedByteArray, bit: int, radius: int, square := false) -> int:
+	## Free cell whose area (square for power and water, else round) covers the most zoned cells
+	## that lack this service (at least 6).
 	var best := -1
 	var best_n := 5
 	for i in City.CELLS:
@@ -170,7 +171,7 @@ func _best_cover_spot(arr: PackedByteArray, bit: int, radius: int) -> int:
 		var n := 0
 		for dy in range(-radius, radius + 1):
 			for dx in range(-radius, radius + 1):
-				if dx * dx + dy * dy > radius * radius + radius or not City.inside(p.x + dx, p.y + dy):
+				if (not square and dx * dx + dy * dy > radius * radius + radius) or not City.inside(p.x + dx, p.y + dy):
 					continue
 				var j := City.idx(p.x + dx, p.y + dy)
 				if city.zone[j] != Defs.Z.NONE and (arr[j] & bit) == 0:
