@@ -16,6 +16,7 @@ const START_ZOOM := 2.0        # one tile 128 px wide (sprites 1:1), like Kairos
 const MAX_RECT := 16
 const EDIT_ZOOM := 3.0          # editing zooms in so a tile is bigger than a fingertip on phones
 const UNDO_STEPS := 30
+const HOLD_MS := 250            # with a tool, hold this long before dragging to draw; a quick drag pans
 const EDGE := 70.0             # dragging a ghost this close to the screen edge moves the map
 const EDGE_SPEED := 700.0
 const TOP_SAFE := 86.0          # floating buttons stay below the top status windows
@@ -63,6 +64,8 @@ var fac_cell := -1
 var rect_a := -1                # zone / demolish box being dragged out
 var rect_b := -1
 var paint_last := -1            # last cell the road brush built on
+var hold_cell := -1             # cell under a finger that may become a stroke (drag == "hold")
+var hold_start := 0
 var build_ok := false
 var move_from := -1             # a built facility being dragged to a new cell
 var shop_tab := 0
@@ -980,18 +983,17 @@ func _pick_tool(key: String) -> void:
 
 
 func _edit_hint() -> String:
-	var pan := "맵 이동은 두 손가락"
 	match tool:
 		"road":
-			return "도로 %s/칸 · 손가락으로 그으면 지나간 칸에 깔려요 · %s" % [UIKit.money(Defs.ROAD_COST), pan]
+			return "도로 %s/칸 · 꾹 누른 채 끌면 지나간 칸에 깔려요 · 톡 누르면 한 칸 · 그냥 끌면 맵 이동" % UIKit.money(Defs.ROAD_COST)
 		"zone1", "zone2", "zone3":
 			if rect_a >= 0:
 				return _box_summary()
-			return "%s 구역 %s/칸 · 손가락으로 끌어 네모를 칠해요 · %s" % [Defs.ZONE_NAMES[_tool_zone()], UIKit.money(Defs.ZONE_COST), pan]
+			return "%s 구역 %s/칸 · 꾹 누른 채 끌어 네모를 칠해요 · 톡 누르면 한 칸 · 그냥 끌면 맵 이동" % [Defs.ZONE_NAMES[_tool_zone()], UIKit.money(Defs.ZONE_COST)]
 		"clear":
 			if rect_a >= 0:
 				return _box_summary()
-			return "철거 · 손가락으로 끌어 네모 안을 치워요 (숲은 %s) · %s" % [UIKit.money(Defs.CLEAR_COST), pan]
+			return "철거 (숲은 %s) · 꾹 누른 채 끌어 네모 안을 치워요 · 톡 누르면 한 칸 · 그냥 끌면 맵 이동" % UIKit.money(Defs.CLEAR_COST)
 	if build == Build.FAC:
 		return "건물을 끌거나 칸을 눌러 옮기고, 초록 체크로 지어요"
 	return "아래에서 도구를 골라요 · 한 손가락으로 맵 이동 · 잘못하면 '되돌리기'"
@@ -1730,6 +1732,7 @@ func _process(delta: float) -> void:
 	if city == null or title_screen.visible:
 		walkers.speed = 0.0
 		return
+	_check_hold()
 	_auto_pan(delta)
 	_place_float_ui()
 	var running := not _modal_open() and not city.finished
@@ -1745,9 +1748,19 @@ func _process(delta: float) -> void:
 		_after_edit()
 
 
+func _check_hold() -> void:
+	## A finger held still on the map with a tool: start drawing there, with a buzz and a click.
+	if not pressing or drag != "hold" or Time.get_ticks_msec() - hold_start < HOLD_MS:
+		return
+	Input.vibrate_handheld(30)
+	SoundManager.play("click")
+	_begin_paint(hold_cell)
+	finger = press_pos
+
+
 func _auto_pan(delta: float) -> void:
 	## Dragging a ghost to the screen edge moves the map, so long roads fit in one drag.
-	if not pressing or drag in ["", "pan"] or (drag == "relocate" and move_from < 0):
+	if not pressing or drag in ["", "pan", "hold"] or (drag == "relocate" and move_from < 0):
 		return
 	var v := Vector2.ZERO
 	if finger.x < EDGE:
@@ -1862,6 +1875,8 @@ func _begin_pinch() -> void:
 	if drag == "relocate" and move_from >= 0:
 		moved = false
 		_finish_relocate()
+	elif drag == "hold":
+		drag = ""
 	elif drag == "paint":
 		_end_paint()
 	elif drag == "box":
@@ -1903,8 +1918,11 @@ func _press(p: Vector2) -> void:
 			drag = "move"
 			drag_cell = fac_cell
 	elif editing and tool != "":
+		# wait: a quick drag moves the map, a hold starts drawing, a tap fills one cell
 		if cell >= 0:
-			_begin_paint(cell)
+			drag = "hold"
+			hold_cell = cell
+			hold_start = Time.get_ticks_msec()
 		return
 	else:
 		var sel := map.selected
@@ -1918,11 +1936,15 @@ func _press(p: Vector2) -> void:
 func _drag_to(p: Vector2) -> void:
 	if not moved and p.distance_to(press_pos) > 12.0:
 		moved = true
+	if drag == "hold" and moved:
+		drag = "pan"                # moved before the hold time: the finger is moving the map
 	if drag == "pan":
 		if moved:
 			cam -= (p - finger) / zoom
 			_apply_camera()
 			finger = p
+		return
+	if drag == "hold":
 		return
 	finger = p
 	if drag in ["paint", "box"]:
@@ -1944,7 +1966,10 @@ func _release(p: Vector2) -> void:
 	if not pressing:
 		return
 	pressing = false
-	if drag in ["paint", "box"]:
+	if drag == "hold":
+		_begin_paint(hold_cell)     # a tap with a tool: just this cell
+		_end_paint()
+	elif drag in ["paint", "box"]:
 		_end_paint()
 	elif drag == "relocate" and move_from >= 0:
 		_finish_relocate()
