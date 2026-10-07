@@ -62,8 +62,11 @@ static func stats(kind: String, level: int) -> Dictionary:
 # ---------------------------------------------------------------------------
 # Army: gems, owned soldiers (kind -> level) and the deck
 
+# Everyone starts with a melee and a ranged soldier, so flying monsters can always be answered
+const STARTERS: Array[String] = ["knight", "archer"]
+
 static func default_army() -> Dictionary:
-	return {"gems": START_GEMS, "owned": {"knight": 1}, "deck": ["knight", "", "", ""]}
+	return {"gems": START_GEMS, "owned": {"knight": 1, "archer": 1}, "deck": ["knight", "archer", "", ""]}
 
 static func load_army() -> Dictionary:
 	var army := default_army()
@@ -86,6 +89,13 @@ static func load_army() -> Dictionary:
 			deck.append(str(k) if army["owned"].has(str(k)) and not deck.has(str(k)) else "")
 		deck.resize(DECK_SIZE)
 		army["deck"] = deck.map(func(k): return "" if k == null else k)
+	# Older saves started with the knight only: hand them the starters too
+	for k in STARTERS:
+		if not army["owned"].has(k):
+			army["owned"][k] = 1
+			var empty: int = army["deck"].find("")
+			if empty >= 0 and not army["deck"].has(k):
+				army["deck"][empty] = k
 	if army["deck"].all(func(k): return k == ""):
 		army["deck"][0] = army["owned"].keys()[0]
 	return army

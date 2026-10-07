@@ -93,8 +93,8 @@ func _run() -> void:
 	b._gold_acc = 0.0
 	_expect(b.summon("knight") and b.gold == 150 and b._count(1) == 1, "summon a knight for 50")
 	_expect(not b.summon("knight") and b.gold == 150, "the knight is on cooldown")
-	_expect(b.deck == ["knight", "", "", ""], "a new army's deck is just the knight (%s)" % [b.deck])
-	_expect(not b.summon("archer") and b.gold == 150, "a soldier outside the deck can't be summoned")
+	_expect(b.deck == ["knight", "archer", "", ""], "a new army starts with the knight and the archer (%s)" % [b.deck])
+	_expect(not b.summon("mage") and b.gold == 150, "a soldier outside the deck can't be summoned")
 	b.gold = 10
 	b.cooldown["knight"] = 0.0
 	_expect(not b.summon("knight"), "no summon without gold")
@@ -227,6 +227,27 @@ func _run() -> void:
 		b.cooldown[k] = 0.0
 	_expect(b.auto_pick() == "spearman", "auto answers armor with a spear (%s)" % b.auto_pick())
 	b._kill(arm2)
+	# A bat at the castle with only the starters: the archer, not another knight
+	b.deck = ["knight", "archer", "", ""]
+	b._rotation = b._auto_rotation()
+	for u in b.units.duplicate():
+		b._kill(u)
+	b._spawn("knight", 1, 1.0)
+	b.gold = 400
+	for k in LaneBattle.ALLY_ORDER:
+		b.cooldown[k] = 0.0
+	var bat5 := b._spawn("bat", -1, 1.0)
+	bat5["node"].position.x = 120.0
+	_expect(b.auto_pick() == "archer", "a bat at the castle calls for the archer (%s)" % b.auto_pick())
+	b._kill(bat5)
+	# Old saves with only the knight get the archer
+	var old := {"gems": 50, "owned": {"knight": 3}, "deck": ["knight", "", "", ""]}
+	var f := FileAccess.open(LaneUnits.ARMY_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify(old))
+	f.close()
+	var migrated: Dictionary = LaneUnits.load_army()
+	_expect(migrated["owned"].has("archer") and migrated["deck"].has("archer") and int(migrated["owned"]["knight"]) == 3, "old saves get the starter archer")
+	LaneUnits.save_army(LaneUnits.default_army())
 	b.deck = ["knight", "", "", ""]
 	b._rotation = b._auto_rotation()
 	var bat3 := b._spawn("bat", -1, 1.0)
@@ -253,7 +274,7 @@ func _run() -> void:
 	_expect(LaneStages.load_progress()["unlocked"] == 2 and LaneStages.total_stars() >= 1, "the clear is saved and opens stage 2")
 	_expect(main.lane_result.back.text == "본부로 돌아가기" and main.lane_result.gems_label.text.begins_with("+"), "the result shows the gems and leads back to the base")
 	var army0: Dictionary = LaneUnits.load_army()
-	_expect(army0["owned"].keys() == ["knight"], "clears give no soldiers, only gems")
+	_expect(army0["owned"].size() == 2 and army0["owned"].has("knight") and army0["owned"].has("archer"), "clears give no soldiers, only gems (%s)" % [army0["owned"]])
 	_expect(army0["gems"] >= LaneUnits.START_GEMS + LaneUnits.GEMS_FIRST, "the first clear pays gems (%d)" % army0["gems"])
 	main.lane_result.back.pressed.emit()
 	await get_tree().process_frame
@@ -261,7 +282,7 @@ func _run() -> void:
 	main._start_lane_stage(2)
 	await _wait_until(func(): return b.stage == 2 and not b.finished and not main._is_tray_empty(), 6.0)
 	_expect(b.stage == 2 and b.fortress_max == float(LaneStages.get_stage(2)["fortress"]) and b.castle_hp == LaneBattle.CASTLE_HP and b.gold >= LaneStages.start_gold(2), "stage 2 starts fresh")
-	_expect(b.deck == ["knight", "", "", ""] and b._slots[0]["name"].text == "기사", "the battle uses the saved deck")
+	_expect(b.deck == ["knight", "archer", "", ""] and b._slots[1]["name"].text == "궁수", "the battle uses the saved deck")
 
 	# The castle falls: the run ends with the result window
 	for u in b.units.duplicate():

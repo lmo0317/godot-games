@@ -354,7 +354,10 @@ func auto_pick() -> String:
 	var foes: Array = units.filter(func(u): return u["side"] == -1)
 	var bats: int = foes.filter(func(u): return u["flying"]).size()
 	var armored: int = foes.filter(func(u): return u["armor"]).size()
-	var close: bool = foes.any(func(u): return u["node"].position.x < DEFEND_X + 60.0)
+	# "Close" counts ground monsters only: a knight can't stop a bat, so bats near the castle call for
+	# a ranged soldier instead
+	var close: bool = foes.any(func(u): return not u["flying"] and u["node"].position.x < DEFEND_X + 60.0)
+	var air_close: bool = foes.any(func(u): return u["flying"] and u["node"].position.x < DEFEND_X + 60.0)
 	var front: String = _front_kind()
 	var melee_n: int = 0
 	var ranged_n: int = 0
@@ -369,11 +372,11 @@ func auto_pick() -> String:
 	var breaker: String = _first_in_deck(["spearman", "cannoneer"])
 	if armored > 0 and close and breaker != "" and _can_summon(breaker):
 		return breaker
-	if melee_n == 0 or (close and melee_n < 3):
-		want = front
-	elif bats > 0 and air != "" and ranged_n < bats + 1:
+	if bats > 0 and air != "" and (air_close or ranged_n < bats + 1):
 		want = air
 		counter = true
+	elif melee_n == 0 or (close and melee_n < 3):
+		want = front
 	elif armored > 0 and breaker != "" and mine.get(breaker, 0) < armored + 1:
 		want = breaker
 		counter = true
