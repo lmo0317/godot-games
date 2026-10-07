@@ -64,8 +64,8 @@ func refresh(info: Dictionary) -> void:
 	best_value.text = UIKit.format_number(int(info.get("best", 0)))
 	var rank: int = int(info.get("rank", -1))
 	rank_value.text = "전체 %d위" % rank if rank > 0 else "기록 없음"
-	var best_stage: int = Achievements.get_stat("battle_best_stage")
-	battle_status.text = "최고 STAGE %d" % best_stage if best_stage > 0 else "도전!"
+	var lane: Dictionary = LaneStages.load_progress()
+	battle_status.text = "STAGE %d / %d  ·  ★ %d" % [int(lane["unlocked"]), LaneStages.count(), LaneStages.total_stars()]
 	set_muted(bool(info.get("muted", false)))
 
 func set_muted(muted: bool) -> void:

@@ -19,6 +19,7 @@ extends Control
 # Art: Codex pixel art cut by tools/import_lane_art.py, drawn at whole-number scales.
 
 signal defeated(stage: int)
+signal cleared(stage: int, stars: int)
 signal castle_hit(damage: int)
 # The game's header is hidden in this mode; its home / settings / sound buttons live in the lane
 signal home_pressed
@@ -53,15 +54,14 @@ const GOLD_PER_POINT: float = 0.5
 const CANNON_PER_LINE: float = 12.0
 const CANNON_PER_POINT: float = 0.08
 const CANNON_DAMAGE: float = 30.0
-const BIG_WAVE_FIRST: float = 30.0
-const BIG_WAVE_EVERY: float = 30.0
+const WAVE_REPEAT: float = 40.0       # after the scripted waves, the last one repeats this often
 const WARN_TIME: float = 3.0
 const ALLIES := {
 	# speed: px per second, every: seconds between hits, cool: summon cooldown, kb: knockbacks per life
 	"knight": {"name": "기사", "cost": 50, "hp": 70.0, "atk": 12.0, "range": 44.0, "speed": 34.0, "every": 1.0, "cool": 2.0, "kb": 2},
 	"archer": {"name": "궁수", "cost": 80, "hp": 34.0, "atk": 9.0, "range": 140.0, "speed": 30.0, "every": 1.2, "cool": 4.0, "kb": 1, "shot": "arrow"},
 	"mage": {"name": "마법사", "cost": 120, "hp": 30.0, "atk": 14.0, "range": 110.0, "speed": 28.0, "every": 1.6, "cool": 8.0, "kb": 1, "shot": "orb", "splash": 50.0},
-	"spearman": {"name": "창병", "cost": 160, "hp": 110.0, "atk": 16.0, "range": 60.0, "speed": 26.0, "every": 1.2, "cool": 12.0, "kb": 3},
+	"spearman": {"name": "창병", "cost": 130, "hp": 110.0, "atk": 16.0, "range": 60.0, "speed": 26.0, "every": 1.2, "cool": 9.0, "kb": 3},
 }
 const ALLY_ORDER: Array[String] = ["knight", "archer", "mage", "spearman"]
 const ENEMIES := {
@@ -69,14 +69,16 @@ const ENEMIES := {
 	"goblin": {"hp": 52.0, "atk": 9.0, "range": 44.0, "speed": 30.0, "every": 1.1, "kb": 2},
 	"skeleton": {"hp": 64.0, "atk": 11.0, "range": 44.0, "speed": 26.0, "every": 1.2, "kb": 2},
 	"bat": {"hp": 30.0, "atk": 7.0, "range": 40.0, "speed": 40.0, "every": 1.0, "kb": 1, "flying": true},
-	"armored": {"hp": 80.0, "atk": 12.0, "range": 44.0, "speed": 20.0, "every": 1.3, "kb": 3, "armor": true},
+	"armored": {"hp": 70.0, "atk": 12.0, "range": 44.0, "speed": 20.0, "every": 1.3, "kb": 3, "armor": true},
 	"orc": {"hp": 130.0, "atk": 18.0, "range": 50.0, "speed": 20.0, "every": 1.5, "kb": 2},
 }
-const ENEMY_GROWTH: float = 1.12
-const FORTRESS_HP: float = 240.0
-const FORTRESS_GROWTH: float = 1.25
 
 var stage: int = 1
+var stage_data: Dictionary = {}       # one entry of LaneStages.STAGES
+var power: float = 1.0                # monster HP/attack multiplier of this stage
+var elapsed: float = 0.0
+var wave_index: int = 0
+var next_wave_at: float = 0.0
 var paused: bool = false
 var gold: int = START_GOLD
 var wallet: int = 0                   # wallet level index
@@ -85,13 +87,12 @@ var charging: bool = true             # false = hold in front of the castle
 var auto_summon: bool = false         # kept between runs in this session
 var _auto_timer: float = 0.0
 var castle_hp: int = CASTLE_HP
-var fortress_hp: float = FORTRESS_HP
-var fortress_max: float = FORTRESS_HP
+var fortress_hp: float = 1.0
+var fortress_max: float = 1.0
 var boss_out: bool = false
 var finished: bool = true
 var switching: bool = false
 var trickle_timer: float = 0.0
-var wave_timer: float = 0.0
 var warned: bool = false
 var cooldown: Dictionary = {}         # kind -> seconds left
 var units: Array = []                 # see _spawn for the fields
@@ -112,6 +113,9 @@ var _castle_sprite: Sprite2D
 var _cannon_sprite: Sprite2D
 var _fort_sprite: Sprite2D
 var _stage_label: Label
+var _stage_name: Label
+var _bg: TextureRect
+var _locks: Dictionary = {}
 var _castle_fill: Panel
 var _castle_label: Label
 var _fort_fill: Panel
@@ -147,12 +151,19 @@ func _ready() -> void:
 # Flow (called by MainGame)
 # =========================================================
 
-func begin() -> void:
+# Starts one stage (docs/LANE_STAGES.md); the run ends with cleared() or defeated()
+func begin(stage_id: int = 1) -> void:
 	rng.randomize()
-	stage = 1
+	stage = stage_id
+	stage_data = LaneStages.get_stage(stage_id)
+	if stage_data.is_empty():
+		stage_data = LaneStages.STAGES[0]
+	power = stage_data["power"]
+	_rotation = _auto_rotation()
+	_auto_index = 0
 	paused = false
-	gold = START_GOLD
-	wallet = 0
+	wallet = LaneStages.start_wallet(stage_id)
+	gold = mini(wallet_max(), LaneStages.start_gold(stage_id))
 	cannon = 0.0
 	charging = true
 	_gold_acc = 0.0
@@ -198,7 +209,7 @@ func on_clear(lines: int, points: int) -> void:
 
 func summon(kind: String) -> bool:
 	var st: Dictionary = ALLIES[kind]
-	if finished or gold < st["cost"] or cooldown.get(kind, 0.0) > 0.0 or _count(1) >= MAX_ALLIES:
+	if finished or not LaneStages.unlocked(kind, stage) or gold < st["cost"] or cooldown.get(kind, 0.0) > 0.0 or _count(1) >= MAX_ALLIES:
 		return false
 	gold -= st["cost"]
 	cooldown[kind] = st["cool"]
@@ -246,7 +257,7 @@ func fire_cannon() -> bool:
 		ball.position = tip.lerp(land, t) + Vector2(0, -70.0 * sin(PI * t))
 		ball.rotation = lerpf(-0.5, 0.6, t), 0.0, 1.0, flight)
 	bt.tween_callback(ball.queue_free)
-	var dmg: float = CANNON_DAMAGE * pow(ENEMY_GROWTH, stage - 1)
+	var dmg: float = CANNON_DAMAGE * power
 	if foes.is_empty():
 		get_tree().create_timer(flight).timeout.connect(func(): _boom(land))
 	for i in range(foes.size()):
@@ -302,6 +313,20 @@ func toggle_auto() -> void:
 # is skipped for a knight, so gold keeps turning into an army.
 const AUTO_ROTATION: Array[String] = ["knight", "archer", "knight", "mage", "knight", "spearman"]
 var _auto_index: int = 0
+var _rotation: Array = AUTO_ROTATION.duplicate()
+
+# The rotation follows the stage's monsters: spears where armor comes, more archers for bats;
+# soldiers not open yet become knights
+func _auto_rotation() -> Array:
+	var pool: Array = stage_data.get("pool", [])
+	for w in stage_data.get("waves", []):
+		pool = pool + w[1]
+	var r: Array = AUTO_ROTATION.duplicate()
+	if pool.has("armored"):
+		r = ["knight", "spearman", "archer", "spearman", "knight", "spearman"]
+	elif pool.has("bat"):
+		r = ["knight", "archer", "knight", "archer", "mage", "spearman"]
+	return r.map(func(k): return k if LaneStages.unlocked(k, stage) else "knight")
 
 func auto_pick() -> String:
 	var mine: Dictionary = {"knight": 0, "archer": 0, "mage": 0, "spearman": 0}
@@ -312,14 +337,25 @@ func auto_pick() -> String:
 	var bats: int = foes.filter(func(u): return u["flying"]).size()
 	var armored: int = foes.filter(func(u): return u["armor"]).size()
 	var close: bool = foes.any(func(u): return u["node"].position.x < DEFEND_X + 40.0)
-	var want: String = AUTO_ROTATION[_auto_index % AUTO_ROTATION.size()]
+	var want: String = _rotation[_auto_index % _rotation.size()]
+	var counter: bool = false
+	if armored > 0 and close and LaneStages.unlocked("spearman", stage) and _can_summon("spearman"):
+		return "spearman"
 	if mine["knight"] == 0 or (close and mine["knight"] < 3):
 		want = "knight"
-	elif bats > 0 and mine["archer"] + mine["mage"] < bats + 1:
+	elif bats > 0 and mine["archer"] + mine["mage"] < bats + 1 and LaneStages.unlocked("archer", stage):
 		want = "archer"
-	elif armored > 0 and mine["spearman"] < armored:
+		counter = true
+	elif armored > 0 and mine["spearman"] < armored + 1 and LaneStages.unlocked("spearman", stage):
 		want = "spearman"
-	if not _can_summon(want) and _can_summon("knight") and want != "knight" and mine["knight"] < 3:
+		counter = true
+	if _can_summon(want):
+		return want
+	# Not ready: a counter is worth saving for (a knight only if monsters are at the gate);
+	# otherwise fill the front with a knight
+	if counter:
+		return "knight" if close and _can_summon("knight") and mine["knight"] < 2 else ""
+	if _can_summon("knight") and mine["knight"] < 3:
 		return "knight"
 	return want
 
@@ -336,7 +372,9 @@ func _auto_step() -> void:
 	if _count(1) >= MAX_ALLIES:
 		return
 	var kind: String = auto_pick()
-	if kind == AUTO_ROTATION[_auto_index % AUTO_ROTATION.size()] and _can_summon(kind):
+	if kind == "":
+		return
+	if kind == _rotation[_auto_index % _rotation.size()] and _can_summon(kind):
 		_auto_index += 1
 	if summon(kind):
 		var btn: Button = _buttons[kind]
@@ -419,29 +457,33 @@ func _tick(delta: float) -> void:
 		_stage_cleared()
 	elif castle_hp <= 0 and not finished:
 		finished = true
-		_banner("성이 무너졌어요", "STAGE %d" % stage)
+		_banner("성이 무너졌어요", "STAGE %d" % stage, Color(1.0, 0.55, 0.45))
 		get_tree().create_timer(1.0).timeout.connect(func(): defeated.emit(stage))
 	if _dirty:
 		_dirty = false
 		_refresh()
 
-# Single monsters on a timer, a horn and a big wave every BIG_WAVE_EVERY seconds
+# Single monsters from the stage's pool on a timer, and its scripted waves (a horn and a banner
+# first when 3 or more come); after the last wave it repeats every WAVE_REPEAT seconds
 func _waves(delta: float) -> void:
-	var k: float = pow(ENEMY_GROWTH, stage - 1)
+	elapsed += delta
 	trickle_timer -= delta
 	if trickle_timer <= 0.0:
-		trickle_timer = _trickle_every()
-		_spawn_enemy(_pick_enemy(), k)
-	wave_timer -= delta
-	if wave_timer <= WARN_TIME and not warned:
-		warned = true
-		_sfx("b_horn", -4.0)
-		_banner("적 대군이 몰려와요!", "", Color(1.0, 0.55, 0.45))
-	if wave_timer <= 0.0:
-		wave_timer = BIG_WAVE_EVERY
-		warned = false
-		for i in range(mini(2 + stage / 2, 8)):
-			_pending.append([i * 0.7, _pick_enemy(), k])
+		trickle_timer = stage_data["every"]
+		_spawn_enemy(_pick_enemy(), power)
+	var waves: Array = stage_data["waves"]
+	if not waves.is_empty():
+		var wave: Array = waves[mini(wave_index, waves.size() - 1)][1]
+		if wave.size() >= 3 and not warned and elapsed >= next_wave_at - WARN_TIME:
+			warned = true
+			_sfx("b_horn", -4.0)
+			_banner("적 대군이 몰려와요!", "", Color(1.0, 0.55, 0.45))
+		if elapsed >= next_wave_at:
+			for i in range(wave.size()):
+				_pending.append([i * 0.7, wave[i], power])
+			wave_index += 1
+			warned = false
+			next_wave_at = waves[wave_index][0] if wave_index < waves.size() else elapsed + WAVE_REPEAT
 	for p in _pending.duplicate():
 		p[0] -= delta
 		if p[0] <= 0.0:
@@ -450,7 +492,7 @@ func _waves(delta: float) -> void:
 
 # Swarm monsters come in a group, except inside a big wave (which is crowded already)
 func _spawn_enemy(kind: String, k: float, group: bool = true) -> void:
-	var n: int = ENEMIES[kind].get("swarm", 1) if group else 1
+	var n: int = ENEMIES[kind].get("swarm", 1) if group and stage_data.get("swarm", true) else 1
 	for i in range(n):
 		if _count(-1) >= MAX_ENEMIES:
 			return
@@ -460,30 +502,41 @@ func _spawn_enemy(kind: String, k: float, group: bool = true) -> void:
 func _boss_entry() -> void:
 	boss_out = true
 	_sfx("b_roar", -2.0)
-	_banner("보스 등장!", "충격파에 밀려나요", Color(1.0, 0.45, 0.4))
+	var bd: Dictionary = LaneStages.BOSSES[stage_data["boss"]]
+	_banner("보스 %s 등장!" % bd["name"], "충격파에 밀려나요", Color(1.0, 0.45, 0.4))
 	castle_hit.emit(0)
-	# Boss: an orc with x2 HP and x1.2 attack, bigger and slower
-	var boss := _spawn("orc", -1, pow(ENEMY_GROWTH, stage - 1) * 1.2)
-	boss["max_hp"] *= 1.67
+	var boss := _spawn(bd["kind"], -1, power)
+	boss["max_hp"] *= bd["hp"]
 	boss["hp"] = boss["max_hp"]
-	boss["speed"] = 16.0
-	boss["node"].scale = Vector2.ONE * PX * 1.5
-	boss["kb"] = 4
-	boss["kb_mark"] = boss["max_hp"] * 0.75
+	boss["atk"] *= bd["atk"]
+	boss["speed"] *= 0.75
+	boss["node"].scale = Vector2.ONE * PX * bd["scale"]
+	boss["kb"] = bd["kb"]
+	boss["kb_mark"] = boss["max_hp"] * (bd["kb"] - 1) / bd["kb"]
 	boss["boss"] = true
 	# The shockwave pushes every soldier back
 	for u in units:
 		if u["side"] == 1:
 			_knock(u, KB_DIST * 2.5)
 	_hitstop = 0.1
-	_pending.append([0.8, _pick_enemy(), pow(ENEMY_GROWTH, stage - 1)])
+	_pending.append([0.8, _pick_enemy(), power])
 
-# The nearest opponent within range ahead, else the enemy base if it is in range
+# The nearest opponent in range (also behind: bats fly over the front line), else the enemy base
 func _target_for(u: Dictionary):
-	var o = _nearest_opponent(u)
 	var x: float = u["node"].position.x
-	if o != null and absf(o["node"].position.x - x) <= u["range"]:
-		return o
+	var melee: bool = u["side"] == 1 and u["shot"] == ""
+	var best = null
+	var best_d: float = INF
+	for c in units:
+		if c["side"] == u["side"] or c["hp"] <= 0.0 or (melee and c.get("flying", false)):
+			continue
+		var d: float = absf(c["node"].position.x - x)
+		if d <= u["range"] and d < best_d:
+			best = c
+			best_d = d
+	if best != null:
+		return best
+	var o = _nearest_opponent(u)
 	if u["side"] == 1 and ENEMY_BASE_X - x <= u["range"]:
 		if o == null or o["node"].position.x > ENEMY_BASE_X:
 			return "fortress"
@@ -563,47 +616,40 @@ func _knock(u: Dictionary, dist: float) -> void:
 	tw.tween_property(node, "offset:y", base_off - 10.0, KB_TIME * 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.chain().tween_property(node, "offset:y", base_off, KB_TIME * 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
-func _trickle_every() -> float:
-	return maxf(4.0, 10.0 - 0.6 * (stage - 1))
-
 func _pick_enemy() -> String:
-	var pool: Array = ["slime", "slime"]
-	if stage >= 2:
-		pool += ["goblin", "goblin", "skeleton"]
-	if stage >= 3:
-		pool += ["bat", "bat"]
-	if stage >= 4:
-		pool += ["armored", "armored"]
-	if stage >= 5:
-		pool.append("orc")
+	var pool: Array = stage_data["pool"]
 	return pool[rng.randi() % pool.size()]
 
 func _start_stage() -> void:
-	fortress_max = FORTRESS_HP * pow(FORTRESS_GROWTH, stage - 1)
+	fortress_max = float(stage_data["fortress"])
 	fortress_hp = fortress_max
-	boss_out = false
-	trickle_timer = 4.0
-	wave_timer = BIG_WAVE_FIRST
+	boss_out = stage_data["boss"] == ""
+	elapsed = 0.0
+	wave_index = 0
+	var waves: Array = stage_data["waves"]
+	next_wave_at = waves[0][0] if not waves.is_empty() else INF
+	trickle_timer = 6.0
 	warned = false
 	_stage_label.text = "STAGE %d" % stage
-	_spawn_enemy(_pick_enemy(), pow(ENEMY_GROWTH, stage - 1))
+	_stage_name.text = stage_data["name"]
+	_bg.self_modulate = LaneStages.chapter(stage)["tint"]
+	_banner("STAGE %d · %s" % [stage, stage_data["name"]], stage_data.get("new", ""))
+	_spawn_enemy(_pick_enemy(), power)
 	_refresh()
 
+# The fortress falls: stars from the castle HP left, then cleared() after the banner
 func _stage_cleared() -> void:
 	switching = true
-	castle_hp = mini(CASTLE_HP, castle_hp + 80)
+	finished = true
 	_pending.clear()
 	for u in units.duplicate():
 		if u["side"] == -1:
 			_kill(u)
-	_banner("STAGE %d 클리어!" % stage, "성 체력 +80")
+	var stars: int = LaneStages.stars_for(float(castle_hp) / CASTLE_HP)
+	_sfx("b_cannon", -4.0)
+	_banner("STAGE %d 클리어!" % stage, LaneStages.star_text(stars))
 	_refresh()
-	get_tree().create_timer(1.3).timeout.connect(func():
-		if finished:
-			return
-		stage += 1
-		_start_stage()
-		switching = false)
+	get_tree().create_timer(1.3).timeout.connect(func(): cleared.emit(stage, stars))
 
 # =========================================================
 # Units
@@ -752,6 +798,7 @@ func _build() -> void:
 	var lane_tex: Texture2D = tex["lane"]
 	var k: float = ceil(maxf(720.0 / lane_tex.get_width(), LANE_H / lane_tex.get_height()))
 	var bg := TextureRect.new()
+	_bg = bg
 	bg.texture = lane_tex
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
@@ -783,11 +830,14 @@ func _build() -> void:
 	_view.add_child(_units_layer)
 	_bars_layer = Node2D.new()
 	_view.add_child(_bars_layer)
-	_stage_label = _outlined("", 26, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	_stage_label.position = Vector2(352, 8)
-	_stage_label.size = Vector2(140, 44)
-	_stage_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_stage_label = _outlined("", 24, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_stage_label.position = Vector2(352, 4)
+	_stage_label.size = Vector2(150, 30)
 	_view.add_child(_stage_label)
+	_stage_name = _outlined("", 16, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	_stage_name.position = Vector2(352, 32)
+	_stage_name.size = Vector2(150, 22)
+	_view.add_child(_stage_name)
 	# HP bars sit on the ground under each building (the top-right corner is Toss's button area)
 	var cb := _bar(_view, Vector2(CASTLE_X - BASE_BAR_W * 0.5, LANE_H - 26), Vector2(BASE_BAR_W, 20))
 	_castle_fill = cb.get_child(0)
@@ -902,6 +952,25 @@ func _build() -> void:
 		btn.add_child(veil)
 		_buttons[kind] = btn
 		_cool_veils[kind] = veil
+		# Locked until its stage (LaneStages.UNLOCK)
+		var lock := Panel.new()
+		lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lock.add_theme_stylebox_override("panel", UIKit.box(Color(0.03, 0.04, 0.08, 0.86), Color.TRANSPARENT, 14))
+		lock.size = btn.size
+		btn.add_child(lock)
+		var li := TextureRect.new()
+		li.texture = preload("res://assets/sprites/lock_icon.png")
+		li.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		li.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		li.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		li.position = Vector2(34, 10)
+		li.size = Vector2(32, 32)
+		lock.add_child(li)
+		var lt := _outlined("%d스테이지" % LaneStages.UNLOCK[kind], 15, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+		lt.position = Vector2(0, 46)
+		lt.size = Vector2(100, 24)
+		lock.add_child(lt)
+		_locks[kind] = lock
 	_cannon_btn = Button.new()
 	_cannon_btn.position = Vector2(606, 10)
 	_cannon_btn.size = Vector2(106, 80)
@@ -977,8 +1046,10 @@ func _refresh() -> void:
 		UIKit.style_raised(_auto_btn, Color(0.16, 0.6, 0.34), Color(0.5, 0.92, 0.62), Color(0.04, 0.24, 0.12), 22)
 	_auto_btn.text = "자동 ON" if auto_summon else "자동"
 	for kind in _buttons:
-		var ok: bool = gold >= ALLIES[kind]["cost"] and _count(1) < MAX_ALLIES and not finished
-		_buttons[kind].modulate = Color.WHITE if ok else Color(0.5, 0.5, 0.56)
+		var open: bool = LaneStages.unlocked(kind, stage)
+		_locks[kind].visible = not open
+		var ok: bool = open and gold >= ALLIES[kind]["cost"] and _count(1) < MAX_ALLIES and not finished
+		_buttons[kind].modulate = Color.WHITE if ok or not open else Color(0.5, 0.5, 0.56)
 	_cannon_label.text = "발사!" if cannon >= 100.0 else "%d%%" % int(cannon)
 	for u in units:
 		var bg: Panel = u["bar"]

@@ -44,6 +44,8 @@ var daily_best: int = 0
 var stage: Dictionary = {}
 var stage_progress: int = 0
 var adventure_select: AdventureSelect
+var lane_select: LaneStageSelect
+var battle_stage: int = 1             # 블록 기사단 stage being played
 # Classic game-over texts, restored after the modal is reused for stage results
 var go_default_texts: Dictionary = {}
 var go_btn_default_y: Dictionary = {}
@@ -199,7 +201,8 @@ func _ready() -> void:
 	$UI.add_child(battle)
 	$UI.move_child(battle, start_screen.get_index())
 	battle.visible = false
-	battle.defeated.connect(func(stage_reached: int): _finish_battle(stage_reached, "ko"))
+	battle.defeated.connect(func(_stage: int): _finish_battle(false, "ko"))
+	battle.cleared.connect(func(_stage: int, stars: int): _finish_battle(true, "clear", stars))
 	battle.home_pressed.connect(_open_home_screen)
 	battle.settings_pressed.connect(_open_settings)
 	battle.sound_pressed.connect(_on_sound_toggled)
@@ -226,6 +229,11 @@ func _ready() -> void:
 	$UI.move_child(adventure_select, settings_modal.get_index())
 	adventure_select.stage_selected.connect(_start_adventure_stage)
 	adventure_select.closed.connect(_open_home_screen)
+	lane_select = LaneStageSelect.new()
+	$UI.add_child(lane_select)
+	$UI.move_child(lane_select, settings_modal.get_index())
+	lane_select.stage_selected.connect(_start_lane_stage)
+	lane_select.closed.connect(_open_home_screen)
 	
 	# Game Over connections
 	go_btn_retry.pressed.connect(start_new_game.bind(true))
@@ -279,6 +287,8 @@ func _on_back_pressed() -> void:
 		leaderboard_modal.close()
 	elif adventure_select.visible:
 		adventure_select.close()
+	elif lane_select.visible:
+		lane_select.close()
 	elif start_screen.visible and not profile_setup_modal.visible:
 		if Toss.active():
 			_show_exit_confirm()
@@ -383,7 +393,7 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 		header_title.text = "STAGE %d" % stage["id"]
 		stage_progress = 0
 	elif game_mode == "battle":
-		header_title.text = "블록 기사단"
+		header_title.text = "블록 기사단 %d" % battle_stage
 	else:
 		header_title.text = "퍼즐블록"
 
@@ -460,7 +470,7 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 				return
 	_spawn_new_tray()
 	if game_mode == "battle" and seq == game_seq:
-		battle.begin()
+		battle.begin(battle_stage)
 
 func _clear_tray() -> void:
 	for i in range(3):
@@ -523,7 +533,7 @@ func _spawn_new_tray() -> void:
 			_show_tutorial_hint_later(0.45)
 
 func _input(event: InputEvent) -> void:
-	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible:
+	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible or lane_select.visible:
 		return
 		
 	if event is InputEventMouseButton:
@@ -1001,7 +1011,7 @@ func _check_piece_usability_and_game_over() -> void:
 		if game_mode == "adventure":
 			_finish_stage(false, "stuck")
 		elif game_mode == "battle":
-			_finish_battle(battle.stage, "stuck")
+			_finish_battle(false, "stuck")
 		elif not has_revived_this_game:
 			_trigger_revive_chance()
 		else:
@@ -1101,6 +1111,7 @@ func _open_home_screen() -> void:
 	if profile_setup_modal.visible:
 		profile_setup_modal.close()
 	adventure_select.visible = false
+	lane_select.visible = false
 
 func _on_start_play_pressed() -> void:
 	start_screen.visible = false
@@ -1296,13 +1307,17 @@ func _restore_game_over_texts() -> void:
 	go_btn_view_rank.visible = _has_ranking()
 
 func _on_go_primary_pressed() -> void:
-	if game_mode == "adventure":
+	if game_mode == "battle":
+		_start_lane_stage(battle_stage + 1)
+	elif game_mode == "adventure":
 		_start_adventure_stage(int(stage["id"]) + 1)
 	else:
 		_open_leaderboard()
 
 func _on_go_secondary_pressed() -> void:
-	if game_mode == "adventure":
+	if game_mode == "battle":
+		_open_lane_select()
+	elif game_mode == "adventure":
 		_open_adventure_select()
 	else:
 		_open_home_screen()
@@ -1311,8 +1326,25 @@ func _on_go_secondary_pressed() -> void:
 # 블록 기사단 (lane battle)
 # =========================================================
 
+# The home card opens the stage select; each stage is its own game (docs/LANE_STAGES.md)
 func _start_battle() -> void:
+	_open_lane_select()
+
+func _open_lane_select() -> void:
+	battle.stop()
+	battle.visible = false
 	start_screen.visible = false
+	game_over_panel.visible = false
+	lane_select.open()
+
+func _start_lane_stage(stage_id: int) -> void:
+	if LaneStages.get_stage(stage_id).is_empty():
+		_open_lane_select()
+		return
+	battle_stage = stage_id
+	lane_select.visible = false
+	start_screen.visible = false
+	game_over_panel.visible = false
 	start_new_game(false, "battle")
 
 # The battle shrinks the board (COMPACT_SCALE) and the tray (TRAY_COMPACT_SCALE) and moves them
@@ -1343,38 +1375,62 @@ func _apply_layout(compact: bool) -> void:
 	for i in range(tray_slots.size()):
 		tray_slots[i] = $TrayPlates.position + TRAY_SLOTS[i] * ts
 
-func _finish_battle(stage_reached: int, reason: String) -> void:
+# A stage ends: cleared (fortress down, 1-3 stars) or failed (castle down / board stuck)
+func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	if is_game_over:
 		return
 	is_game_over = true
 	battle.stop()
 	last_game_over_msec = Time.get_ticks_msec()
-	var cleared: int = stage_reached - 1
-	var best: int = maxi(Achievements.get_stat("battle_best_stage"), stage_reached)
-	var new_best: bool = stage_reached > Achievements.get_stat("battle_best_stage")
+	var improved: bool = won and LaneStages.record_clear(battle_stage, stars)
 	Achievements.add_stat("games_played", 1)
-	Achievements.max_stat("battle_best_stage", stage_reached)
+	if won:
+		Achievements.max_stat("battle_best_stage", battle_stage)
 	Analytics.log_event("battle_result", {
 		"game_id": game_id,
-		"stage": stage_reached,
+		"stage": battle_stage,
+		"cleared": won,
+		"stars": stars,
 		"reason": reason,
 		"score": score,
 		"moves": move_count,
 		"duration_s": snappedf((last_game_over_msec - game_start_msec) / 1000.0, 0.1)
 	})
 	Analytics.flush()
-	SoundManager.play_gameover()
-	SettingsManager.vibrate(120)
+	if won:
+		SoundManager.play_record()
+		SettingsManager.vibrate(160)
+	else:
+		SoundManager.play_gameover()
+		SettingsManager.vibrate(120)
 	await get_tree().create_timer(0.5).timeout
 	_restore_game_over_texts()
-	go_title.text = "GAME OVER"
-	$UI/GameOverModal/Card/ScoreSub.text = "도달한 스테이지"
-	go_final_score.text = "STAGE %d" % stage_reached
-	go_best_score.text = "최고 기록: STAGE %d · 부순 요새 %d" % [best, cleared]
-	go_new_badge.visible = new_best and stage_reached > 1
-	go_rank_status.text = "놓을 수 있는 블록이 없어요." if reason == "stuck" else "성이 무너졌어요."
-	go_btn_view_rank.visible = false
+	var name: String = LaneStages.get_stage(battle_stage).get("name", "")
+	go_title.text = ("STAGE %d 클리어!" if won else "STAGE %d 실패") % battle_stage
+	$UI/GameOverModal/Card/ScoreSub.text = name
+	go_final_score.text = LaneStages.star_text(stars) if won else "☆☆☆"
+	go_best_score.text = "모은 별 %d / %d" % [LaneStages.total_stars(), LaneStages.count() * 3]
+	go_new_badge.text = "★ 새 기록 ★"
+	go_new_badge.visible = improved
+	match reason:
+		"clear":
+			go_rank_status.text = "적 요새를 무너뜨렸어요! 남은 성 체력 %d%%" % roundi(100.0 * battle.castle_hp / LaneBattle.CASTLE_HP)
+		"stuck":
+			go_rank_status.text = "놓을 수 있는 블록이 없어요."
+		_:
+			go_rank_status.text = "성이 무너졌어요."
+	var has_next: bool = not LaneStages.get_stage(battle_stage + 1).is_empty()
+	_restore_game_over_buttons()
+	go_btn_view_rank.text = "다음 스테이지"
+	go_btn_view_rank.visible = won and has_next
 	go_btn_retry.text = "다시 도전"
+	go_btn_home.text = "스테이지 선택"
+	if won and has_next:
+		# Moving on is the main action after a clear: put "next" on top as the primary button
+		go_btn_view_rank.position.y = go_btn_default_y["retry"]
+		go_btn_retry.position.y = go_btn_default_y["primary"]
+		UIKit.style_button(go_btn_view_rank, "primary", 24, 18)
+		UIKit.style_button(go_btn_retry, "secondary", 22, 18)
 	game_over_panel.visible = true
 	game_over_panel.modulate.a = 0.0
 	var tw = create_tween()
