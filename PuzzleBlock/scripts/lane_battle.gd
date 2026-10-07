@@ -4,19 +4,19 @@ extends Control
 # Ideas taken from The Battle Cats, Paladog, Stick War and Plants vs Zombies (docs/BATTLE_RESEARCH.md):
 # - Units walk at their own speed and hit the first enemy in range on their own attack timer.
 #   Big hits knock units back (each kind has a knockback count), deaths fly off with a poof.
+# - The 4 summon buttons are the player's deck (LaneUnits, built outside battles with the gacha and
+#   the deck screen). Each soldier has a role: melee, tank, armor breaker, ranged, anti-air, mage,
+#   healer, siege; levels from duplicates raise HP and attack.
 # - Gold trickles in up to the wallet's limit; clears pay more. "수입 UP" raises income and limit.
-# - Each soldier has a summon cooldown, so cheap walls and expensive dealers get mixed.
-# - Clears and combos charge the cannon; one tap pushes back and hurts every enemy.
-# - Stages have a rhythm: single monsters, a big wave after a horn warning, and a boss that roars
-#   in with a shockwave when the fortress drops to half.
-# - Enemy traits ask for the right soldier: bats fly (only archers and mages reach them), armored
-#   skeletons shrug off everything but spears, slimes come in swarms (mage splash).
-# - One toggle switches the army between charging and holding in front of the castle.
-# - Auto mode plays the battle so the player can stay on the puzzle: it summons as gold comes in
-#   (a front line of knights, archers for bats, spears for armor, a mix otherwise), fires the cannon
-#   into crowds or the boss, and buys income upgrades once the army stands.
+# - Clears and combos charge the castle cannon; one tap blasts every monster.
+# - Stages (LaneStages) set the monsters, waves and a boss that roars in at half the fortress.
+# - Monster traits: bats fly (only ranged soldiers reach them), armor (spears), goblin archers shoot,
+#   dark priests heal monsters, golems are huge, slimes come in swarms.
+# - Charge/hold toggle and an auto mode that plays the battle from the deck.
+# Sizes follow lane games like The Battle Cats: units at their pixel size (x1, about 1/7 of the
+# strip), bosses x2, the castle and fortress x1 and half off-screen, so crowds read well.
 # The battle pauses while the settings window is open (MainGame sets `paused`).
-# Art: Codex pixel art cut by tools/import_lane_art.py, drawn at whole-number scales.
+# Art: Codex pixel art cut by tools/import_lane_art.py.
 
 signal defeated(stage: int)
 signal cleared(stage: int, stars: int)
@@ -28,21 +28,26 @@ signal sound_pressed
 
 const LANE_H: float = 330.0
 const BAR_H: float = 100.0
-const PX: float = 2.0                 # unit and base sprites are drawn at x2
-const GROUND: float = 296.0           # feet line in the lane
-const FLY_H: float = 58.0             # bats hover this high
-const ALLY_START: float = 192.0       # just in front of the castle (it ends at x 154)
-const ENEMY_START: float = 520.0      # just in front of the fortress (it starts at x 558)
-const ALLY_BASE_X: float = 190.0      # where enemies stand to hit the castle
-const ENEMY_BASE_X: float = 528.0     # where soldiers stand to hit the fortress
-const DEFEND_X: float = 300.0         # soldiers hold here in defend mode
-const CASTLE_X: float = 80.0          # building centres, for hit effects and HP bars
-const FORT_X: float = 636.0
-const BASE_BAR_W: float = 132.0
-const KB_DIST: float = 36.0
+const UNIT_PX: float = 1.0            # soldiers and monsters at their pixel size
+const BASE_PX: float = 1.0            # castle and fortress
+const FX_PX: float = 1.0              # effects
+const GROUND: float = 272.0           # feet line in the lane (on the dirt road)
+const FLY_H: float = 40.0             # bats hover this high
+const CASTLE_LEFT: float = -20.0      # the castle sticks out of the left edge
+const FORT_RIGHT: float = 740.0       # and the fortress out of the right one
+const ALLY_START: float = 70.0        # just in front of the castle
+const ENEMY_START: float = 650.0      # just in front of the fortress
+const ALLY_BASE_X: float = 68.0       # where enemies stand to hit the castle
+const ENEMY_BASE_X: float = 652.0     # where soldiers stand to hit the fortress
+const DEFEND_X: float = 200.0         # soldiers hold here in defend mode
+const CASTLE_X: float = 26.0          # visible building centres, for hit effects
+const FORT_X: float = 694.0
+const BASE_BAR_W: float = 104.0
+const SPEED_K: float = 1.5            # the field is wider now; everyone walks a bit faster
+const KB_DIST: float = 30.0
 const KB_TIME: float = 0.45
-const MAX_ALLIES: int = 10
-const MAX_ENEMIES: int = 14
+const MAX_ALLIES: int = 14
+const MAX_ENEMIES: int = 16
 const CASTLE_HP: int = 600
 const START_GOLD: int = 60
 # Wallet levels: limit, gold per second, cost of the next level
@@ -56,22 +61,24 @@ const CANNON_PER_POINT: float = 0.08
 const CANNON_DAMAGE: float = 30.0
 const WAVE_REPEAT: float = 40.0       # after the scripted waves, the last one repeats this often
 const WARN_TIME: float = 3.0
-const ALLIES := {
-	# speed: px per second, every: seconds between hits, cool: summon cooldown, kb: knockbacks per life
-	"knight": {"name": "기사", "cost": 50, "hp": 70.0, "atk": 12.0, "range": 44.0, "speed": 34.0, "every": 1.0, "cool": 2.0, "kb": 2},
-	"archer": {"name": "궁수", "cost": 80, "hp": 34.0, "atk": 9.0, "range": 140.0, "speed": 30.0, "every": 1.2, "cool": 4.0, "kb": 1, "shot": "arrow"},
-	"mage": {"name": "마법사", "cost": 120, "hp": 30.0, "atk": 14.0, "range": 110.0, "speed": 28.0, "every": 1.6, "cool": 8.0, "kb": 1, "shot": "orb", "splash": 50.0},
-	"spearman": {"name": "창병", "cost": 130, "hp": 110.0, "atk": 16.0, "range": 60.0, "speed": 26.0, "every": 1.2, "cool": 9.0, "kb": 3},
-}
-const ALLY_ORDER: Array[String] = ["knight", "archer", "mage", "spearman"]
-const ENEMIES := {
+const HEAL_EVERY: float = 2.0
+const ALLIES: Dictionary = LaneUnits.UNITS
+const ALLY_ORDER: Array[String] = LaneUnits.ORDER
+const ENEMIES: Dictionary = {
 	"slime": {"hp": 18.0, "atk": 5.0, "range": 40.0, "speed": 22.0, "every": 1.2, "kb": 1, "swarm": 2},
 	"goblin": {"hp": 52.0, "atk": 9.0, "range": 44.0, "speed": 30.0, "every": 1.1, "kb": 2},
+	"wolf": {"hp": 40.0, "atk": 8.0, "range": 36.0, "speed": 55.0, "every": 0.9, "kb": 2},
+	"gob_archer": {"hp": 40.0, "atk": 8.0, "range": 130.0, "speed": 26.0, "every": 1.4, "kb": 1, "shot": "arrow"},
 	"skeleton": {"hp": 64.0, "atk": 11.0, "range": 44.0, "speed": 26.0, "every": 1.2, "kb": 2},
 	"bat": {"hp": 30.0, "atk": 7.0, "range": 40.0, "speed": 40.0, "every": 1.0, "kb": 1, "flying": true},
 	"armored": {"hp": 70.0, "atk": 12.0, "range": 44.0, "speed": 20.0, "every": 1.3, "kb": 3, "armor": true},
+	"priest": {"hp": 45.0, "atk": 5.0, "range": 100.0, "speed": 22.0, "every": 1.6, "kb": 1, "shot": "dark", "heal": 10.0, "heal_r": 100.0},
+	"golem": {"hp": 260.0, "atk": 20.0, "range": 46.0, "speed": 14.0, "every": 1.8, "kb": 1},
 	"orc": {"hp": 130.0, "atk": 18.0, "range": 50.0, "speed": 20.0, "every": 1.5, "kb": 2},
+	"demon": {"hp": 220.0, "atk": 26.0, "range": 60.0, "speed": 18.0, "every": 1.3, "kb": 3},
 }
+# Projectile sprite per shot kind
+const SHOT_TEX: Dictionary = {"arrow": "arrow", "bolt": "bolt", "orb": "fireball", "light": "holy", "ball": "cannonball", "dark": "fireball"}
 
 var stage: int = 1
 var stage_data: Dictionary = {}       # one entry of LaneStages.STAGES
@@ -85,6 +92,8 @@ var wallet: int = 0                   # wallet level index
 var cannon: float = 0.0               # 0..100
 var charging: bool = true             # false = hold in front of the castle
 var auto_summon: bool = false         # kept between runs in this session
+var deck: Array = []                  # the 4 soldier kinds of this battle ("" = empty slot)
+var levels: Dictionary = {}           # kind -> level
 var _auto_timer: float = 0.0
 var castle_hp: int = CASTLE_HP
 var fortress_hp: float = 1.0
@@ -107,7 +116,9 @@ var _sfx_last: Dictionary = {}
 var _castle_hit_last: float = -9.0
 var _pending: Array = []              # [seconds left, kind, k] enemies of a wave still to come
 var _view: Control
+var _shake: Node2D                    # everything that shakes with heavy hits
 var _units_layer: Node2D
+var _fx_layer: Node2D
 var _bars_layer: Node2D
 var _castle_sprite: Sprite2D
 var _cannon_sprite: Sprite2D
@@ -115,7 +126,6 @@ var _fort_sprite: Sprite2D
 var _stage_label: Label
 var _stage_name: Label
 var _bg: TextureRect
-var _locks: Dictionary = {}
 var _castle_fill: Panel
 var _castle_label: Label
 var _fort_fill: Panel
@@ -129,8 +139,7 @@ var _auto_btn: Button
 var _cannon_btn: Button
 var _cannon_fill: ColorRect
 var _cannon_label: Label
-var _buttons: Dictionary = {}
-var _cool_veils: Dictionary = {}
+var _slots: Array = []                # {btn, icon, name, cost, lv, veil}
 var _icons: Dictionary = {}
 
 func _ready() -> void:
@@ -141,17 +150,22 @@ func _ready() -> void:
 	names.append_array(ALLY_ORDER)
 	names.append_array(ENEMIES.keys())
 	names.append_array(["cannon", "cannonball", "flash", "boom_s", "boom_l", "smoke"])
+	names.append_array(["spark", "slash", "arrow", "bolt", "fireball", "holy", "heal", "dust", "ring"])
 	for k in names:
-		tex[k] = load("res://assets/art/lane/%s.png" % k)
+		var path := "res://assets/art/lane/%s.png" % k
+		if ResourceLoader.exists(path):
+			tex[k] = load(path)
 	_icons["armor"] = _pixel_icon([".XXXXX.", "XWWWWWX", "XWWWWWX", "XWWWWWX", ".XWWWX.", "..XWX..", "...X..."], Color(0.8, 0.85, 0.95))
 	_icons["flying"] = _pixel_icon(["X.....X", "XX...XX", "XWX.XWX", "XWWXWWX", ".XWWWX.", "..XXX.."], Color(0.75, 0.9, 1.0))
+	_icons["heal"] = _pixel_icon(["..XXX..", "..XWX..", "XXXWXXX", "XWWWWWX", "XXXWXXX", "..XWX..", "..XXX.."], Color(0.55, 0.95, 0.55))
 	_build()
 
 # =========================================================
 # Flow (called by MainGame)
 # =========================================================
 
-# Starts one stage (docs/LANE_STAGES.md); the run ends with cleared() or defeated()
+# Starts one stage (docs/LANE_STAGES.md) with the player's deck; the run ends with cleared() or
+# defeated()
 func begin(stage_id: int = 1) -> void:
 	rng.randomize()
 	stage = stage_id
@@ -159,6 +173,10 @@ func begin(stage_id: int = 1) -> void:
 	if stage_data.is_empty():
 		stage_data = LaneStages.STAGES[0]
 	power = stage_data["power"]
+	var army: Dictionary = LaneUnits.load_army()
+	deck = army["deck"].duplicate()
+	levels = army["owned"].duplicate()
+	_setup_slots()
 	_rotation = _auto_rotation()
 	_auto_index = 0
 	paused = false
@@ -208,12 +226,19 @@ func on_clear(lines: int, points: int) -> void:
 	_refresh()
 
 func summon(kind: String) -> bool:
+	if finished or not deck.has(kind) or kind == "":
+		return false
 	var st: Dictionary = ALLIES[kind]
-	if finished or not LaneStages.unlocked(kind, stage) or gold < st["cost"] or cooldown.get(kind, 0.0) > 0.0 or _count(1) >= MAX_ALLIES:
+	if gold < st["cost"] or cooldown.get(kind, 0.0) > 0.0 or _count(1) >= MAX_ALLIES:
 		return false
 	gold -= st["cost"]
 	cooldown[kind] = st["cool"]
-	_spawn(kind, 1, 1.0)
+	var u := _spawn(kind, 1, 1.0)
+	# Drops in with a puff of dust
+	var node: Sprite2D = u["node"]
+	node.position.y -= 16.0
+	node.create_tween().tween_property(node, "position:y", node.position.y + 16.0, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	get_tree().create_timer(0.18).timeout.connect(func(): _fx_once("dust", node.position + Vector2(0, -4), 0.35))
 	_sfx("b_summon", -10.0)
 	_refresh()
 	return true
@@ -238,23 +263,23 @@ func fire_cannon() -> bool:
 	var gun: Sprite2D = _cannon_sprite
 	var rest: Vector2 = gun.position
 	var rt := gun.create_tween()
-	rt.tween_property(gun, "position:x", rest.x - 8.0, 0.05)
+	rt.tween_property(gun, "position:x", rest.x - 6.0, 0.05)
 	rt.tween_property(gun, "position:x", rest.x, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	var tip: Vector2 = rest + Vector2(gun.texture.get_width() * PX, gun.texture.get_height() * PX * 0.35)
-	_fx(["flash"], tip + Vector2(10, 0), [0.12])
+	var tip: Vector2 = rest + Vector2(gun.texture.get_width() * BASE_PX, gun.texture.get_height() * BASE_PX * 0.35)
+	_fx(["flash"], tip + Vector2(8, 0), [0.12])
 	var foes: Array = units.filter(func(u): return u["side"] == -1)
 	foes.sort_custom(func(a, b): return a["node"].position.x < b["node"].position.x)
 	var land: Vector2 = Vector2(360, GROUND - 20) if foes.is_empty() else _mid(foes[0])
 	var ball := Sprite2D.new()
 	ball.texture = tex["cannonball"]
-	ball.scale = Vector2.ONE * PX
+	ball.scale = Vector2.ONE * BASE_PX
 	ball.position = tip
 	ball.z_index = 6
-	_view.add_child(ball)
-	var flight: float = 0.28
+	_fx_layer.add_child(ball)
+	var flight: float = 0.3
 	var bt := ball.create_tween()
 	bt.tween_method(func(t: float):
-		ball.position = tip.lerp(land, t) + Vector2(0, -70.0 * sin(PI * t))
+		ball.position = tip.lerp(land, t) + Vector2(0, -80.0 * sin(PI * t))
 		ball.rotation = lerpf(-0.5, 0.6, t), 0.0, 1.0, flight)
 	bt.tween_callback(ball.queue_free)
 	var dmg: float = CANNON_DAMAGE * power
@@ -266,40 +291,16 @@ func fire_cannon() -> bool:
 			if not units.has(u):
 				return
 			_boom(_mid(u))
-			u["hp"] -= dmg
-			_flash(u["node"])
-			_number(_head(u), dmg, Color(1.0, 0.9, 0.4))
+			_hurt(u, dmg, true)
 			if u["hp"] > 0.0:
 				_knock(u, KB_DIST * 1.5)
 			_dirty = true)
 	return true
 
-func _boom(at: Vector2) -> void:
-	_fx(["boom_s", "boom_l", "smoke"], at, [0.06, 0.12, 0.3])
-	_sfx("b_hit", -8.0)
-	_hitstop = maxf(_hitstop, 0.04)
-
-func _mid(u: Dictionary) -> Vector2:
-	return u["node"].position + Vector2(0, -_height(u["node"]) * 0.5)
-
-# A short frame-by-frame effect; the last frame fades out
-func _fx(frames: Array, at: Vector2, times: Array) -> void:
-	var sp := Sprite2D.new()
-	sp.texture = tex[frames[0]]
-	sp.scale = Vector2.ONE * PX
-	sp.position = at
-	sp.z_index = 7
-	_view.add_child(sp)
-	var tw := sp.create_tween()
-	for i in range(frames.size()):
-		if i > 0:
-			var f: String = frames[i]
-			tw.tween_callback(func(): sp.texture = tex[f])
-		if i == frames.size() - 1:
-			tw.tween_property(sp, "modulate:a", 0.0, times[i])
-		else:
-			tw.tween_interval(times[i])
-	tw.tween_callback(sp.queue_free)
+func toggle_march() -> void:
+	charging = not charging
+	SoundManager.play_click()
+	_refresh()
 
 func toggle_auto() -> void:
 	auto_summon = not auto_summon
@@ -308,62 +309,90 @@ func toggle_auto() -> void:
 	SoundManager.play_click()
 	_refresh()
 
-# What auto mode summons next: answer bats with archers and armor with spears, keep knights in
-# front when monsters come close, otherwise follow a steady rotation. A soldier that is not ready
-# is skipped for a knight, so gold keeps turning into an army.
-const AUTO_ROTATION: Array[String] = ["knight", "archer", "knight", "mage", "knight", "spearman"]
+# =========================================================
+# Auto mode (plays from the deck)
+# =========================================================
+
 var _auto_index: int = 0
-var _rotation: Array = AUTO_ROTATION.duplicate()
+var _rotation: Array = []
 
-# The rotation follows the stage's monsters: spears where armor comes, more archers for bats;
-# soldiers not open yet become knights
+# A rotation from the deck: the front-liner between every other soldier, so the line holds while
+# the rest of the deck is mixed in
 func _auto_rotation() -> Array:
-	var pool: Array = stage_data.get("pool", [])
-	for w in stage_data.get("waves", []):
-		pool = pool + w[1]
-	var r: Array = AUTO_ROTATION.duplicate()
-	if pool.has("armored"):
-		r = ["knight", "spearman", "archer", "spearman", "knight", "spearman"]
-	elif pool.has("bat"):
-		r = ["knight", "archer", "knight", "archer", "mage", "spearman"]
-	return r.map(func(k): return k if LaneStages.unlocked(k, stage) else "knight")
+	var kinds: Array = deck.filter(func(k): return k != "")
+	var front: String = _front_kind()
+	var r: Array = []
+	for k in kinds:
+		if k != front:
+			r.append(front)
+			r.append(k)
+	if r.is_empty():
+		r = [front]
+	return r
 
+func _front_kind() -> String:
+	for k in ["knight", "shield", "spearman"]:
+		if deck.has(k):
+			return k
+	var kinds: Array = deck.filter(func(k): return k != "")
+	return kinds[0] if not kinds.is_empty() else ""
+
+func _first_in_deck(kinds: Array) -> String:
+	for k in kinds:
+		if deck.has(k):
+			return k
+	return ""
+
+# What auto mode summons next: the front-liner when monsters are close, the deck's answer to bats
+# (crossbow, archer, mage) and to armor (spear, cannon), otherwise the rotation. A counter that is
+# not ready is worth saving gold for.
 func auto_pick() -> String:
-	var mine: Dictionary = {"knight": 0, "archer": 0, "mage": 0, "spearman": 0}
+	var mine: Dictionary = {}
 	for u in units:
 		if u["side"] == 1:
-			mine[u["kind"]] += 1
+			mine[u["kind"]] = mine.get(u["kind"], 0) + 1
 	var foes: Array = units.filter(func(u): return u["side"] == -1)
 	var bats: int = foes.filter(func(u): return u["flying"]).size()
 	var armored: int = foes.filter(func(u): return u["armor"]).size()
-	var close: bool = foes.any(func(u): return u["node"].position.x < DEFEND_X + 40.0)
-	var want: String = _rotation[_auto_index % _rotation.size()]
+	var close: bool = foes.any(func(u): return u["node"].position.x < DEFEND_X + 60.0)
+	var front: String = _front_kind()
+	var melee_n: int = 0
+	var ranged_n: int = 0
+	for k in mine:
+		if LaneUnits.melee(k):
+			melee_n += mine[k]
+		else:
+			ranged_n += mine[k]
+	var want: String = _rotation[_auto_index % _rotation.size()] if not _rotation.is_empty() else front
 	var counter: bool = false
-	if armored > 0 and close and LaneStages.unlocked("spearman", stage) and _can_summon("spearman"):
-		return "spearman"
-	if mine["knight"] == 0 or (close and mine["knight"] < 3):
-		want = "knight"
-	elif bats > 0 and mine["archer"] + mine["mage"] < bats + 1 and LaneStages.unlocked("archer", stage):
-		want = "archer"
+	var air: String = _first_in_deck(["crossbow", "archer", "mage"])
+	var breaker: String = _first_in_deck(["spearman", "cannoneer"])
+	if armored > 0 and close and breaker != "" and _can_summon(breaker):
+		return breaker
+	if melee_n == 0 or (close and melee_n < 3):
+		want = front
+	elif bats > 0 and air != "" and ranged_n < bats + 1:
+		want = air
 		counter = true
-	elif armored > 0 and mine["spearman"] < armored + 1 and LaneStages.unlocked("spearman", stage):
-		want = "spearman"
+	elif armored > 0 and breaker != "" and mine.get(breaker, 0) < armored + 1:
+		want = breaker
 		counter = true
+	if want == "cleric" and mine.get("cleric", 0) >= 2:
+		_auto_index += 1
+		want = front
 	if _can_summon(want):
 		return want
-	# Not ready: a counter is worth saving for (a knight only if monsters are at the gate);
-	# otherwise fill the front with a knight
 	if counter:
-		return "knight" if close and _can_summon("knight") and mine["knight"] < 2 else ""
-	if _can_summon("knight") and mine["knight"] < 3:
-		return "knight"
+		return front if close and _can_summon(front) and melee_n < 2 else ""
+	if _can_summon(front) and melee_n < 3:
+		return front
 	return want
 
 func _can_summon(kind: String) -> bool:
-	return gold >= ALLIES[kind]["cost"] and cooldown.get(kind, 0.0) <= 0.0
+	return kind != "" and deck.has(kind) and gold >= ALLIES[kind]["cost"] and cooldown.get(kind, 0.0) <= 0.0
 
 func _auto_step() -> void:
-	# The cannon goes off when it can hit a crowd (or the boss); the wallet grows once the army stands
+	# The cannon goes off when it can hit a crowd (or the boss); the wallet grows when gold is spare
 	var foes: Array = units.filter(func(u): return u["side"] == -1)
 	if cannon >= 100.0 and (foes.size() >= 2 or foes.any(func(u): return u.get("boss", false))):
 		fire_cannon()
@@ -374,18 +403,15 @@ func _auto_step() -> void:
 	var kind: String = auto_pick()
 	if kind == "":
 		return
-	if kind == _rotation[_auto_index % _rotation.size()] and _can_summon(kind):
+	if not _rotation.is_empty() and kind == _rotation[_auto_index % _rotation.size()] and _can_summon(kind):
 		_auto_index += 1
 	if summon(kind):
-		var btn: Button = _buttons[kind]
-		btn.scale = Vector2(0.92, 0.92)
-		btn.pivot_offset = btn.size * 0.5
-		btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.15)
-
-func toggle_march() -> void:
-	charging = not charging
-	SoundManager.play_click()
-	_refresh()
+		var i: int = deck.find(kind)
+		if i >= 0:
+			var btn: Button = _slots[i]["btn"]
+			btn.scale = Vector2(0.92, 0.92)
+			btn.pivot_offset = btn.size * 0.5
+			btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.15)
 
 # =========================================================
 # Real-time battle
@@ -418,6 +444,11 @@ func _tick(delta: float) -> void:
 		var side: int = u["side"]
 		var base_off: float = -node.texture.get_height() * 0.5
 		u["cd"] = maxf(0.0, u["cd"] - delta)
+		if u["heal"] > 0.0:
+			u["heal_t"] -= delta
+			if u["heal_t"] <= 0.0:
+				u["heal_t"] = HEAL_EVERY
+				_heal_around(u)
 		if u["stun"] > 0.0:
 			u["stun"] -= delta
 			continue
@@ -426,8 +457,7 @@ func _tick(delta: float) -> void:
 			node.offset.y = base_off
 			if u["cd"] <= 0.0:
 				u["cd"] = u["every"]
-				_attack_fx(u, target)
-				_apply_hit(target, _damage(u, target), u)
+				_attack(u, target)
 			continue
 		# Walk forward, stopping at this unit's standing distance from the nearest opponent or the base
 		var limit: float = ENEMY_BASE_X if side == 1 else ALLY_BASE_X
@@ -446,7 +476,7 @@ func _tick(delta: float) -> void:
 			nx = maxf(nx, x) if side == 1 else minf(nx, x)
 		node.position.x = nx
 		# A small hop while walking
-		node.offset.y = base_off - (absf(sin(_clock * 9.0 + u["phase"])) * 3.0 if absf(nx - x) > 0.01 else 0.0)
+		node.offset.y = base_off - (absf(sin(_clock * 9.0 + u["phase"])) * 2.0 if absf(nx - x) > 0.01 else 0.0)
 	# Remove the fallen
 	for u in units.duplicate():
 		if u["hp"] <= 0.0:
@@ -497,7 +527,7 @@ func _spawn_enemy(kind: String, k: float, group: bool = true) -> void:
 		if _count(-1) >= MAX_ENEMIES:
 			return
 		var u := _spawn(kind, -1, k)
-		u["node"].position.x += i * 18.0
+		u["node"].position.x += i * 14.0
 
 func _boss_entry() -> void:
 	boss_out = true
@@ -505,20 +535,23 @@ func _boss_entry() -> void:
 	var bd: Dictionary = LaneStages.BOSSES[stage_data["boss"]]
 	_banner("보스 %s 등장!" % bd["name"], "충격파에 밀려나요", Color(1.0, 0.45, 0.4))
 	castle_hit.emit(0)
+	_shake_lane(8.0, 0.35)
 	var boss := _spawn(bd["kind"], -1, power)
 	boss["max_hp"] *= bd["hp"]
 	boss["hp"] = boss["max_hp"]
 	boss["atk"] *= bd["atk"]
 	boss["speed"] *= 0.75
-	boss["node"].scale = Vector2.ONE * PX * bd["scale"]
+	boss["base_scale"] = Vector2.ONE * UNIT_PX * 2.0 * bd["scale"] / 1.6
+	boss["node"].scale = boss["base_scale"]
 	boss["kb"] = bd["kb"]
 	boss["kb_mark"] = boss["max_hp"] * (bd["kb"] - 1) / bd["kb"]
 	boss["boss"] = true
+	_fx_once("ring", boss["node"].position + Vector2(0, -6), 0.5, 3.0)
 	# The shockwave pushes every soldier back
 	for u in units:
 		if u["side"] == 1:
 			_knock(u, KB_DIST * 2.5)
-	_hitstop = 0.1
+	_hitstop = 0.12
 	_pending.append([0.8, _pick_enemy(), power])
 
 # The nearest opponent in range (also behind: bats fly over the front line), else the enemy base
@@ -562,24 +595,66 @@ func _nearest_opponent(u: Dictionary):
 			best = o
 	return best
 
+# Damage of one hit: anti-air, armor (spears break it, the rest do half), siege on the fortress,
+# and the target's guard
 func _damage(attacker: Dictionary, target) -> float:
 	var dmg: float = attacker["atk"]
-	if target is Dictionary and target.get("armor", false):
-		dmg *= 2.0 if attacker["kind"] == "spearman" else 0.5
-	return dmg
+	if target is String:
+		if target == "fortress":
+			dmg *= attacker.get("siege", 1.0)
+		return dmg
+	if target.get("flying", false):
+		dmg *= attacker.get("air", 1.0)
+	if target.get("armor", false):
+		dmg *= attacker.get("armor_break", 0.5) if attacker.has("armor_break") else 0.5
+	return dmg * (1.0 - target.get("guard", 0.0))
 
-func _apply_hit(target, dmg: float, attacker: Dictionary) -> void:
+func _attack(u: Dictionary, target) -> void:
+	var dmg: float = _damage(u, target)
+	if u["shot"] == "":
+		_lunge(u)
+		_land_hit(u, target, dmg)
+		return
+	# Ranged: the projectile flies, the hit lands on arrival
+	var node: Sprite2D = u["node"]
+	var to: Vector2 = Vector2(FORT_X if target is String and target == "fortress" else CASTLE_X, GROUND - 60) if target is String else _mid(target)
+	var from: Vector2 = node.position + Vector2(u["side"] * 8.0, -_height(node) * 0.6)
+	_sfx("b_arrow" if u["shot"] in ["arrow", "bolt"] else "b_magic", -12.0)
+	var sp := Sprite2D.new()
+	sp.texture = tex.get(SHOT_TEX.get(u["shot"], "arrow"), tex["cannonball"])
+	sp.scale = Vector2.ONE * FX_PX
+	sp.position = from
+	sp.z_index = 6
+	if u["shot"] == "dark":
+		sp.modulate = Color(0.75, 0.45, 1.0)
+	var flight: float = clampf(from.distance_to(to) / 520.0, 0.12, 0.3)
+	var arc: float = 18.0 if u["shot"] in ["arrow", "bolt"] else (34.0 if u["shot"] == "ball" else 0.0)
+	_fx_layer.add_child(sp)
+	var tw := sp.create_tween()
+	tw.tween_method(func(t: float):
+		var p: Vector2 = from.lerp(to, t) + Vector2(0, -arc * sin(PI * t))
+		if u["shot"] in ["arrow", "bolt", "ball"]:
+			sp.rotation = (p - sp.position).angle() if p != sp.position else sp.rotation
+		sp.position = p, 0.0, 1.0, flight)
+	tw.tween_callback(func():
+		sp.queue_free()
+		if target is String or units.has(target):
+			_land_hit(u, target, dmg))
+
+func _land_hit(attacker: Dictionary, target, dmg: float) -> void:
 	_dirty = true
 	if target is String:
 		if target == "fortress":
 			fortress_hp = maxf(0.0, fortress_hp - dmg)
-			_number(Vector2(FORT_X, GROUND - 170), dmg, Color(1.0, 0.9, 0.5))
+			_number(Vector2(FORT_X, GROUND - 100), dmg, Color(1.0, 0.9, 0.5))
 			_flash(_fort_sprite)
+			_spark(Vector2(FORT_X - 20, GROUND - 50 - rng.randf() * 40), dmg >= 25.0)
 			_sfx("b_hit", -12.0)
 		else:
 			castle_hp = maxi(0, castle_hp - roundi(dmg))
-			_number(Vector2(CASTLE_X, GROUND - 170), dmg, Color(1.0, 0.45, 0.4))
+			_number(Vector2(CASTLE_X + 10, GROUND - 100), dmg, Color(1.0, 0.45, 0.4))
 			_flash(_castle_sprite)
+			_spark(Vector2(CASTLE_X + 24, GROUND - 50 - rng.randf() * 40), false)
 			_sfx("b_castle", -8.0)
 			if _clock - _castle_hit_last > 0.8:
 				_castle_hit_last = _clock
@@ -587,23 +662,44 @@ func _apply_hit(target, dmg: float, attacker: Dictionary) -> void:
 		return
 	_hurt(target, dmg, attacker["side"] == 1)
 	if attacker["shot"] == "":
+		_slash(target, attacker["side"])
 		_sfx("b_hit", -12.0)
-	# Mage fire also hits the target's neighbours
 	if attacker.get("splash", 0.0) > 0.0:
+		_fx_once("boom_s", _mid(target), 0.18)
 		for o in units.duplicate():
 			if o != target and o["side"] == target["side"] and absf(o["node"].position.x - target["node"].position.x) <= attacker["splash"]:
-				_hurt(o, _damage(attacker, o) * 0.6, true)
+				_hurt(o, _damage(attacker, o) * 0.6, attacker["side"] == 1)
 
 func _hurt(u: Dictionary, dmg: float, by_ally: bool) -> void:
 	u["hp"] -= dmg
 	_flash(u["node"])
+	_squash(u)
+	_spark(_mid(u) + Vector2(rng.randf_range(-4, 4), rng.randf_range(-6, 6)), dmg >= 20.0)
 	_number(_head(u), dmg, Color(1.0, 0.95, 0.6) if by_ally else Color(1.0, 0.5, 0.45))
+	if dmg >= 25.0:
+		_hitstop = maxf(_hitstop, 0.05)
+		_shake_lane(3.0, 0.12)
 	# Knockback each time the HP drops past the next mark
 	if u["hp"] > 0.0 and u["hp"] <= u["kb_mark"]:
 		u["kb_mark"] -= u["max_hp"] / u["kb"]
 		_knock(u, KB_DIST)
-		if dmg >= 15.0:
-			_hitstop = maxf(_hitstop, 0.05)
+
+# Healers: every HEAL_EVERY seconds, hurt friends around get HP back
+func _heal_around(u: Dictionary) -> void:
+	var healed := false
+	for o in units:
+		if o["side"] != u["side"] or o["hp"] <= 0.0 or o["hp"] >= o["max_hp"]:
+			continue
+		if absf(o["node"].position.x - u["node"].position.x) > u["heal_r"]:
+			continue
+		var gain: float = minf(u["heal"], o["max_hp"] - o["hp"])
+		o["hp"] += gain
+		healed = true
+		_fx_once("heal", _head(o) + Vector2(0, 4), 0.5, 1.0, Vector2(0, -16))
+		_number(_head(o) + Vector2(0, -10), gain, Color(0.5, 1.0, 0.55), "+")
+	if healed:
+		_dirty = true
+		_fx_once("holy", _mid(u), 0.35, 1.6)
 
 func _knock(u: Dictionary, dist: float) -> void:
 	var node: Sprite2D = u["node"]
@@ -613,8 +709,9 @@ func _knock(u: Dictionary, dist: float) -> void:
 	var base_off: float = -node.texture.get_height() * 0.5
 	var tw := node.create_tween().set_parallel(true)
 	tw.tween_property(node, "position:x", to_x, KB_TIME * 0.8).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(node, "offset:y", base_off - 10.0, KB_TIME * 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(node, "offset:y", base_off - 8.0, KB_TIME * 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.chain().tween_property(node, "offset:y", base_off, KB_TIME * 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_fx_once("dust", node.position + Vector2(side * 6.0, -3), 0.3)
 
 func _pick_enemy() -> String:
 	var pool: Array = stage_data["pool"]
@@ -647,6 +744,8 @@ func _stage_cleared() -> void:
 			_kill(u)
 	var stars: int = LaneStages.stars_for(float(castle_hp) / CASTLE_HP)
 	_sfx("b_cannon", -4.0)
+	for i in range(4):
+		get_tree().create_timer(i * 0.12).timeout.connect(func(): _boom(Vector2(FORT_X - 10 + rng.randf_range(-20, 20), GROUND - rng.randf_range(20, 100))))
 	_banner("STAGE %d 클리어!" % stage, LaneStages.star_text(stars))
 	_refresh()
 	get_tree().create_timer(1.3).timeout.connect(func(): cleared.emit(stage, stars))
@@ -656,12 +755,12 @@ func _stage_cleared() -> void:
 # =========================================================
 
 func _spawn(kind: String, side: int, k: float) -> Dictionary:
-	var st: Dictionary = ALLIES[kind] if side == 1 else ENEMIES[kind]
+	var st: Dictionary = LaneUnits.stats(kind, int(levels.get(kind, 1))) if side == 1 else ENEMIES[kind]
 	var node := Sprite2D.new()
 	node.texture = tex[kind]
-	node.scale = Vector2.ONE * PX
+	node.scale = Vector2.ONE * UNIT_PX
 	node.offset = Vector2(0, -node.texture.get_height() * 0.5)
-	var y: float = GROUND + [0.0, 8.0, 4.0, 12.0][units.size() % 4]
+	var y: float = GROUND + [0.0, 6.0, 3.0, 9.0][units.size() % 4]
 	if st.get("flying", false):
 		y = GROUND - FLY_H
 	node.position = Vector2(ALLY_START if side == 1 else ENEMY_START, y)
@@ -669,17 +768,27 @@ func _spawn(kind: String, side: int, k: float) -> Dictionary:
 	var hp: float = st["hp"] * k
 	var u := {"node": node, "side": side, "kind": kind, "hp": hp, "max_hp": hp, "atk": st["atk"] * k,
 		"range": st["range"], "shot": st.get("shot", ""), "splash": st.get("splash", 0.0),
-		"speed": st["speed"], "every": st["every"], "cd": st["every"] * 0.5, "phase": rng.randf() * TAU,
+		"speed": st["speed"] * SPEED_K, "every": st["every"], "cd": st["every"] * 0.5, "phase": rng.randf() * TAU,
 		"kb": st["kb"], "kb_mark": hp * (st["kb"] - 1) / st["kb"], "stun": 0.0,
-		"stand": maxf(18.0, st["range"] * rng.randf_range(0.5, 0.9)),
-		"flying": st.get("flying", false), "armor": st.get("armor", false)}
+		"stand": maxf(16.0, st["range"] * rng.randf_range(0.5, 0.9)),
+		"flying": st.get("flying", false), "armor": st.get("armor", false), "guard": st.get("guard", 0.0),
+		"heal": st.get("heal", 0.0), "heal_r": st.get("heal_r", 0.0), "heal_t": HEAL_EVERY,
+		"base_scale": Vector2.ONE * UNIT_PX}
+	for key in ["air", "armor_break", "siege"]:
+		if st.has(key):
+			u[key] = st[key]
 	u["bar"] = _unit_bar(node)
 	for mark in ["armor", "flying"]:
 		if u[mark]:
 			var icon := Sprite2D.new()
 			icon.texture = _icons[mark]
-			icon.position = Vector2(0, -node.texture.get_height() - 7)
+			icon.position = Vector2(0, -node.texture.get_height() - 6)
 			node.add_child(icon)
+	if side == -1 and u["heal"] > 0.0:
+		var icon := Sprite2D.new()
+		icon.texture = _icons["heal"]
+		icon.position = Vector2(0, -node.texture.get_height() - 6)
+		node.add_child(icon)
 	units.append(u)
 	node.modulate.a = 0.0
 	node.create_tween().tween_property(node, "modulate:a", 1.0, 0.2)
@@ -688,82 +797,130 @@ func _spawn(kind: String, side: int, k: float) -> Dictionary:
 func _count(side: int) -> int:
 	return units.filter(func(u): return u["side"] == side).size()
 
-# Fallen units fly back with a spin and burst into a few pixels
+# Fallen units fly back with a spin, a dust puff and a burst of pixels
 func _kill(u: Dictionary) -> void:
 	units.erase(u)
 	var node: Sprite2D = u["node"]
 	var side: int = u["side"]
 	_sfx("b_death", -10.0)
+	_fx_once("dust", _mid(u), 0.4, 1.4)
 	var tw := node.create_tween().set_parallel(true)
-	tw.tween_property(node, "position", node.position + Vector2(-side * 46.0, -34.0), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(node, "rotation", -side * 1.6, 0.4)
+	tw.tween_property(node, "position", node.position + Vector2(-side * 40.0, -30.0), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(node, "rotation", -side * 1.8, 0.4)
 	tw.tween_property(node, "modulate:a", 0.0, 0.4).set_delay(0.1)
 	tw.chain().tween_callback(node.queue_free)
-	var c: Vector2 = _head(u) + Vector2(0, 16)
+	var c: Vector2 = _mid(u)
 	for i in range(6):
 		var bit := ColorRect.new()
 		bit.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bit.size = Vector2(4, 4)
+		bit.size = Vector2(3, 3)
 		bit.color = Color(1.0, 0.95, 0.8) if i % 2 == 0 else (Color(0.6, 0.85, 1.0) if side == 1 else Color(1.0, 0.55, 0.4))
 		bit.position = c
 		bit.z_index = 7
 		_view.add_child(bit)
 		var a: float = TAU * i / 6.0 + rng.randf() * 0.5
 		var bt := bit.create_tween().set_parallel(true)
-		bt.tween_property(bit, "position", c + Vector2(cos(a), sin(a)) * rng.randf_range(16, 30), 0.35).set_ease(Tween.EASE_OUT)
+		bt.tween_property(bit, "position", c + Vector2(cos(a), sin(a)) * rng.randf_range(14, 26), 0.35).set_ease(Tween.EASE_OUT)
 		bt.tween_property(bit, "modulate:a", 0.0, 0.35)
 		bt.chain().tween_callback(bit.queue_free)
 
 func _head(u: Dictionary) -> Vector2:
 	return u["node"].position + Vector2(0, -_height(u["node"]) - 6)
 
+func _mid(u: Dictionary) -> Vector2:
+	return u["node"].position + Vector2(0, -_height(u["node"]) * 0.5)
+
 func _height(node: Sprite2D) -> float:
 	return node.texture.get_height() * node.scale.y
 
 func _flash(node: CanvasItem) -> void:
-	node.modulate = Color(2.0, 1.6, 1.6, node.modulate.a)
-	node.create_tween().tween_property(node, "modulate", Color(1, 1, 1, node.modulate.a), 0.2)
+	node.modulate = Color(2.6, 2.6, 2.6, node.modulate.a)
+	node.create_tween().tween_property(node, "modulate", Color(1, 1, 1, node.modulate.a), 0.16)
 
-# Melee units lunge; archers and mages send a small pixel shot
-func _attack_fx(u: Dictionary, target) -> void:
+# Hit squash: the sprite flattens for a moment and springs back
+func _squash(u: Dictionary) -> void:
 	var node: Sprite2D = u["node"]
-	var to: Vector2
-	if target is String:
-		to = Vector2(FORT_X if target == "fortress" else CASTLE_X, GROUND - 80)
-	else:
-		to = target["node"].position + Vector2(0, -_height(target["node"]) * 0.5)
-	if u["shot"] == "":
-		# Lunge with the sprite offset so it never fights the walking position
-		var tw := node.create_tween()
-		tw.tween_property(node, "offset:x", u["side"] * 5.0, 0.08)
-		tw.tween_property(node, "offset:x", 0.0, 0.12)
+	var s: Vector2 = u["base_scale"]
+	node.scale = Vector2(s.x * 1.2, s.y * 0.82)
+	node.create_tween().tween_property(node, "scale", s, 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+# Melee swing: lunge with the sprite offset so it never fights the walking position
+func _lunge(u: Dictionary) -> void:
+	var node: Sprite2D = u["node"]
+	var tw := node.create_tween()
+	tw.tween_property(node, "offset:x", u["side"] * 5.0, 0.06)
+	tw.tween_property(node, "offset:x", 0.0, 0.12)
+
+func _slash(target: Dictionary, side: int) -> void:
+	if not tex.has("slash"):
 		return
-	_sfx("b_arrow" if u["shot"] == "arrow" else "b_magic", -12.0)
-	var shot := ColorRect.new()
-	shot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if u["shot"] == "arrow":
-		shot.size = Vector2(14, 3)
-		shot.color = Color(0.95, 0.9, 0.75)
-	else:
-		shot.size = Vector2(8, 8)
-		shot.color = Color(1.0, 0.55, 0.2)
-	var from: Vector2 = node.position + Vector2(u["side"] * 12.0, -_height(node) * 0.6)
-	shot.position = from
-	shot.rotation = (to - from).angle() if u["shot"] == "arrow" else 0.0
-	_view.add_child(shot)
-	var tw := shot.create_tween()
-	tw.tween_property(shot, "position", to, 0.18)
-	tw.tween_callback(shot.queue_free)
+	var sp := _fx_once("slash", _mid(target) + Vector2(-side * 4.0, 0), 0.16)
+	sp.flip_h = side == -1
+
+func _spark(at: Vector2, big: bool) -> void:
+	_fx_once("spark", at, 0.14, 1.4 if big else 1.0)
+	if big:
+		_fx_once("ring", at, 0.25, 1.2)
+
+func _boom(at: Vector2) -> void:
+	_fx(["boom_s", "boom_l", "smoke"], at, [0.06, 0.12, 0.3])
+	_sfx("b_hit", -8.0)
+	_hitstop = maxf(_hitstop, 0.04)
+	_shake_lane(4.0, 0.15)
+
+# A short frame-by-frame effect; the last frame fades out
+func _fx(frames: Array, at: Vector2, times: Array) -> void:
+	var sp := Sprite2D.new()
+	sp.texture = tex[frames[0]]
+	sp.scale = Vector2.ONE * BASE_PX
+	sp.position = at
+	sp.z_index = 7
+	_fx_layer.add_child(sp)
+	var tw := sp.create_tween()
+	for i in range(frames.size()):
+		if i > 0:
+			var f: String = frames[i]
+			tw.tween_callback(func(): sp.texture = tex[f])
+		if i == frames.size() - 1:
+			tw.tween_property(sp, "modulate:a", 0.0, times[i])
+		else:
+			tw.tween_interval(times[i])
+	tw.tween_callback(sp.queue_free)
+
+# One sprite that pops (a little bigger, then fades), optionally drifting
+func _fx_once(name: String, at: Vector2, time: float, k: float = 1.0, drift: Vector2 = Vector2.ZERO) -> Sprite2D:
+	var sp := Sprite2D.new()
+	sp.texture = tex.get(name, tex["flash"])
+	sp.scale = Vector2.ONE * FX_PX * k * 0.7
+	sp.position = at
+	sp.z_index = 7
+	_fx_layer.add_child(sp)
+	var tw := sp.create_tween().set_parallel(true)
+	tw.tween_property(sp, "scale", Vector2.ONE * FX_PX * k, time * 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(sp, "modulate:a", 0.0, time * 0.6).set_delay(time * 0.4)
+	if drift != Vector2.ZERO:
+		tw.tween_property(sp, "position", at + drift, time)
+	tw.chain().tween_callback(sp.queue_free)
+	return sp
+
+# Shakes only the lane (the puzzle below stays still)
+func _shake_lane(strength: float, time: float) -> void:
+	var tw := _shake.create_tween()
+	var steps: int = 5
+	for i in range(steps):
+		var f: float = strength * (1.0 - float(i) / steps)
+		tw.tween_property(_shake, "position", Vector2(rng.randf_range(-f, f), rng.randf_range(-f, f) * 0.6), time / steps)
+	tw.tween_property(_shake, "position", Vector2.ZERO, time / steps)
 
 func _unit_bar(owner: Sprite2D) -> Panel:
 	var bg := Panel.new()
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.add_theme_stylebox_override("panel", UIKit.box(Color(0, 0, 0, 0.6), Color.TRANSPARENT, 2))
-	bg.size = Vector2(36, 5)
+	bg.size = Vector2(28, 4)
 	var fill := Panel.new()
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fill.position = Vector2(1, 1)
-	fill.size = Vector2(34, 3)
+	fill.size = Vector2(26, 2)
 	bg.add_child(fill)
 	_bars_layer.add_child(bg)
 	owner.tree_exiting.connect(bg.queue_free)
@@ -795,6 +952,8 @@ func _build() -> void:
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(_view)
+	_shake = Node2D.new()
+	_view.add_child(_shake)
 	var lane_tex: Texture2D = tex["lane"]
 	var k: float = ceil(maxf(720.0 / lane_tex.get_width(), LANE_H / lane_tex.get_height()))
 	var bg := TextureRect.new()
@@ -803,33 +962,35 @@ func _build() -> void:
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.size = Vector2(lane_tex.get_width(), lane_tex.get_height()) * k
-	bg.position = Vector2((720.0 - bg.size.x) * 0.5, LANE_H - bg.size.y)
+	bg.position = Vector2((720.0 - bg.size.x) * 0.5, LANE_H - bg.size.y + 4.0)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_view.add_child(bg)
+	_shake.add_child(bg)
 	for side in [1, -1]:
 		var t: Texture2D = tex["castle" if side == 1 else "fortress"]
 		var b := Sprite2D.new()
 		b.texture = t
-		b.scale = Vector2.ONE * PX
+		b.scale = Vector2.ONE * BASE_PX
 		b.centered = false
-		b.position = Vector2(6.0 if side == 1 else 720.0 - 6.0 - t.get_width() * PX, GROUND + 6.0 - t.get_height() * PX)
-		_view.add_child(b)
+		b.position = Vector2(CASTLE_LEFT if side == 1 else FORT_RIGHT - t.get_width() * BASE_PX, GROUND + 4.0 - t.get_height() * BASE_PX)
+		_shake.add_child(b)
 		if side == 1:
 			_castle_sprite = b
 		else:
 			_fort_sprite = b
-	# The cannon stands on the castle's right tower (its top is 52 art pixels below the castle top)
+	# The cannon stands on the castle's right tower (its top is 53 art pixels below the castle top)
 	_cannon_sprite = Sprite2D.new()
 	_cannon_sprite.texture = tex["cannon"]
-	_cannon_sprite.scale = Vector2.ONE * PX
+	_cannon_sprite.scale = Vector2.ONE * BASE_PX
 	_cannon_sprite.centered = false
-	_cannon_sprite.position = Vector2(_castle_sprite.position.x + 112.0 - tex["cannon"].get_width() * PX * 0.35, _castle_sprite.position.y + 106.0 - tex["cannon"].get_height() * PX)
-	_view.add_child(_cannon_sprite)
+	_cannon_sprite.position = Vector2(_castle_sprite.position.x + (56.0 - tex["cannon"].get_width() * 0.35) * BASE_PX, _castle_sprite.position.y + (53.0 - tex["cannon"].get_height()) * BASE_PX)
+	_shake.add_child(_cannon_sprite)
 	_units_layer = Node2D.new()
 	_units_layer.y_sort_enabled = true
-	_view.add_child(_units_layer)
+	_shake.add_child(_units_layer)
+	_fx_layer = Node2D.new()
+	_shake.add_child(_fx_layer)
 	_bars_layer = Node2D.new()
-	_view.add_child(_bars_layer)
+	_shake.add_child(_bars_layer)
 	_stage_label = _outlined("", 24, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	_stage_label.position = Vector2(352, 4)
 	_stage_label.size = Vector2(150, 30)
@@ -838,25 +999,25 @@ func _build() -> void:
 	_stage_name.position = Vector2(352, 32)
 	_stage_name.size = Vector2(150, 22)
 	_view.add_child(_stage_name)
-	# HP bars sit on the ground under each building (the top-right corner is Toss's button area)
-	var cb := _bar(_view, Vector2(CASTLE_X - BASE_BAR_W * 0.5, LANE_H - 26), Vector2(BASE_BAR_W, 20))
+	# HP bars on the ground in front of each building (the top-right corner is Toss's button area)
+	var cb := _bar(_view, Vector2(4, LANE_H - 24), Vector2(BASE_BAR_W, 18))
 	_castle_fill = cb.get_child(0)
-	_castle_label = _outlined("", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_castle_label = _outlined("", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	_castle_label.size = cb.size
 	_castle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	cb.add_child(_castle_label)
-	var fb := _bar(_view, Vector2(FORT_X - BASE_BAR_W * 0.5, LANE_H - 26), Vector2(BASE_BAR_W, 20))
+	var fb := _bar(_view, Vector2(720 - 4 - BASE_BAR_W, LANE_H - 24), Vector2(BASE_BAR_W, 18))
 	_fort_fill = fb.get_child(0)
-	_fort_label = _outlined("", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_fort_label = _outlined("", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	_fort_label.size = fb.size
 	_fort_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	fb.add_child(_fort_label)
-	# Top-left of the lane: home / settings / sound on a dark pill, then the charge/hold toggle
+	# Top-left of the lane: home / settings / sound on a dark pill, then charge/hold and auto
 	var pill := Panel.new()
-	pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pill.add_theme_stylebox_override("panel", UIKit.box(Color(0.04, 0.05, 0.1, 0.55), Color.TRANSPARENT, 22))
 	pill.position = Vector2(8, 8)
 	pill.size = Vector2(140, 44)
+	pill.mouse_filter = Control.MOUSE_FILTER_PASS
 	_view.add_child(pill)
 	var i_menu := 0
 	for key in ["home", "settings", "sound"]:
@@ -870,7 +1031,6 @@ func _build() -> void:
 		pill.add_child(mb)
 		_menu[key] = mb
 		i_menu += 1
-	pill.mouse_filter = Control.MOUSE_FILTER_PASS
 	_march_btn = Button.new()
 	_march_btn.position = Vector2(156, 8)
 	_march_btn.size = Vector2(90, 44)
@@ -883,7 +1043,7 @@ func _build() -> void:
 	_auto_btn.focus_mode = Control.FOCUS_NONE
 	_auto_btn.pressed.connect(toggle_auto)
 	_view.add_child(_auto_btn)
-	# Summon bar right under the lane: gold and income on the left, soldiers, then the cannon
+	# Summon bar right under the lane: gold and income on the left, the deck, then the cannon
 	var bar := Panel.new()
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.position = Vector2(0, LANE_H)
@@ -916,18 +1076,16 @@ func _build() -> void:
 	UIKit.style_button(_income_btn, "secondary", 16, 12)
 	_income_btn.pressed.connect(upgrade_wallet)
 	bar.add_child(_income_btn)
-	for i in range(ALLY_ORDER.size()):
-		var kind: String = ALLY_ORDER[i]
-		var st: Dictionary = ALLIES[kind]
+	for i in range(LaneUnits.DECK_SIZE):
 		var btn := Button.new()
 		btn.position = Vector2(180 + i * 106, 10)
 		btn.size = Vector2(100, 80)
 		btn.focus_mode = Control.FOCUS_NONE
 		UIKit.style_button(btn, "primary", 16, 14)
-		btn.pressed.connect(func(): summon(kind))
+		var slot := i
+		btn.pressed.connect(func(): summon(deck[slot] if slot < deck.size() else ""))
 		bar.add_child(btn)
 		var icon := TextureRect.new()
-		icon.texture = tex[kind]
 		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -935,42 +1093,25 @@ func _build() -> void:
 		icon.size = Vector2(44, 58)
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(icon)
-		var n := _outlined(st["name"], 15, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-		n.position = Vector2(42, 10)
+		var n := _outlined("", 15, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+		n.position = Vector2(42, 6)
 		n.size = Vector2(58, 22)
 		btn.add_child(n)
-		var c := _outlined(str(st["cost"]), 21, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-		c.position = Vector2(42, 36)
+		var c := _outlined("", 21, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		c.position = Vector2(42, 30)
 		c.size = Vector2(58, 28)
 		btn.add_child(c)
+		var lv := _outlined("", 13, Color(0.75, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+		lv.position = Vector2(42, 56)
+		lv.size = Vector2(58, 18)
+		btn.add_child(lv)
 		# Cooldown veil: covers the button and shrinks as the cooldown runs out
 		var veil := ColorRect.new()
 		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		veil.color = Color(0.02, 0.03, 0.08, 0.6)
-		veil.position = Vector2.ZERO
 		veil.size = Vector2(100, 0)
 		btn.add_child(veil)
-		_buttons[kind] = btn
-		_cool_veils[kind] = veil
-		# Locked until its stage (LaneStages.UNLOCK)
-		var lock := Panel.new()
-		lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		lock.add_theme_stylebox_override("panel", UIKit.box(Color(0.03, 0.04, 0.08, 0.86), Color.TRANSPARENT, 14))
-		lock.size = btn.size
-		btn.add_child(lock)
-		var li := TextureRect.new()
-		li.texture = preload("res://assets/sprites/lock_icon.png")
-		li.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		li.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		li.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		li.position = Vector2(34, 10)
-		li.size = Vector2(32, 32)
-		lock.add_child(li)
-		var lt := _outlined("%d스테이지" % LaneStages.UNLOCK[kind], 15, UIKit.MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-		lt.position = Vector2(0, 46)
-		lt.size = Vector2(100, 24)
-		lock.add_child(lt)
-		_locks[kind] = lock
+		_slots.append({"btn": btn, "icon": icon, "name": n, "cost": c, "lv": lv, "veil": veil})
 	_cannon_btn = Button.new()
 	_cannon_btn.position = Vector2(606, 10)
 	_cannon_btn.size = Vector2(106, 80)
@@ -996,6 +1137,25 @@ func _build() -> void:
 	_cannon_label.position = Vector2(0, 46)
 	_cannon_label.size = Vector2(106, 26)
 	_cannon_btn.add_child(_cannon_label)
+
+# Fills the 4 summon buttons from the deck
+func _setup_slots() -> void:
+	for i in range(_slots.size()):
+		var s: Dictionary = _slots[i]
+		var kind: String = deck[i] if i < deck.size() else ""
+		if kind == "":
+			s["icon"].texture = null
+			s["name"].text = ""
+			s["cost"].text = ""
+			s["lv"].text = ""
+			UIKit.style_button(s["btn"], "secondary", 16, 14)
+			continue
+		var st: Dictionary = ALLIES[kind]
+		UIKit.style_button(s["btn"], "primary", 16, 14)
+		s["icon"].texture = tex[kind]
+		s["name"].text = st["name"]
+		s["cost"].text = str(st["cost"])
+		s["lv"].text = "Lv %d" % int(levels.get(kind, 1))
 
 func set_menu_icons(home: Texture2D, settings: Texture2D, sound: Texture2D) -> void:
 	_menu["home"].texture_normal = home
@@ -1045,17 +1205,16 @@ func _refresh() -> void:
 	if auto_summon: # green while on, so it reads as a mode rather than a button
 		UIKit.style_raised(_auto_btn, Color(0.16, 0.6, 0.34), Color(0.5, 0.92, 0.62), Color(0.04, 0.24, 0.12), 22)
 	_auto_btn.text = "자동 ON" if auto_summon else "자동"
-	for kind in _buttons:
-		var open: bool = LaneStages.unlocked(kind, stage)
-		_locks[kind].visible = not open
-		var ok: bool = open and gold >= ALLIES[kind]["cost"] and _count(1) < MAX_ALLIES and not finished
-		_buttons[kind].modulate = Color.WHITE if ok or not open else Color(0.5, 0.5, 0.56)
+	for i in range(_slots.size()):
+		var kind: String = deck[i] if i < deck.size() else ""
+		var ok: bool = kind != "" and gold >= ALLIES[kind]["cost"] and _count(1) < MAX_ALLIES and not finished
+		_slots[i]["btn"].modulate = Color.WHITE if ok else Color(0.5, 0.5, 0.56)
 	_cannon_label.text = "발사!" if cannon >= 100.0 else "%d%%" % int(cannon)
 	for u in units:
 		var bg: Panel = u["bar"]
 		bg.visible = u["hp"] < u["max_hp"]
 		var fill: Panel = bg.get_child(0)
-		fill.size.x = 34.0 * clampf(u["hp"] / u["max_hp"], 0.0, 1.0)
+		fill.size.x = 26.0 * clampf(u["hp"] / u["max_hp"], 0.0, 1.0)
 		fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.35, 0.86, 0.43) if u["side"] == 1 else Color(1.0, 0.4, 0.35), Color.TRANSPARENT, 1))
 
 func _process(delta: float) -> void:
@@ -1066,10 +1225,11 @@ func _process(delta: float) -> void:
 			_tick(delta)
 	for u in units:
 		var node: Sprite2D = u["node"]
-		u["bar"].position = node.position + Vector2(-18, -_height(node) - 8)
-	for kind in _cool_veils:
-		var left: float = cooldown.get(kind, 0.0)
-		_cool_veils[kind].size.y = 80.0 * left / ALLIES[kind]["cool"]
+		u["bar"].position = node.position + Vector2(-14, -_height(node) - 7)
+	for i in range(_slots.size()):
+		var kind: String = deck[i] if i < deck.size() else ""
+		var left: float = cooldown.get(kind, 0.0) if kind != "" else 0.0
+		_slots[i]["veil"].size.y = 80.0 * left / ALLIES[kind]["cool"] if kind != "" else 0.0
 	if _cannon_fill != null:
 		_cannon_fill.size = Vector2(106, 80.0 * cannon / 100.0)
 		_cannon_fill.position = Vector2(0, 80.0 - _cannon_fill.size.y)
@@ -1082,16 +1242,20 @@ func _process(delta: float) -> void:
 	else:
 		_gold_label.modulate.a = 1.0
 
-func _number(pos: Vector2, dmg: float, col: Color) -> void:
-	var big: bool = dmg >= 20.0
-	var l := _outlined(str(roundi(dmg)), 22 if big else 17, col, HORIZONTAL_ALIGNMENT_CENTER)
-	l.size = Vector2(60, 26)
-	l.position = pos - l.size * 0.5
+# Damage (or heal, with "+") numbers pop up big and shrink as they rise
+func _number(pos: Vector2, value: float, col: Color, prefix: String = "") -> void:
+	var big: bool = value >= 20.0
+	var l := _outlined(prefix + str(roundi(value)), 20 if big else 15, col, HORIZONTAL_ALIGNMENT_CENTER)
+	l.size = Vector2(60, 24)
+	l.position = pos - l.size * 0.5 + Vector2(rng.randf_range(-6, 6), 0)
+	l.pivot_offset = l.size * 0.5
+	l.scale = Vector2.ONE * (1.6 if big else 1.3)
 	l.z_index = 8
 	_view.add_child(l)
 	var tw := l.create_tween()
-	tw.tween_property(l, "position:y", l.position.y - 22, 0.5)
-	tw.parallel().tween_property(l, "modulate:a", 0.0, 0.3).set_delay(0.25)
+	tw.tween_property(l, "scale", Vector2.ONE, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(l, "position:y", l.position.y - 24, 0.55)
+	tw.parallel().tween_property(l, "modulate:a", 0.0, 0.3).set_delay(0.28)
 	tw.tween_callback(l.queue_free)
 
 func _banner(title: String, sub: String, col: Color = UIKit.TEXT) -> void:

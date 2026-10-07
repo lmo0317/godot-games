@@ -45,6 +45,8 @@ var stage: Dictionary = {}
 var stage_progress: int = 0
 var adventure_select: AdventureSelect
 var lane_select: LaneStageSelect
+var lane_gacha: LaneGacha
+var lane_deck: LaneDeck
 var battle_stage: int = 1             # 블록 기사단 stage being played
 # Classic game-over texts, restored after the modal is reused for stage results
 var go_default_texts: Dictionary = {}
@@ -234,6 +236,17 @@ func _ready() -> void:
 	$UI.move_child(lane_select, settings_modal.get_index())
 	lane_select.stage_selected.connect(_start_lane_stage)
 	lane_select.closed.connect(_open_home_screen)
+	# The gacha and deck screens open over the base and go back to it
+	lane_gacha = LaneGacha.new()
+	$UI.add_child(lane_gacha)
+	$UI.move_child(lane_gacha, settings_modal.get_index())
+	lane_deck = LaneDeck.new()
+	$UI.add_child(lane_deck)
+	$UI.move_child(lane_deck, settings_modal.get_index())
+	lane_select.gacha_pressed.connect(func(): lane_gacha.open())
+	lane_select.deck_pressed.connect(func(): lane_deck.open())
+	lane_gacha.closed.connect(func(): lane_select.refresh())
+	lane_deck.closed.connect(func(): lane_select.refresh())
 	
 	# Game Over connections
 	go_btn_retry.pressed.connect(start_new_game.bind(true))
@@ -287,6 +300,10 @@ func _on_back_pressed() -> void:
 		leaderboard_modal.close()
 	elif adventure_select.visible:
 		adventure_select.close()
+	elif lane_gacha.visible:
+		lane_gacha.close()
+	elif lane_deck.visible:
+		lane_deck.close()
 	elif lane_select.visible:
 		lane_select.close()
 	elif start_screen.visible and not profile_setup_modal.visible:
@@ -535,7 +552,7 @@ func _spawn_new_tray() -> void:
 			_show_tutorial_hint_later(0.45)
 
 func _input(event: InputEvent) -> void:
-	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible or lane_select.visible:
+	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible or lane_select.visible or lane_gacha.visible or lane_deck.visible:
 		return
 		
 	if event is InputEventMouseButton:
@@ -1114,6 +1131,8 @@ func _open_home_screen() -> void:
 		profile_setup_modal.close()
 	adventure_select.visible = false
 	lane_select.visible = false
+	lane_gacha.visible = false
+	lane_deck.visible = false
 
 func _on_start_play_pressed() -> void:
 	start_screen.visible = false
@@ -1389,7 +1408,12 @@ func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	is_game_over = true
 	battle.stop()
 	last_game_over_msec = Time.get_ticks_msec()
+	# Rewards (docs/LANE_UNITS.md): gems for the clear and new stars, a soldier on some first clears
+	var stars_before: int = int(LaneStages.load_progress()["stars"].get(str(battle_stage), 0))
 	var improved: bool = won and LaneStages.record_clear(battle_stage, stars)
+	var reward: Dictionary = {}
+	if won:
+		reward = LaneUnits.reward_clear(battle_stage, stars_before == 0, maxi(0, stars - stars_before), LaneStages.get_stage(battle_stage).get("boss", "") != "")
 	Achievements.add_stat("games_played", 1)
 	if won:
 		Achievements.max_stat("battle_best_stage", battle_stage)
@@ -1416,12 +1440,14 @@ func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	go_title.text = ("STAGE %d 클리어!" if won else "STAGE %d 실패") % battle_stage
 	$UI/GameOverModal/Card/ScoreSub.text = name
 	go_final_score.text = LaneStages.star_text(stars) if won else "☆☆☆"
-	go_best_score.text = "모은 별 %d / %d" % [LaneStages.total_stars(), LaneStages.count() * 3]
+	go_best_score.text = "남은 성 체력 %d%%  ·  모은 별 %d / %d" % [roundi(100.0 * battle.castle_hp / LaneBattle.CASTLE_HP), LaneStages.total_stars(), LaneStages.count() * 3] if won else "모은 별 %d / %d" % [LaneStages.total_stars(), LaneStages.count() * 3]
 	go_new_badge.text = "★ 새 기록 ★"
 	go_new_badge.visible = improved
 	match reason:
 		"clear":
-			go_rank_status.text = "적 요새를 무너뜨렸어요! 남은 성 체력 %d%%" % roundi(100.0 * battle.castle_hp / LaneBattle.CASTLE_HP)
+			go_rank_status.text = "보석 +%d" % reward["gems"]
+			if reward["unit"] != "":
+				go_rank_status.text += "   ·   새 병사: %s!" % LaneUnits.UNITS[reward["unit"]]["name"]
 		"stuck":
 			go_rank_status.text = "놓을 수 있는 블록이 없어요."
 		_:

@@ -3,8 +3,9 @@ extends Node
 # gold over time and from clears, the wallet limit and income upgrade, summon cooldowns, knockback,
 # the cannon, enemy traits (flying, armor), charge/hold, the big wave and the boss at half the
 # fortress, pausing for settings, auto mode, and the stage flow (docs/LANE_STAGES.md): the stage
-# select, locked soldiers, a clear with stars that opens the next stage, a failed stage, and
-# classic's layout coming back.
+# select, the deck (only deck soldiers can be summoned), soldier roles (tank, anti-air, siege,
+# healer), a clear with stars, gems and a reward soldier that opens the next stage, a failed stage,
+# the gacha and deck screens, and classic's layout coming back.
 # Run: Godot_console.exe --headless --path . res://tests/test_lane.tscn
 
 const MainScene: PackedScene = preload("res://scenes/main.tscn")
@@ -13,6 +14,7 @@ const USER_FILES: Array[String] = [
 	"user://block_blast_save.cfg",
 	"user://achievements.json",
 	"user://lane_progress.json",
+	"user://lane_army.json",
 ]
 
 var backups: Dictionary = {}
@@ -35,8 +37,9 @@ func _run() -> void:
 	SettingsManager.tutorial_state = "done"
 	var b: LaneBattle = main.battle
 
-	if FileAccess.file_exists(LaneStages.PROGRESS_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(LaneStages.PROGRESS_PATH))
+	for path in [LaneStages.PROGRESS_PATH, LaneUnits.ARMY_PATH]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	main._start_battle()
 	await get_tree().process_frame
 	_expect(main.lane_select.visible, "the home card opens the stage select")
@@ -90,8 +93,8 @@ func _run() -> void:
 	b._gold_acc = 0.0
 	_expect(b.summon("knight") and b.gold == 150 and b._count(1) == 1, "summon a knight for 50")
 	_expect(not b.summon("knight") and b.gold == 150, "the knight is on cooldown")
-	_expect(not b.summon("archer") and b.gold == 150, "the archer is locked on stage 1")
-	_expect(b._locks["archer"].visible and not b._locks["knight"].visible, "locked buttons show a lock")
+	_expect(b.deck == ["knight", "", "", ""], "a new army's deck is just the knight (%s)" % [b.deck])
+	_expect(not b.summon("archer") and b.gold == 150, "a soldier outside the deck can't be summoned")
 	b.gold = 10
 	b.cooldown["knight"] = 0.0
 	_expect(not b.summon("knight"), "no summon without gold")
@@ -167,14 +170,35 @@ func _run() -> void:
 	await get_tree().create_timer(1.6).timeout
 	_expect(b._pending.is_empty(), "the wave has marched out")
 
-	# The boss comes when the fortress drops to half (borrow stage 3's slime king)
+	# The boss comes when the fortress drops to half (borrow stage 6's slime king)
 	_expect(b.boss_out, "stage 1 has no boss")
-	b.stage_data = LaneStages.get_stage(3)
+	b.stage_data = LaneStages.get_stage(6)
 	b.boss_out = false
 	b.fortress_hp = b.fortress_max * 0.49
 	await get_tree().create_timer(0.3).timeout
 	_expect(b.boss_out and b.units.any(func(u): return u.get("boss", false) and u["kind"] == "slime"), "the slime king appears at half the fortress")
 	b.stage_data = LaneStages.get_stage(1)
+
+	# Roles: the tank takes less, the crossbow hits flyers hard, the cannoneer hits the fortress hard,
+	# the cleric heals
+	b.levels = {"shield": 1, "crossbow": 1, "cannoneer": 1, "cleric": 1}
+	var tank := b._spawn("shield", 1, 1.0)
+	var gob2 := b._spawn("goblin", -1, 1.0)
+	_expect(is_equal_approx(b._damage(gob2, tank), gob2["atk"] * 0.7), "the shield bearer takes 30% less")
+	var xb := b._spawn("crossbow", 1, 1.0)
+	var bat4 := b._spawn("bat", -1, 1.0)
+	_expect(is_equal_approx(b._damage(xb, bat4), xb["atk"] * 2.5), "the crossbow hits flyers 2.5x")
+	var cn := b._spawn("cannoneer", 1, 1.0)
+	_expect(is_equal_approx(b._damage(cn, "fortress"), cn["atk"] * 4.0), "the cannoneer hits the fortress 4x")
+	var cl := b._spawn("cleric", 1, 1.0)
+	tank["hp"] = tank["max_hp"] - 30.0
+	tank["node"].position.x = cl["node"].position.x + 20.0
+	b._heal_around(cl)
+	_expect(tank["hp"] > tank["max_hp"] - 30.0, "the cleric heals")
+	var lv5 := LaneUnits.stats("knight", 5)
+	_expect(is_equal_approx(lv5["hp"], LaneUnits.UNITS["knight"]["hp"] * 1.4), "level 5 has +40% HP")
+	for u in [tank, gob2, xb, bat4, cn, cl]:
+		b._kill(u)
 
 	# Auto mode summons by itself and answers the lane
 	for u in b.units.duplicate():
@@ -185,7 +209,8 @@ func _run() -> void:
 	for k in LaneBattle.ALLY_ORDER:
 		b.cooldown[k] = 0.0
 	_expect(b.auto_pick() == "knight", "auto starts with a knight")
-	b.stage = 7 # every soldier open, to check the counters
+	b.deck = ["knight", "archer", "spearman", "crossbow"] # to check the counters
+	b._rotation = b._auto_rotation()
 	b.gold = 400
 	b.toggle_auto()
 	_expect(b.auto_summon, "auto mode on")
@@ -193,16 +218,20 @@ func _run() -> void:
 	_expect(b._count(1) >= 1, "auto mode summons without a tap (%d)" % b._count(1))
 	var bat2 := b._spawn("bat", -1, 1.0)
 	bat2["node"].position.x = 500.0
-	_expect(b.auto_pick() == "archer", "auto answers a bat with an archer (%s)" % b.auto_pick())
+	_expect(b.auto_pick() == "crossbow", "auto answers a bat with the crossbow (%s)" % b.auto_pick())
 	b._kill(bat2)
 	var arm2 := b._spawn("armored", -1, 1.0)
 	arm2["node"].position.x = 500.0
+	b.gold = 400
+	for k in LaneBattle.ALLY_ORDER:
+		b.cooldown[k] = 0.0
 	_expect(b.auto_pick() == "spearman", "auto answers armor with a spear (%s)" % b.auto_pick())
 	b._kill(arm2)
-	b.stage = 1
+	b.deck = ["knight", "", "", ""]
+	b._rotation = b._auto_rotation()
 	var bat3 := b._spawn("bat", -1, 1.0)
 	bat3["node"].position.x = 500.0
-	_expect(b.auto_pick() != "archer", "auto never picks a locked soldier")
+	_expect(b.auto_pick() in ["knight", ""], "auto only picks from the deck (%s)" % b.auto_pick())
 	b._kill(bat3)
 	b.toggle_auto()
 
@@ -223,10 +252,13 @@ func _run() -> void:
 	_expect(main.go_title.text == "STAGE 1 클리어!", "a broken fortress clears the stage (%s)" % main.go_title.text)
 	_expect(LaneStages.load_progress()["unlocked"] == 2 and LaneStages.total_stars() >= 1, "the clear is saved and opens stage 2")
 	_expect(main.go_btn_view_rank.visible and main.go_btn_view_rank.text == "다음 스테이지", "next stage button")
+	var army0: Dictionary = LaneUnits.load_army()
+	_expect(army0["owned"].has("archer") and army0["deck"].has("archer"), "stage 1 gives the archer, straight into the deck")
+	_expect(army0["gems"] >= LaneUnits.START_GEMS + 100, "the first clear pays gems (%d)" % army0["gems"])
 	main._on_go_primary_pressed()
 	await _wait_until(func(): return b.stage == 2 and not b.finished and not main._is_tray_empty(), 6.0)
 	_expect(b.stage == 2 and b.fortress_max == float(LaneStages.get_stage(2)["fortress"]) and b.castle_hp == LaneBattle.CASTLE_HP and b.gold >= LaneStages.start_gold(2), "stage 2 starts fresh")
-	_expect(not b._locks["archer"].visible, "the archer opens on stage 2")
+	_expect(b.deck.has("archer") and b._slots[1]["name"].text == "궁수", "the archer is in the battle deck")
 
 	# The castle falls: the run ends with the result window
 	for u in b.units.duplicate():
@@ -250,6 +282,39 @@ func _run() -> void:
 	main.lane_select.close()
 	await get_tree().process_frame
 	_expect(main.start_screen.visible, "closing the stage select goes home")
+
+	# Gacha and deck screens (outside battles)
+	var army := LaneUnits.load_army()
+	army["gems"] = 1000
+	LaneUnits.save_army(army)
+	var rng2 := RandomNumberGenerator.new()
+	rng2.seed = 7
+	var res: Array = LaneUnits.pull(10, rng2)
+	_expect(res.size() == 10 and LaneUnits.load_army()["gems"] == 100 + res.reduce(func(acc, r): return acc + r["refund"], 0), "ten pulls cost 900")
+	_expect(res.any(func(r): return LaneUnits.UNITS[r["kind"]]["rarity"] >= 2), "ten pulls give a rare or better")
+	_expect(LaneUnits.pull(10, rng2).is_empty(), "no pull without gems")
+	main.lane_select.open()
+	main.lane_select.gacha_pressed.emit()
+	await get_tree().process_frame
+	_expect(main.lane_gacha.visible, "the base opens the gacha")
+	main.lane_gacha.close()
+	main.lane_select.deck_pressed.emit()
+	await get_tree().process_frame
+	_expect(main.lane_deck.visible, "the base opens the deck screen")
+	var spare: String = ""
+	for k in LaneUnits.load_army()["owned"]:
+		if not LaneUnits.deck().has(k):
+			spare = k
+	if spare != "":
+		LaneUnits.set_deck_slot(3, spare)
+		_expect(LaneUnits.deck()[3] == spare, "put %s in the deck" % spare)
+	LaneUnits.set_deck_slot(0, "")
+	LaneUnits.set_deck_slot(1, "")
+	LaneUnits.set_deck_slot(2, "")
+	LaneUnits.set_deck_slot(3, "")
+	_expect(LaneUnits.deck().any(func(k): return k != ""), "the deck never goes empty")
+	main.lane_deck.close()
+	main.lane_select.visible = false
 
 	# Classic gets the normal layout back
 	main.game_over_panel.visible = false

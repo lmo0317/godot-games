@@ -7,6 +7,9 @@ Raw files (prompts in docs/ART_GUIDE.md, "블록 기사단 픽셀 아트"):
   lane.png   wide side-view background
   foes.png   (optional) two more monsters drawn with sheet.png as the style reference:
              bat (flying), armored skeleton
+  allies2.png (optional) 8 more soldiers, same reference (shield, crossbow, cleric, cannoneer kept)
+  foes2.png  (optional) wolf, goblin archer, dark priest, golem, demon lord
+  fx2.png    (optional) hit spark, slash, arrow, bolt, fireball, holy orb, heal plus, dust, (coin), ring
   fx.png     (optional) castle cannon pieces, same reference: cannon, cannonball, muzzle flash,
              small explosion, big explosion, smoke
 
@@ -28,6 +31,11 @@ UNITS = ["knight", "archer", "mage", "spearman", "slime", "goblin", "skeleton", 
 BASES = ["castle", "fortress"]
 FOES = ["bat", "armored"]
 FX = ["cannon", "cannonball", "flash", "boom_s", "boom_l", "smoke"]
+# allies2.png has 8 figures; only the 4 used by the game are kept. Its art-pixel size is 6 screen
+# pixels (the measure finds 5, which would draw them 1.2x too big)
+ALLIES2 = ["shield", "crossbow", "cleric", None, None, "cannoneer", None, None]
+FOES2 = ["wolf", "gob_archer", "priest", "golem", "demon"]
+FX2 = ["spark", "slash", "arrow", "bolt", "fireball", "holy", "heal", "dust", None, "ring"]
 
 
 def block_size(img):
@@ -55,10 +63,10 @@ def block_size(img):
     return best
 
 
-def to_grid(img, opaque=False):
+def to_grid(img, opaque=False, block=0):
     img = img.convert("RGBA")
     box = img.getchannel("A").point(lambda a: 255 if a > 10 else 0).getbbox() if not opaque else None
-    b = block_size(img.crop(box) if box else img)
+    b = block or block_size(img.crop(box) if box else img)
     small = img.resize((max(1, round(img.width / b)), max(1, round(img.height / b))), Image.Resampling.NEAREST)
     if opaque:
         return small.convert("RGB")
@@ -67,17 +75,19 @@ def to_grid(img, opaque=False):
 
 
 def split(img):
-    """Sprites as connected opaque areas (8-neighbour), left to right; specks join the nearest."""
+    """Sprites as connected opaque areas (8-neighbour), left to right; specks join the nearest.
+    Each crop keeps only its own pixels, so a neighbour reaching into the box is left out."""
     a = img.getchannel("A")
     w, h = img.size
-    seen = [[False] * w for _ in range(h)]
+    label = [[-1] * w for _ in range(h)]
     comps = []
     for y in range(h):
         for x in range(w):
-            if seen[y][x] or a.getpixel((x, y)) == 0:
+            if label[y][x] >= 0 or a.getpixel((x, y)) == 0:
                 continue
+            cid = len(comps)
             stack, n = [(x, y)], 0
-            seen[y][x] = True
+            label[y][x] = cid
             x0, y0, x1, y1 = x, y, x, y
             while stack:
                 cx, cy = stack.pop()
@@ -86,18 +96,29 @@ def split(img):
                 for dx in (-1, 0, 1):
                     for dy in (-1, 0, 1):
                         nx, ny = cx + dx, cy + dy
-                        if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and a.getpixel((nx, ny)) > 0:
-                            seen[ny][nx] = True
+                        if 0 <= nx < w and 0 <= ny < h and label[ny][nx] < 0 and a.getpixel((nx, ny)) > 0:
+                            label[ny][nx] = cid
                             stack.append((nx, ny))
-            comps.append([x0, y0, x1 + 1, y1 + 1, n])
-    big = [c for c in comps if c[4] >= 40]
+            comps.append({"box": [x0, y0, x1 + 1, y1 + 1], "n": n, "ids": {cid}})
+    big = [c for c in comps if c["n"] >= 40]
     for c in comps:
-        if c[4] < 40 and big:
-            mid = (c[0] + c[2]) / 2
-            t = min(big, key=lambda b: abs((b[0] + b[2]) / 2 - mid))
-            t[0], t[1], t[2], t[3] = min(t[0], c[0]), min(t[1], c[1]), max(t[2], c[2]), max(t[3], c[3])
-    big.sort(key=lambda c: c[0])
-    return [img.crop((c[0], c[1], c[2], c[3])) for c in big]
+        if c["n"] < 40 and big:
+            mid = (c["box"][0] + c["box"][2]) / 2
+            t = min(big, key=lambda b: abs((b["box"][0] + b["box"][2]) / 2 - mid))
+            t["box"] = [min(t["box"][0], c["box"][0]), min(t["box"][1], c["box"][1]), max(t["box"][2], c["box"][2]), max(t["box"][3], c["box"][3])]
+            t["ids"] |= c["ids"]
+    big.sort(key=lambda c: c["box"][0])
+    out = []
+    for c in big:
+        x0, y0, x1, y1 = c["box"]
+        crop = img.crop((x0, y0, x1, y1))
+        px = crop.load()
+        for yy in range(y1 - y0):
+            for xx in range(x1 - x0):
+                if label[y0 + yy][x0 + xx] not in c["ids"]:
+                    px[xx, yy] = (0, 0, 0, 0)
+        out.append(crop)
+    return out
 
 
 def save(img, name):
@@ -125,6 +146,17 @@ def main():
             sys.exit(f"expected {len(FOES)} sprites in foes.png, found {len(foes)}")
         for name, sp in zip(FOES, foes):
             save(sp, name)
+    extra = [("allies2.png", ALLIES2, 6), ("foes2.png", FOES2, 0), ("fx2.png", FX2, 0)]
+    for file, names, block in extra:
+        path = os.path.join(src, file)
+        if not os.path.exists(path):
+            continue
+        sprites = split(to_grid(Image.open(path), block=block))
+        if len(sprites) != len(names):
+            sys.exit(f"expected {len(names)} sprites in {file}, found {len(sprites)}")
+        for name, sp in zip(names, sprites):
+            if name:
+                save(sp, name)
     fx_path = os.path.join(src, "fx.png")
     if os.path.exists(fx_path):
         fx = split(to_grid(Image.open(fx_path)))

@@ -60,7 +60,7 @@ subtle dark navy mobile puzzle-game backdrop, low contrast, soft depth, empty ce
 - **스타일**: 옆에서 본 레트로 16비트 도트, 약 2.5등신(큰 눈 꼬마 그림 아님), 1px 어두운 외곽선, 명암 2단계, 빛은 왼쪽 위.
 - **한 장 시트**: 캐릭터 8종을 한 그림에 같이 그려 픽셀 크기·색·그림체를 맞춤. 아군은 오른쪽, 몬스터는 왼쪽을 봄.
 - **도트 복원**: `python tools/import_lane_art.py <원본 폴더>` — 시트 하나에 블록 크기 하나로 줄이고 붙은 덩어리별로 자름.
-- **게임 표시**: 유닛·성 모두 **2배**, 배경 3배, nearest.
+- **게임 표시**: 처음엔 유닛·성 모두 2배였으나 2026-10-07부터 **1배**(아래 "크기"), 배경 3배, nearest.
 - 생성: `bash ~/.claude/skills/art-director/scripts/codex_image.sh <폴더> <이름> "<주제> <스타일 문구>"`
 
 스타일 문구(주제 뒤에 붙임, 배경은 첫 문장 대신 "Fully opaque"):
@@ -75,7 +75,22 @@ TRANSPARENT background (PNG with alpha). Wide canvas. Retro 16-bit PIXEL ART lik
 | `bases.png` | two tiny pixel-art buildings side by side, same scale, same baseline, clear gap: LEFT a small friendly stone castle tower with a blue flag and a wooden door facing right; RIGHT a small dark spiky enemy fortress of purple-black stone with a red banner, door facing left. Each about 48x56 art pixels. |
 | `foes.png` (2026-10-07, `-i sheet.png --`로 원래 시트를 참고 이미지로 넘김) | a SPRITE SHEET of 2 tiny game monsters standing in ONE horizontal row with a clear gap, drawn in EXACTLY the same style, pixel size, outline and palette as the attached reference sheet (each about 24x24 art pixels). 1 a purple bat flying with wings spread wide, small fangs, FACING LEFT; 2 an armored skeleton warrior wearing a dented iron helmet and holding a big iron shield and a short sword, FACING LEFT. |
 | `fx.png` (2026-10-07, 같은 참고 방식, 2장 뽑아 작은 쪽 선택) | a SPRITE SHEET of 6 separate pixel-art game pieces in ONE horizontal row, each clearly separated by wide empty gaps, same style as the reference sheet: 1 a chunky black iron castle cannon on a small wooden carriage with two wheels, barrel pointing RIGHT (about 28x18 art pixels); 2 a round black cannonball with a short orange fire trail, flying RIGHT; 3 a muzzle flash burst pointing RIGHT; 4 a small explosion puff; 5 a big explosion; 6 a fading grey smoke cloud. |
+| `allies2.png` (2026-10-07, 원래 시트 참고, 2장 중 A) | 8 tiny game hero characters in ONE row, ALL FACING RIGHT, same style as the reference sheet: shield bearer with a huge tower shield, crossbowman, cleric in white and gold robe with a glowing staff, cavalry knight on a horse, ice mage, cannoneer with a hand cannon, golden paladin, hero swordsman. 게임에는 방패병·석궁병·사제·대포병만 씀. **도트 크기를 6으로 강제**(`--block 6`, 자동 측정은 5로 나와 1.2배 크게 됨) |
+| `foes2.png` (같은 날, 2장 중 A) | 5 tiny monsters in ONE row, ALL FACING LEFT, same style: grey wolf running, goblin archer, dark cultist priest with a skull staff, big stone golem with glowing cracks, demon lord boss with horns and a flaming sword |
+| `fx2.png` (같은 날, 2장 중 B) | 10 small battle effects in ONE row, same style: hit spark, sword slash arc, arrow, crossbow bolt, fireball, holy orb, green heal plus, dust puff, gold coin(안 씀), white impact ring |
 | `lane.png` | a WIDE side-view battle lane background (about 2:1): soft blue sky with a few chunky pixel clouds, distant layered hills, a tree line, and in the lower third a flat strip of grass with a dirt path running left to right. Calm and slightly muted so small characters stand out. No characters, no buildings. |
+
+### 병사 원화 스케치 (2026-10-07)
+
+사용자 요청("각 캐릭터마다 아트 시안 원화 스케치 느낌으로")으로 병사 8종을 한 장씩 그렸습니다. 게임 도트 그림을 크게 키운 것을 `-i`로 넘겨 디자인을 맞췄습니다. 배경이 투명하거나 어둡게 나오면 다시 그림(기사·방패병 1번씩).
+
+```text
+Subject: a character CONCEPT ART SKETCH sheet for a game unit - <병사 설명>. Same character design as the attached pixel-art reference (same armor colors, gear and silhouette), redrawn as an artist's original concept drawing: loose pencil and graphite sketch lines with a light flat watercolor color wash, on plain OFF-WHITE PAPER (fully opaque light paper background, NOT transparent, NOT dark, NOT pixel art, no glow). Show the character three times: full body front view, full body side view facing right, and a small close-up of the weapon or gear. Stylized proportions about 3 heads tall (NOT big-eyed chibi), friendly fantasy look. No background scenery. No text, no letters, no labels, no watermark, no logo. Landscape canvas.
+```
+
+### 크기 (2026-10-07)
+
+"성과 유닛이 너무 커서 많아지면 재미가 없다" → 냥코 대전쟁식으로 줄임: 병사·몬스터는 **원래 도트 크기(×1, 약 45px = 띠 높이의 1/7)**, 보스만 약 2배, 성·요새도 ×1로 **반쯤 화면 밖**에 두어 싸울 공간을 330 → 580px로 넓힘. 효과도 ×1.
 
 ### (보관) 블록 디펜스 도트 (코드로 그림, 2026-10-05) — 모드 삭제로 지금은 쓰지 않음
 
@@ -119,6 +134,10 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 블록 기사단 몬스터 | `assets/art/lane/slime.png`, `goblin.png`, `skeleton.png`, `orc.png` | Codex 시트 | 위 `sheet.png` | 전장 유닛 | 완료 |
 | 박쥐·갑옷 해골 | `assets/art/lane/bat.png` (66×29), `armored.png` (47×43) | Codex 시트(원래 시트 참고) | 위 `foes.png` | 전장 유닛(날아다님·갑옷) | 완료 |
 | 성 대포·포탄·효과 | `assets/art/lane/cannon.png` (39×26), `cannonball.png`, `flash.png`, `boom_s.png`, `boom_l.png`, `smoke.png` | Codex 시트(원래 시트 참고) | 위 `fx.png` | 성 오른쪽 탑 위 대포, 대포 버튼 아이콘, 발사 연출(불꽃 → 포탄 → 연쇄 폭발 → 연기) | 완료 |
+| 새 병사 4종 | `assets/art/lane/shield.png`, `crossbow.png`, `cleric.png`, `cannoneer.png` | Codex 시트 | 위 `allies2.png` | 전장, 소환 버튼, 뽑기·덱 화면 | 완료 |
+| 새 몬스터 5종 | `assets/art/lane/wolf.png`, `gob_archer.png`, `priest.png`, `golem.png`, `demon.png` | Codex 시트 | 위 `foes2.png` | 전장(마왕은 24스테이지 보스) | 완료 |
+| 전투 효과 | `assets/art/lane/spark.png`, `slash.png`, `arrow.png`, `bolt.png`, `fireball.png`, `holy.png`, `heal.png`, `dust.png`, `ring.png` | Codex 시트 | 위 `fx2.png` | 타격 불꽃·베기·투사체·회복·먼지·충격 고리 | 완료 |
+| 병사 원화 스케치 8종 | `art/concept/units/*.jpg` | Codex (도트 그림을 참고로 연필·수채 원화) | 아래 "병사 원화" | 기획 참고용 (게임에 안 들어감) | 완료 |
 | 날개·방패 표시 | `LaneBattle._pixel_icon()` (7px) | 코드 | 문자열 도트 | 박쥐·갑옷 해골 머리 위 | 완료 |
 | 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
 | 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |
