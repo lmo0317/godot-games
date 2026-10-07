@@ -86,6 +86,8 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `lane_stages.gd` (`LaneStages`) | 블록 기사단 24스테이지 데이터(요새·배율·몬스터·웨이브·보스·장 색), 병사 해금, 별 계산, 진행 저장 (`docs/LANE_STAGES.md`) |
 | `lane_stage_select.gd` (`LaneStageSelect`) | 블록 기사단 본부(스테이지 선택): 보석·별, 장 제목 아래 6칸씩 24스테이지(번호·이름·별, 보스 빨간 테두리, 잠금), [병사 뽑기] [덱 편성] |
 | `lane_units.gd` (`LaneUnits`) | 병사 8종 데이터(역할·등급·능력치·특기), 레벨, 보석, 뽑기(확률·10회 보장), 덱 4칸, 클리어 보상, 저장 (`docs/LANE_UNITS.md`) |
+| `lane_ui.gd` (`LaneUI`) | 블록 기사단 픽셀 UI 도우미: UI 키트(`assets/art/ui/`)로 9-slice 판·버튼·아이콘·리본·별·재화 바·어두운 전장 배경 |
+| `lane_result.gd` (`LaneResult`) | 블록 기사단 결과 창: 리본 제목, 별 3개가 하나씩, 보석 보상, [본부로 돌아가기] |
 | `lane_gacha.gd` (`LaneGacha`) | 병사 뽑기 화면: 보석, 확률표, 1회·10회, 카드가 하나씩 뒤집히는 결과 |
 | `lane_deck.gd` (`LaneDeck`) | 덱 편성 화면: 덱 4칸, 병사 8칸(없는 병사는 ?), 능력치 설명, 넣기·빼기 |
 | `settings_manager.gd` | 사운드·흔들림·가이드라인·진동·스킨 설정 저장, 진동 호출 |

@@ -43,7 +43,7 @@ func _run() -> void:
 	main._start_battle()
 	await get_tree().process_frame
 	_expect(main.lane_select.visible, "the home card opens the stage select")
-	var s2: Button = main.lane_select.rows.find_child("Stage2", true, false)
+	var s2: TextureButton = main.lane_select.rows.find_child("Stage2", true, false)
 	_expect(s2 != null and s2.disabled, "stage 2 is locked at first")
 	main._start_lane_stage(1)
 	await _wait_until(func(): return not main._is_tray_empty() and not b.finished)
@@ -248,17 +248,20 @@ func _run() -> void:
 	knight["stun"] = 0.0
 	knight["node"].position.x = LaneBattle.ENEMY_BASE_X - 20.0
 	b.fortress_hp = 1.0
-	await _wait_until(func(): return main.game_over_panel.visible, 6.0)
-	_expect(main.go_title.text == "STAGE 1 클리어!", "a broken fortress clears the stage (%s)" % main.go_title.text)
+	await _wait_until(func(): return main.lane_result.visible, 6.0)
+	_expect(main.lane_result.title.get_child(0).text == "STAGE 1 클리어!", "a broken fortress clears the stage (%s)" % main.lane_result.title.get_child(0).text)
 	_expect(LaneStages.load_progress()["unlocked"] == 2 and LaneStages.total_stars() >= 1, "the clear is saved and opens stage 2")
-	_expect(main.go_btn_view_rank.visible and main.go_btn_view_rank.text == "다음 스테이지", "next stage button")
+	_expect(main.lane_result.back.text == "본부로 돌아가기" and main.lane_result.gems_label.text.begins_with("+"), "the result shows the gems and leads back to the base")
 	var army0: Dictionary = LaneUnits.load_army()
-	_expect(army0["owned"].has("archer") and army0["deck"].has("archer"), "stage 1 gives the archer, straight into the deck")
-	_expect(army0["gems"] >= LaneUnits.START_GEMS + 100, "the first clear pays gems (%d)" % army0["gems"])
-	main._on_go_primary_pressed()
+	_expect(army0["owned"].keys() == ["knight"], "clears give no soldiers, only gems")
+	_expect(army0["gems"] >= LaneUnits.START_GEMS + LaneUnits.GEMS_FIRST, "the first clear pays gems (%d)" % army0["gems"])
+	main.lane_result.back.pressed.emit()
+	await get_tree().process_frame
+	_expect(main.lane_select.visible and main.lane_select.gem_bar_text().contains(str(army0["gems"])), "back at the base with the gems on top")
+	main._start_lane_stage(2)
 	await _wait_until(func(): return b.stage == 2 and not b.finished and not main._is_tray_empty(), 6.0)
 	_expect(b.stage == 2 and b.fortress_max == float(LaneStages.get_stage(2)["fortress"]) and b.castle_hp == LaneBattle.CASTLE_HP and b.gold >= LaneStages.start_gold(2), "stage 2 starts fresh")
-	_expect(b.deck.has("archer") and b._slots[1]["name"].text == "궁수", "the archer is in the battle deck")
+	_expect(b.deck == ["knight", "", "", ""] and b._slots[0]["name"].text == "기사", "the battle uses the saved deck")
 
 	# The castle falls: the run ends with the result window
 	for u in b.units.duplicate():
@@ -267,12 +270,12 @@ func _run() -> void:
 	var e2 := b._spawn("goblin", -1, 1.0)
 	e2["node"].position.x = LaneBattle.ALLY_BASE_X + 10.0
 	b.castle_hp = 1
-	await _wait_until(func(): return main.game_over_panel.visible, 5.0)
-	_expect(main.go_title.text == "STAGE 2 실패", "a fallen castle fails the stage (%s)" % main.go_title.text)
+	await _wait_until(func(): return main.lane_result.visible, 5.0)
+	_expect(main.lane_result.title.get_child(0).text == "STAGE 2 실패", "a fallen castle fails the stage (%s)" % main.lane_result.title.get_child(0).text)
 	_expect(LaneStages.load_progress()["unlocked"] == 2, "a failed stage opens nothing")
 
 	# The house button in the lane leads back to the stage select
-	main.game_over_panel.visible = false
+	main.lane_result.visible = false
 	main.is_game_over = false
 	main._start_lane_stage(1)
 	await _wait_until(func(): return not main._is_tray_empty() and not b.finished)

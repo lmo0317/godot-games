@@ -80,6 +80,17 @@ TRANSPARENT background (PNG with alpha). Wide canvas. Retro 16-bit PIXEL ART lik
 | `fx2.png` (같은 날, 2장 중 B) | 10 small battle effects in ONE row, same style: hit spark, sword slash arc, arrow, crossbow bolt, fireball, holy orb, green heal plus, dust puff, gold coin(안 씀), white impact ring |
 | `lane.png` | a WIDE side-view battle lane background (about 2:1): soft blue sky with a few chunky pixel clouds, distant layered hills, a tree line, and in the lower third a flat strip of grass with a dirt path running left to right. Calm and slightly muted so small characters stand out. No characters, no buildings. |
 
+### 블록 기사단 UI (2026-10-07)
+
+"UI 싹 다 갈아엎어" 요청으로 이 모드의 화면(본부·뽑기·덱·전투 아래 소환 줄·결과 창)을 평평한 남색 카드에서 **캐릭터 도트와 같은 그림체의 픽셀 판타지 UI**로 바꿈: 어두운 호두나무 판 + 금빛 테두리(큰 판), 양피지(설명), 초록·파랑·빨강 버튼(회색 = 못 누름), 돌 카드 테두리(병사 카드, 등급별 색 입힘: 일반 그대로 / 희귀 파랑 / 영웅 금색), 빨간 리본(제목), 동메달·해골 뿔 메달(스테이지·보스), 보석·금화·별·빈 별·자물쇠 아이콘. 배경은 전장 그림을 어둡게 깜.
+
+- 키트 한 장(`ui.png`)을 Codex로 2장 뽑아 A 선택 → `tools/import_lane_ui.py`가 도트 크기 6으로 되돌리고 자리로 이름을 붙여 `assets/art/ui/`에 **2배로** 저장.
+- 게임에서는 `LaneUI`(9-slice 여백은 `MARGINS`)로 씀. 글자는 게임 글꼴 + 진한 갈색 외곽선(양피지 위는 외곽선 없이 진한 갈색).
+
+```text
+Subject: a PIXEL-ART GAME UI KIT sheet for a cozy fantasy defense game, drawn in EXACTLY the same retro 16-bit pixel style, pixel size, outline and palette as the attached character reference sheet. All pieces laid out in a neat grid, each piece clearly separated from the others by wide empty transparent gaps, all flat front view. Pieces: 1 a large square PANEL: dark walnut wooden board with a thick golden brass rim and small rivets in the four corners (about 48x48 art pixels, plain center so it can be stretched); 2 a large square PARCHMENT panel ...; 3-6 GREEN / BLUE / RED-ORANGE / GREY wide BUTTONs ...; 7 GEM icon; 8 GOLD COIN icon; 9 filled GOLD STAR; 10 EMPTY STAR; 11 iron PADLOCK; 12 wide red cloth TITLE RIBBON ...; 13 round bronze STAGE MEDALLION ...; 14 round dark-red BOSS MEDALLION with a small skull and horns ...; 15 small square CARD FRAME: dark slate stone frame ... + 스타일 문구
+```
+
 ### 병사 원화 스케치 (2026-10-07)
 
 사용자 요청("각 캐릭터마다 아트 시안 원화 스케치 느낌으로")으로 병사 8종을 한 장씩 그렸습니다. 게임 도트 그림을 크게 키운 것을 `-i`로 넘겨 디자인을 맞췄습니다. 배경이 투명하거나 어둡게 나오면 다시 그림(기사·방패병 1번씩).
@@ -138,6 +149,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 새 몬스터 5종 | `assets/art/lane/wolf.png`, `gob_archer.png`, `priest.png`, `golem.png`, `demon.png` | Codex 시트 | 위 `foes2.png` | 전장(마왕은 24스테이지 보스) | 완료 |
 | 전투 효과 | `assets/art/lane/spark.png`, `slash.png`, `arrow.png`, `bolt.png`, `fireball.png`, `holy.png`, `heal.png`, `dust.png`, `ring.png` | Codex 시트 | 위 `fx2.png` | 타격 불꽃·베기·투사체·회복·먼지·충격 고리 | 완료 |
 | 병사 원화 스케치 8종 | `art/concept/units/*.jpg` | Codex (도트 그림을 참고로 연필·수채 원화) | 아래 "병사 원화" | 기획 참고용 (게임에 안 들어감) | 완료 |
+| 블록 기사단 UI 키트 15종 | `assets/art/ui/panel_wood.png`, `panel_paper.png`, `btn_green/blue/red/grey.png`, `icon_gem/coin/star/star_empty/lock.png`, `ribbon.png`, `medal.png`, `medal_boss.png`, `card_frame.png` | Codex 시트 | 위 "블록 기사단 UI" | 본부·뽑기·덱·전투 소환 줄·결과 창 (`LaneUI`) | 완료 |
 | 날개·방패 표시 | `LaneBattle._pixel_icon()` (7px) | 코드 | 문자열 도트 | 박쥐·갑옷 해골 머리 위 | 완료 |
 | 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
 | 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |

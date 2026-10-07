@@ -47,6 +47,7 @@ var adventure_select: AdventureSelect
 var lane_select: LaneStageSelect
 var lane_gacha: LaneGacha
 var lane_deck: LaneDeck
+var lane_result: LaneResult
 var battle_stage: int = 1             # 블록 기사단 stage being played
 # Classic game-over texts, restored after the modal is reused for stage results
 var go_default_texts: Dictionary = {}
@@ -246,6 +247,11 @@ func _ready() -> void:
 	lane_select.gacha_pressed.connect(func(): lane_gacha.open())
 	lane_select.deck_pressed.connect(func(): lane_deck.open())
 	lane_gacha.closed.connect(func(): lane_select.refresh())
+	# Stage results sit over the battle and lead back to the base
+	lane_result = LaneResult.new()
+	$UI.add_child(lane_result)
+	$UI.move_child(lane_result, lane_select.get_index())
+	lane_result.back_pressed.connect(_open_lane_select)
 	lane_deck.closed.connect(func(): lane_select.refresh())
 	
 	# Game Over connections
@@ -258,7 +264,7 @@ func _ready() -> void:
 	UIKit.style_button(go_btn_retry, "primary", 24, 18)
 	UIKit.style_button(go_btn_view_rank, "secondary", 22, 18)
 	UIKit.style_button(go_btn_home, "ghost", 22, 18)
-	go_btn_default_y = {"retry": go_btn_retry.position.y, "primary": go_btn_view_rank.position.y}
+	go_btn_default_y = {"retry": go_btn_retry.position.y, "primary": go_btn_view_rank.position.y, "home": go_btn_home.position.y}
 	go_default_texts = {
 		"title": go_title.text,
 		"primary": go_btn_view_rank.text,
@@ -300,6 +306,9 @@ func _on_back_pressed() -> void:
 		leaderboard_modal.close()
 	elif adventure_select.visible:
 		adventure_select.close()
+	elif lane_result.visible:
+		lane_result.visible = false
+		_open_lane_select()
 	elif lane_gacha.visible:
 		lane_gacha.close()
 	elif lane_deck.visible:
@@ -1133,6 +1142,7 @@ func _open_home_screen() -> void:
 	lane_select.visible = false
 	lane_gacha.visible = false
 	lane_deck.visible = false
+	lane_result.visible = false
 
 func _on_start_play_pressed() -> void:
 	start_screen.visible = false
@@ -1312,6 +1322,9 @@ func _best_line(label: String, best: int) -> String:
 	return text
 
 func _restore_game_over_buttons() -> void:
+	go_btn_retry.visible = true
+	go_btn_home.position.y = go_btn_default_y["home"]
+	UIKit.style_button(go_btn_home, "ghost", 22, 18)
 	go_btn_retry.position.y = go_btn_default_y["retry"]
 	go_btn_view_rank.position.y = go_btn_default_y["primary"]
 	UIKit.style_button(go_btn_retry, "primary", 24, 18)
@@ -1354,6 +1367,7 @@ func _start_battle() -> void:
 func _open_lane_select() -> void:
 	battle.stop()
 	battle.visible = false
+	lane_result.visible = false
 	start_screen.visible = false
 	game_over_panel.visible = false
 	lane_select.open()
@@ -1408,9 +1422,10 @@ func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	is_game_over = true
 	battle.stop()
 	last_game_over_msec = Time.get_ticks_msec()
-	# Rewards (docs/LANE_UNITS.md): gems for the clear and new stars, a soldier on some first clears
+	# Rewards (docs/LANE_UNITS.md): gems only, for the clear and its new stars
 	var stars_before: int = int(LaneStages.load_progress()["stars"].get(str(battle_stage), 0))
-	var improved: bool = won and LaneStages.record_clear(battle_stage, stars)
+	if won:
+		LaneStages.record_clear(battle_stage, stars)
 	var reward: Dictionary = {}
 	if won:
 		reward = LaneUnits.reward_clear(battle_stage, stars_before == 0, maxi(0, stars - stars_before), LaneStages.get_stage(battle_stage).get("boss", "") != "")
@@ -1435,39 +1450,7 @@ func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 		SoundManager.play_gameover()
 		SettingsManager.vibrate(120)
 	await get_tree().create_timer(0.5).timeout
-	_restore_game_over_texts()
-	var name: String = LaneStages.get_stage(battle_stage).get("name", "")
-	go_title.text = ("STAGE %d 클리어!" if won else "STAGE %d 실패") % battle_stage
-	$UI/GameOverModal/Card/ScoreSub.text = name
-	go_final_score.text = LaneStages.star_text(stars) if won else "☆☆☆"
-	go_best_score.text = "남은 성 체력 %d%%  ·  모은 별 %d / %d" % [roundi(100.0 * battle.castle_hp / LaneBattle.CASTLE_HP), LaneStages.total_stars(), LaneStages.count() * 3] if won else "모은 별 %d / %d" % [LaneStages.total_stars(), LaneStages.count() * 3]
-	go_new_badge.text = "★ 새 기록 ★"
-	go_new_badge.visible = improved
-	match reason:
-		"clear":
-			go_rank_status.text = "보석 +%d" % reward["gems"]
-			if reward["unit"] != "":
-				go_rank_status.text += "   ·   새 병사: %s!" % LaneUnits.UNITS[reward["unit"]]["name"]
-		"stuck":
-			go_rank_status.text = "놓을 수 있는 블록이 없어요."
-		_:
-			go_rank_status.text = "성이 무너졌어요."
-	var has_next: bool = not LaneStages.get_stage(battle_stage + 1).is_empty()
-	_restore_game_over_buttons()
-	go_btn_view_rank.text = "다음 스테이지"
-	go_btn_view_rank.visible = won and has_next
-	go_btn_retry.text = "다시 도전"
-	go_btn_home.text = "스테이지 선택"
-	if won and has_next:
-		# Moving on is the main action after a clear: put "next" on top as the primary button
-		go_btn_view_rank.position.y = go_btn_default_y["retry"]
-		go_btn_retry.position.y = go_btn_default_y["primary"]
-		UIKit.style_button(go_btn_view_rank, "primary", 24, 18)
-		UIKit.style_button(go_btn_retry, "secondary", 22, 18)
-	game_over_panel.visible = true
-	game_over_panel.modulate.a = 0.0
-	var tw = create_tween()
-	tw.tween_property(game_over_panel, "modulate:a", 1.0, 0.25)
+	lane_result.show_result(battle_stage, won, stars, int(reward.get("gems", 0)), float(battle.castle_hp) / LaneBattle.CASTLE_HP, reason)
 
 # =========================================================
 # Adventure mode

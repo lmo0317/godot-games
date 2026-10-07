@@ -991,13 +991,13 @@ func _build() -> void:
 	_shake.add_child(_fx_layer)
 	_bars_layer = Node2D.new()
 	_shake.add_child(_bars_layer)
-	_stage_label = _outlined("", 24, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	_stage_label.position = Vector2(352, 4)
-	_stage_label.size = Vector2(150, 30)
-	_view.add_child(_stage_label)
+	var rib := LaneUI.ribbon("", 190, 22)
+	rib.position = Vector2(352, 2)
+	_view.add_child(rib)
+	_stage_label = rib.get_child(0)
 	_stage_name = _outlined("", 16, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	_stage_name.position = Vector2(352, 32)
-	_stage_name.size = Vector2(150, 22)
+	_stage_name.position = Vector2(352, 54)
+	_stage_name.size = Vector2(190, 22)
 	_view.add_child(_stage_name)
 	# HP bars on the ground in front of each building (the top-right corner is Toss's button area)
 	var cb := _bar(_view, Vector2(4, LANE_H - 24), Vector2(BASE_BAR_W, 18))
@@ -1014,9 +1014,9 @@ func _build() -> void:
 	fb.add_child(_fort_label)
 	# Top-left of the lane: home / settings / sound on a dark pill, then charge/hold and auto
 	var pill := Panel.new()
-	pill.add_theme_stylebox_override("panel", UIKit.box(Color(0.04, 0.05, 0.1, 0.55), Color.TRANSPARENT, 22))
-	pill.position = Vector2(8, 8)
-	pill.size = Vector2(140, 44)
+	LaneUI.dress(pill, "panel_wood")
+	pill.position = Vector2(6, 6)
+	pill.size = Vector2(150, 48)
 	pill.mouse_filter = Control.MOUSE_FILTER_PASS
 	_view.add_child(pill)
 	var i_menu := 0
@@ -1024,7 +1024,7 @@ func _build() -> void:
 		var mb := TextureButton.new()
 		mb.ignore_texture_size = true
 		mb.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-		mb.position = Vector2(8 + i_menu * 44, 4)
+		mb.position = Vector2(10 + i_menu * 44, 6)
 		mb.size = Vector2(36, 36)
 		mb.focus_mode = Control.FOCUS_NONE
 		mb.pressed.connect(func(): (home_pressed if key == "home" else (settings_pressed if key == "settings" else sound_pressed)).emit())
@@ -1032,13 +1032,13 @@ func _build() -> void:
 		_menu[key] = mb
 		i_menu += 1
 	_march_btn = Button.new()
-	_march_btn.position = Vector2(156, 8)
+	_march_btn.position = Vector2(160, 8)
 	_march_btn.size = Vector2(90, 44)
 	_march_btn.focus_mode = Control.FOCUS_NONE
 	_march_btn.pressed.connect(toggle_march)
 	_view.add_child(_march_btn)
 	_auto_btn = Button.new()
-	_auto_btn.position = Vector2(254, 8)
+	_auto_btn.position = Vector2(256, 8)
 	_auto_btn.size = Vector2(92, 44)
 	_auto_btn.focus_mode = Control.FOCUS_NONE
 	_auto_btn.pressed.connect(toggle_auto)
@@ -1048,18 +1048,10 @@ func _build() -> void:
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.position = Vector2(0, LANE_H)
 	bar.size = Vector2(720, BAR_H)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = UIKit.SURFACE
-	sb.border_color = UIKit.BORDER
-	sb.border_width_top = 3
-	sb.border_width_bottom = 2
-	bar.add_theme_stylebox_override("panel", sb)
+	LaneUI.dress(bar, "panel_wood")
 	add_child(bar)
-	var coin := Panel.new()
-	coin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	coin.position = Vector2(12, 14)
-	coin.size = Vector2(22, 22)
-	coin.add_theme_stylebox_override("panel", UIKit.box(UIKit.GOLD, Color(0.75, 0.5, 0.1), 11, 3))
+	var coin := LaneUI.icon("icon_coin", Vector2(24, 24))
+	coin.position = Vector2(14, 14)
 	bar.add_child(coin)
 	_gold_label = _outlined("0", 26, UIKit.GOLD)
 	_gold_label.position = Vector2(40, 6)
@@ -1070,18 +1062,18 @@ func _build() -> void:
 	_wallet_label.size = Vector2(70, 24)
 	bar.add_child(_wallet_label)
 	_income_btn = Button.new()
-	_income_btn.position = Vector2(8, 46)
-	_income_btn.size = Vector2(164, 46)
+	_income_btn.position = Vector2(10, 46)
+	_income_btn.size = Vector2(164, 44)
 	_income_btn.focus_mode = Control.FOCUS_NONE
-	UIKit.style_button(_income_btn, "secondary", 16, 12)
+	LaneUI.button(_income_btn, "green", 16)
 	_income_btn.pressed.connect(upgrade_wallet)
 	bar.add_child(_income_btn)
 	for i in range(LaneUnits.DECK_SIZE):
 		var btn := Button.new()
-		btn.position = Vector2(180 + i * 106, 10)
-		btn.size = Vector2(100, 80)
+		btn.position = Vector2(180 + i * 106, 8)
+		btn.size = Vector2(100, 84)
 		btn.focus_mode = Control.FOCUS_NONE
-		UIKit.style_button(btn, "primary", 16, 14)
+		btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		var slot := i
 		btn.pressed.connect(func(): summon(deck[slot] if slot < deck.size() else ""))
 		bar.add_child(btn)
@@ -1097,10 +1089,14 @@ func _build() -> void:
 		n.position = Vector2(42, 6)
 		n.size = Vector2(58, 22)
 		btn.add_child(n)
-		var c := _outlined("", 21, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-		c.position = Vector2(42, 30)
-		c.size = Vector2(58, 28)
+		var c := _outlined("", 20, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		c.position = Vector2(50, 30)
+		c.size = Vector2(48, 28)
 		btn.add_child(c)
+		var cc := LaneUI.icon("icon_coin", Vector2(14, 14))
+		cc.position = Vector2(44, 37)
+		cc.name = "Coin"
+		btn.add_child(cc)
 		var lv := _outlined("", 13, Color(0.75, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 		lv.position = Vector2(42, 56)
 		lv.size = Vector2(58, 18)
@@ -1110,14 +1106,18 @@ func _build() -> void:
 		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		veil.color = Color(0.02, 0.03, 0.08, 0.6)
 		veil.size = Vector2(100, 0)
+		veil.position = Vector2(4, 4)
 		btn.add_child(veil)
 		_slots.append({"btn": btn, "icon": icon, "name": n, "cost": c, "lv": lv, "veil": veil})
 	_cannon_btn = Button.new()
-	_cannon_btn.position = Vector2(606, 10)
-	_cannon_btn.size = Vector2(106, 80)
+	_cannon_btn.position = Vector2(606, 8)
+	_cannon_btn.size = Vector2(106, 84)
 	_cannon_btn.focus_mode = Control.FOCUS_NONE
 	_cannon_btn.clip_contents = true
-	UIKit.style_raised(_cannon_btn, Color(0.32, 0.12, 0.1), Color(1.0, 0.55, 0.3), Color(0.18, 0.06, 0.05), 14)
+	_cannon_btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		_cannon_btn.add_theme_stylebox_override(st, LaneUI.box("card_frame", 6, Color(1.4, 0.6, 0.45) if st != "pressed" else Color(1.0, 0.45, 0.35)))
+	_cannon_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	_cannon_btn.pressed.connect(fire_cannon)
 	bar.add_child(_cannon_btn)
 	_cannon_fill = ColorRect.new()
@@ -1148,14 +1148,24 @@ func _setup_slots() -> void:
 			s["name"].text = ""
 			s["cost"].text = ""
 			s["lv"].text = ""
-			UIKit.style_button(s["btn"], "secondary", 16, 14)
+			s["btn"].get_node("Coin").visible = false
+			_style_slot(s["btn"], Color(0.45, 0.45, 0.5))
 			continue
 		var st: Dictionary = ALLIES[kind]
-		UIKit.style_button(s["btn"], "primary", 16, 14)
+		s["btn"].get_node("Coin").visible = true
+		_style_slot(s["btn"], {1: Color(1, 1, 1), 2: Color(0.6, 0.8, 1.25), 3: Color(1.35, 1.1, 0.5)}[int(st["rarity"])])
 		s["icon"].texture = tex[kind]
 		s["name"].text = st["name"]
 		s["cost"].text = str(st["cost"])
 		s["lv"].text = "Lv %d" % int(levels.get(kind, 1))
+
+# Summon buttons are stone cards tinted by the soldier's grade
+func _style_slot(btn: Button, tint: Color) -> void:
+	btn.add_theme_stylebox_override("normal", LaneUI.box("card_frame", 6, tint))
+	btn.add_theme_stylebox_override("hover", LaneUI.box("card_frame", 6, tint * 1.15))
+	btn.add_theme_stylebox_override("pressed", LaneUI.box("card_frame", 6, tint * 0.8))
+	btn.add_theme_stylebox_override("hover_pressed", LaneUI.box("card_frame", 6, tint * 0.8))
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 
 func set_menu_icons(home: Texture2D, settings: Texture2D, sound: Texture2D) -> void:
 	_menu["home"].texture_normal = home
@@ -1199,11 +1209,9 @@ func _refresh() -> void:
 	else:
 		_income_btn.text = "수입 MAX"
 		_income_btn.modulate = Color(0.6, 0.6, 0.65)
-	UIKit.style_button(_march_btn, "primary" if charging else "secondary", 18, 22)
+	LaneUI.button(_march_btn, "red" if charging else "blue", 18)
 	_march_btn.text = "돌격" if charging else "수비"
-	UIKit.style_button(_auto_btn, "secondary", 18, 22)
-	if auto_summon: # green while on, so it reads as a mode rather than a button
-		UIKit.style_raised(_auto_btn, Color(0.16, 0.6, 0.34), Color(0.5, 0.92, 0.62), Color(0.04, 0.24, 0.12), 22)
+	LaneUI.button(_auto_btn, "green" if auto_summon else "blue", 18) # green while on
 	_auto_btn.text = "자동 ON" if auto_summon else "자동"
 	for i in range(_slots.size()):
 		var kind: String = deck[i] if i < deck.size() else ""

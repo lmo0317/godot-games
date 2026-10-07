@@ -7,7 +7,7 @@ const ARMY_PATH: String = "user://lane_army.json"
 const DECK_SIZE: int = 4
 const MAX_LEVEL: int = 5
 const LEVEL_BONUS: float = 0.1        # +10% HP and attack per level above 1
-const START_GEMS: int = 200
+const START_GEMS: int = 300
 const PULL_COST: int = 100
 const PULL10_COST: int = 900
 const MAXED_REFUND: int = 20
@@ -39,8 +39,12 @@ const UNITS: Dictionary = {
 }
 const ORDER: Array[String] = ["knight", "shield", "spearman", "archer", "crossbow", "mage", "cleric", "cannoneer"]
 
-# Soldier given at a stage's first clear
-const STAGE_REWARD: Dictionary = {1: "archer", 2: "shield", 3: "mage", 5: "spearman"}
+# Clear rewards are gems only (soldiers come from the gacha): first clear, boss first clear, new star,
+# replay
+const GEMS_FIRST: int = 150
+const GEMS_FIRST_BOSS: int = 300
+const GEMS_PER_STAR: int = 30
+const GEMS_REPLAY: int = 30
 
 static func melee(kind: String) -> bool:
 	return not UNITS[kind].has("shot")
@@ -164,16 +168,10 @@ static func set_deck_slot(slot: int, kind: String) -> void:
 	save_army(army)
 
 # ---------------------------------------------------------------------------
-# Rewards for a stage clear: gems (first clear 100, boss 200; replay 20) + 20 per new star,
-# and the stage's soldier on its first clear. Returns {"gems", "unit"}
+# Rewards for a stage clear: gems only. Returns {"gems"}
 static func reward_clear(stage_id: int, first: bool, new_stars: int, boss: bool) -> Dictionary:
 	var army := load_army()
-	var gems: int = (200 if boss else 100) if first else 20
-	gems += 20 * new_stars
+	var gems: int = ((GEMS_FIRST_BOSS if boss else GEMS_FIRST) if first else GEMS_REPLAY) + GEMS_PER_STAR * new_stars
 	army["gems"] += gems
-	var unit: String = ""
-	if first and STAGE_REWARD.has(stage_id) and not army["owned"].has(STAGE_REWARD[stage_id]):
-		unit = STAGE_REWARD[stage_id]
-		add_unit(army, unit)
 	save_army(army)
-	return {"gems": gems, "unit": unit}
+	return {"gems": gems}
