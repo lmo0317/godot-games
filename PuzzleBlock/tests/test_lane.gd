@@ -150,9 +150,10 @@ func _run() -> void:
 
 	# The horn and a big wave
 	b.wave_timer = 0.05
-	var before: int = b._count(-1)
+	await get_tree().create_timer(0.2).timeout
+	_expect(b._pending.size() + b._count(-1) >= 2, "a big wave arrives (%d queued, %d out)" % [b._pending.size(), b._count(-1)])
 	await get_tree().create_timer(1.6).timeout
-	_expect(b._count(-1) >= before + 2, "a big wave arrives (%d -> %d)" % [before, b._count(-1)])
+	_expect(b._pending.is_empty(), "the wave has marched out")
 
 	# The boss comes when the fortress drops to half
 	b.fortress_hp = b.fortress_max * 0.49
