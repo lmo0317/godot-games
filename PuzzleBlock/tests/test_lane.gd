@@ -293,6 +293,7 @@ func _run() -> void:
 	_expect(b.deck == ["knight", "archer", "", ""] and b._slots[1]["name"].text == "궁수", "the battle uses the saved deck")
 
 	# The castle falls: the run ends with the result window
+	b.auto_summon = false # nobody comes to save the castle
 	for u in b.units.duplicate():
 		if u["side"] == 1:
 			b._kill(u)

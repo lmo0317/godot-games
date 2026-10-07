@@ -3,7 +3,7 @@ extends Control
 # Full-screen home as a game lobby, in the 블록 기사단 pixel UI (LaneUI):
 #   top     profile chip, gems, sound, settings
 #   middle  the title ribbon, the next stage, and the deck's soldiers standing in front of the castle
-#   bottom  a tab bar: 병사 (soldiers & deck), 뽑기 (gacha), 출전 (big, the stage select),
+#   bottom  a tab bar: 병사 (soldiers & deck), 뽑기 (gacha), 출전 (big medallion, the stage select),
 #           블록 퍼즐 (the classic game, with its best score), 랭킹 (with the player's rank)
 # main.gd fills it through refresh() and listens to the signals.
 
@@ -220,31 +220,26 @@ func _build_squad() -> void:
 	var step: float = (W - 40.0 - x0) / maxf(1.0, kinds.size())
 	for i in range(kinds.size()):
 		var kind: String = kinds[i]
-		var tier: int = int(army["owned"][kind]["tier"])
 		var holder := Node2D.new()
 		holder.position = Vector2(x0 + step * (i + 0.5), GROUND + (i % 2) * 18.0)
 		holder.set_meta("base_y", holder.position.y)
 		_squad.add_child(holder)
-		# A glow on the ground in the soldier's tier colour
-		var glow := Panel.new()
+		# A soft shadow on the ground (tiers show on the cards, not here)
+		var shadow := Panel.new()
 		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(LaneUnits.tier_color(tier), 0.45)
+		sb.bg_color = Color(0, 0, 0, 0.28)
 		sb.set_corner_radius_all(40)
-		glow.add_theme_stylebox_override("panel", sb)
-		glow.position = Vector2(-52, -10)
-		glow.size = Vector2(104, 22)
-		glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		holder.add_child(glow)
+		shadow.add_theme_stylebox_override("panel", sb)
+		shadow.position = Vector2(-40, -8)
+		shadow.size = Vector2(80, 16)
+		shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.add_child(shadow)
 		var sp := Sprite2D.new()
 		sp.texture = load("res://assets/art/lane/%s.png" % kind)
 		sp.scale = Vector2(3, 3)
 		sp.offset = Vector2(0, -sp.texture.get_height() * 0.5)
 		sp.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		holder.add_child(sp)
-		var tag := LaneUI.label(LaneUnits.TIER_NAME[tier], 15, LaneUnits.tier_color(tier).lightened(0.4), HORIZONTAL_ALIGNMENT_CENTER)
-		tag.position = Vector2(-60, 14)
-		tag.size = Vector2(120, 22)
-		holder.add_child(tag)
 	var tap := Button.new()
 	tap.flat = true
 	tap.focus_mode = Control.FOCUS_NONE
@@ -254,7 +249,8 @@ func _build_squad() -> void:
 	tap.pressed.connect(func(): deck_pressed.emit())
 	_squad.add_child(tap)
 
-# Bottom tab bar: 병사 · 뽑기 · 출전 (big) · 블록 퍼즐 · 랭킹
+# Bottom tab bar: 병사 · 뽑기 · 출전 (a big medallion in the middle) · 블록 퍼즐 · 랭킹. Tabs are icons
+# and words on the wooden bar (no stretched button art), with thin dividers
 func _build_nav() -> void:
 	var bar := Panel.new()
 	LaneUI.dress(bar, "panel_wood")
@@ -262,18 +258,32 @@ func _build_nav() -> void:
 	_place(bar, 0, NAV_Y, W, 1280 - NAV_Y)
 	add_child(bar)
 	var tabs := [
-		{"label": "병사", "x": 8.0, "sig": deck_pressed, "art": "res://assets/art/lane/knight.png"},
-		{"label": "뽑기", "x": 148.0, "sig": gacha_pressed, "art": "res://assets/art/ui/icon_gem.png"},
-		{"label": "블록 퍼즐", "x": 432.0, "sig": play_pressed, "art": "res://assets/sprites/block_cyan.png"},
-		{"label": "랭킹", "x": 572.0, "sig": ranking_pressed, "art": "res://assets/sprites/crown_icon.png"},
+		{"label": "병사", "x": 10.0, "sig": deck_pressed, "art": "res://assets/art/lane/knight.png"},
+		{"label": "뽑기", "x": 150.0, "sig": gacha_pressed, "art": "res://assets/art/ui/icon_gem.png"},
+		{"label": "블록 퍼즐", "x": 430.0, "sig": play_pressed, "art": "res://assets/sprites/block_cyan.png"},
+		{"label": "랭킹", "x": 570.0, "sig": ranking_pressed, "art": "res://assets/sprites/crown_icon.png"},
 	]
+	for x in [150.0, 570.0]:
+		var div := ColorRect.new()
+		div.color = Color(0.05, 0.03, 0.02, 0.45)
+		div.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_place(div, x - 1, NAV_Y + 36, 2, 110)
+		add_child(div)
 	for t in tabs:
 		var b := Button.new()
 		b.focus_mode = Control.FOCUS_NONE
-		LaneUI.button(b, "blue", 18)
-		_place(b, t["x"], NAV_Y + 14, 140, 150)
+		for st in ["normal", "pressed", "hover_pressed", "focus"]:
+			b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		var hover := StyleBoxFlat.new()
+		hover.bg_color = Color(1, 0.9, 0.6, 0.1)
+		hover.set_corner_radius_all(12)
+		b.add_theme_stylebox_override("hover", hover)
+		_place(b, t["x"], NAV_Y + 22, 140, 150)
+		b.pivot_offset = b.size * 0.5
 		var sig: Signal = t["sig"]
 		b.pressed.connect(func(): sig.emit())
+		b.button_down.connect(func(): b.scale = Vector2(0.92, 0.92))
+		b.button_up.connect(func(): b.scale = Vector2.ONE)
 		add_child(b)
 		var art := TextureRect.new()
 		art.texture = load(t["art"])
@@ -281,13 +291,13 @@ func _build_nav() -> void:
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_place(art, 40, 18, 60, 56)
+		_place(art, 38, 12, 64, 60)
 		b.add_child(art)
-		var l := LaneUI.label(t["label"], 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-		_place(l, 0, 78, 140, 30)
+		var l := LaneUI.label(t["label"], 21, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+		_place(l, 0, 76, 140, 30)
 		b.add_child(l)
 		var sub := LaneUI.label("", 14, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-		_place(sub, 0, 108, 140, 24)
+		_place(sub, 0, 106, 140, 24)
 		b.add_child(sub)
 		if t["label"] == "블록 퍼즐":
 			best_value = sub
@@ -298,12 +308,14 @@ func _build_nav() -> void:
 			rank_title = LaneUI.label("", 12, LaneUI.TEXT)
 			rank_title.visible = false
 			b.add_child(rank_title)
-	# 출전: the big red one in the middle, raised above the bar
-	var go := Button.new()
+	# 출전: the bronze stage medallion, big, raised above the bar, with the fortress inside
+	var go := TextureButton.new()
+	go.texture_normal = LaneUI.tex("medal")
+	go.ignore_texture_size = true
+	go.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	go.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	go.focus_mode = Control.FOCUS_NONE
-	go.text = ""
-	LaneUI.button(go, "red", 26)
-	_place(go, 290, NAV_Y - 36, 140, 186)
+	_place(go, 286, NAV_Y - 46, 148, 152)
 	go.pressed.connect(func(): battle_pressed.emit())
 	add_child(go)
 	var fort := TextureRect.new()
@@ -312,15 +324,17 @@ func _build_nav() -> void:
 	fort.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	fort.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	fort.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_place(fort, 30, 16, 80, 96)
+	_place(fort, 38, 26, 72, 86)
 	go.add_child(fort)
-	var gl := LaneUI.label("출전", 28, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	_place(gl, 0, 116, 140, 40)
-	go.add_child(gl)
-	var tw := go.create_tween().set_loops()
+	var gl := LaneUI.label("출전", 30, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_place(gl, 286, NAV_Y + 108, 148, 40)
+	add_child(gl)
 	go.pivot_offset = go.size * 0.5
-	tw.tween_property(go, "scale", Vector2(1.04, 1.04), 0.7).set_trans(Tween.TRANS_SINE)
+	var tw := go.create_tween().set_loops()
+	tw.tween_property(go, "scale", Vector2(1.05, 1.05), 0.7).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(go, "scale", Vector2.ONE, 0.7).set_trans(Tween.TRANS_SINE)
+	go.button_down.connect(func(): go.modulate = Color(0.85, 0.85, 0.85))
+	go.button_up.connect(func(): go.modulate = Color.WHITE)
 
 func _wood_button(b: Button) -> void:
 	b.focus_mode = Control.FOCUS_NONE
