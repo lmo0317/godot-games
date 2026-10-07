@@ -15,6 +15,24 @@ const CHAPTERS: Array[Dictionary] = [
 ]
 const PER_CHAPTER: int = 6
 
+# Difficulty assumes the army grows: the tier a deck is expected to have reached by each stage
+# (docs/LANE_STAGES.md "밸런스"); monster power and fortress HP include it, so an army that never
+# pulls or merges gets stuck and has to replay, pull and merge to go on
+static func expected_tier(stage_id: int) -> float:
+	if stage_id <= 2:
+		return 0.0
+	if stage_id <= 4:
+		return 0.5
+	if stage_id <= 8:
+		return 1.0
+	if stage_id <= 12:
+		return 1.5
+	if stage_id <= 16:
+		return 2.0
+	if stage_id <= 20:
+		return 2.5
+	return 3.0
+
 # Each chapter starts with a bigger purse and a higher income level
 static func start_wallet(stage_id: int) -> int:
 	return clampi((stage_id - 1) / PER_CHAPTER, 0, 3)
@@ -32,53 +50,53 @@ const BOSSES: Dictionary = {
 # waves: [seconds after the start, [monster kinds]]; after the last one it repeats every 40 s.
 # swarm: false keeps slimes single
 const STAGES: Array[Dictionary] = [
-	{"id": 1, "name": "첫 출정", "fortress": 1000, "power": 1.0, "every": 11.0, "pool": ["slime"], "swarm": false,
+	{"id": 1, "name": "첫 출정", "fortress": 1000, "power": 1.00, "every": 11.0, "pool": ["slime"], "swarm": false,
 		"waves": [[35.0, ["slime", "slime", "slime"]]], "boss": "", "new": "기사로 막고 줄을 지워 금화를 모아요"},
-	{"id": 2, "name": "고블린 정찰대", "fortress": 1100, "power": 1.0, "every": 10.0, "pool": ["slime", "goblin"], "swarm": false,
+	{"id": 2, "name": "고블린 정찰대", "fortress": 1100, "power": 1.00, "every": 10.0, "pool": ["slime", "goblin"], "swarm": false,
 		"waves": [[30.0, ["goblin", "goblin", "slime", "slime"]], [65.0, ["goblin", "goblin", "goblin"]]], "boss": "", "new": "궁수를 섞어 보세요"},
-	{"id": 3, "name": "고블린 무리", "fortress": 1200, "power": 1.05, "every": 10.0, "pool": ["goblin"],
+	{"id": 3, "name": "고블린 무리", "fortress": 1350, "power": 1.17, "every": 10.0, "pool": ["goblin"],
 		"waves": [[25.0, ["goblin", "goblin", "goblin"]], [55.0, ["goblin", "goblin", "goblin", "goblin"]]], "boss": "", "new": "방패병으로 앞줄을 버텨요"},
-	{"id": 4, "name": "슬라임 늪", "fortress": 1300, "power": 1.05, "every": 10.0, "pool": ["slime"],
+	{"id": 4, "name": "슬라임 늪", "fortress": 1450, "power": 1.17, "every": 10.0, "pool": ["slime"],
 		"waves": [[30.0, ["slime", "slime", "slime", "slime"]], [60.0, ["slime", "slime", "slime", "slime", "goblin"]]], "boss": "", "new": "떼는 마법사 광역으로"},
-	{"id": 5, "name": "박쥐 동굴", "fortress": 1400, "power": 1.1, "every": 10.0, "pool": ["goblin", "bat"],
+	{"id": 5, "name": "박쥐 동굴", "fortress": 1750, "power": 1.37, "every": 10.0, "pool": ["goblin", "bat"],
 		"waves": [[30.0, ["bat", "bat", "bat"]], [60.0, ["bat", "bat", "goblin", "goblin"]]], "boss": "", "new": "박쥐는 원거리 병사만 맞혀요"},
-	{"id": 6, "name": "왕슬라임", "fortress": 1500, "power": 1.1, "every": 10.0, "pool": ["slime", "goblin", "bat"],
+	{"id": 6, "name": "왕슬라임", "fortress": 1900, "power": 1.37, "every": 10.0, "pool": ["slime", "goblin", "bat"],
 		"waves": [[30.0, ["slime", "slime", "slime", "slime"]], [60.0, ["goblin", "goblin", "bat", "bat"]]], "boss": "slime_king", "new": "보스 등장"},
-	{"id": 7, "name": "늑대 습격", "fortress": 1600, "power": 1.15, "every": 10.0, "pool": ["wolf", "goblin"],
+	{"id": 7, "name": "늑대 습격", "fortress": 2000, "power": 1.43, "every": 10.0, "pool": ["wolf", "goblin"],
 		"waves": [[25.0, ["wolf", "wolf", "wolf"]], [55.0, ["wolf", "wolf", "wolf", "goblin"]]], "boss": "", "new": "늑대는 아주 빨라요"},
-	{"id": 8, "name": "고블린 궁수대", "fortress": 1700, "power": 1.15, "every": 10.0, "pool": ["goblin", "gob_archer"],
+	{"id": 8, "name": "고블린 궁수대", "fortress": 2100, "power": 1.43, "every": 10.0, "pool": ["goblin", "gob_archer"],
 		"waves": [[30.0, ["gob_archer", "gob_archer", "goblin", "goblin"]], [60.0, ["gob_archer", "gob_archer", "gob_archer"]]], "boss": "", "new": "원거리 적은 방패로 받아요"},
-	{"id": 9, "name": "해골 묘지 입구", "fortress": 1800, "power": 1.2, "every": 10.0, "pool": ["skeleton", "wolf"],
+	{"id": 9, "name": "해골 묘지 입구", "fortress": 2500, "power": 1.65, "every": 10.0, "pool": ["skeleton", "wolf"],
 		"waves": [[30.0, ["skeleton", "skeleton", "skeleton"]], [60.0, ["skeleton", "skeleton", "wolf", "wolf"]]], "boss": "", "new": "해골 전사 등장"},
-	{"id": 10, "name": "숲의 혼전", "fortress": 1900, "power": 1.2, "every": 9.0, "pool": ["goblin", "gob_archer", "wolf", "bat"],
+	{"id": 10, "name": "숲의 혼전", "fortress": 2600, "power": 1.65, "every": 9.0, "pool": ["goblin", "gob_archer", "wolf", "bat"],
 		"waves": [[25.0, ["wolf", "wolf", "bat", "bat"]], [50.0, ["gob_archer", "gob_archer", "goblin", "goblin"]], [75.0, ["wolf", "wolf", "wolf", "bat"]]], "boss": "", "new": ""},
-	{"id": 11, "name": "철갑 부대", "fortress": 2000, "power": 1.12, "every": 11.0, "pool": ["armored", "skeleton"],
+	{"id": 11, "name": "철갑 부대", "fortress": 2750, "power": 1.54, "every": 11.0, "pool": ["armored", "skeleton"],
 		"waves": [[30.0, ["armored", "armored", "skeleton", "skeleton"]], [60.0, ["armored", "armored", "skeleton"]]], "boss": "", "new": "갑옷은 창병이 2배"},
-	{"id": 12, "name": "고블린 대장", "fortress": 2100, "power": 1.25, "every": 9.0, "pool": ["goblin", "gob_archer", "wolf"],
+	{"id": 12, "name": "고블린 대장", "fortress": 2900, "power": 1.72, "every": 9.0, "pool": ["goblin", "gob_archer", "wolf"],
 		"waves": [[30.0, ["goblin", "goblin", "goblin", "goblin"]], [60.0, ["gob_archer", "gob_archer", "wolf", "wolf"]]], "boss": "goblin_chief", "new": "보스 등장"},
-	{"id": 13, "name": "어둠의 사제", "fortress": 2200, "power": 1.25, "every": 9.0, "pool": ["skeleton", "priest"],
+	{"id": 13, "name": "어둠의 사제", "fortress": 3300, "power": 1.49, "every": 9.0, "pool": ["skeleton", "priest"],
 		"waves": [[30.0, ["skeleton", "skeleton", "priest"]], [60.0, ["skeleton", "skeleton", "skeleton", "priest"]]], "boss": "", "new": "회복하는 사제를 먼저 잡아요"},
-	{"id": 14, "name": "뼈의 행진", "fortress": 2300, "power": 1.3, "every": 9.0, "pool": ["skeleton", "armored"],
+	{"id": 14, "name": "뼈의 행진", "fortress": 3450, "power": 1.54, "every": 9.0, "pool": ["skeleton", "armored"],
 		"waves": [[25.0, ["armored", "armored", "skeleton", "skeleton"]], [55.0, ["armored", "armored", "armored"]]], "boss": "", "new": ""},
-	{"id": 15, "name": "밤박쥐 떼", "fortress": 2400, "power": 1.3, "every": 8.0, "pool": ["bat", "bat", "skeleton"],
+	{"id": 15, "name": "밤박쥐 떼", "fortress": 3600, "power": 1.54, "every": 8.0, "pool": ["bat", "bat", "skeleton"],
 		"waves": [[25.0, ["bat", "bat", "bat", "bat"]], [50.0, ["bat", "bat", "bat", "armored"]]], "boss": "", "new": "하늘을 막을 원거리 병사를"},
-	{"id": 16, "name": "골렘", "fortress": 2500, "power": 1.35, "every": 9.0, "pool": ["golem", "skeleton"],
+	{"id": 16, "name": "골렘", "fortress": 3750, "power": 1.21, "every": 9.0, "pool": ["golem", "skeleton"],
 		"waves": [[35.0, ["golem", "skeleton", "skeleton"]], [70.0, ["golem", "golem"]]], "boss": "", "new": "거대한 골렘은 대포로"},
-	{"id": 17, "name": "오크 전사", "fortress": 2600, "power": 1.35, "every": 8.0, "pool": ["orc", "goblin", "gob_archer"],
+	{"id": 17, "name": "오크 전사", "fortress": 4200, "power": 1.45, "every": 8.0, "pool": ["orc", "goblin", "gob_archer"],
 		"waves": [[30.0, ["orc", "goblin", "goblin", "goblin"]], [60.0, ["orc", "orc", "gob_archer"]]], "boss": "", "new": "오크 등장"},
-	{"id": 18, "name": "철갑 대장", "fortress": 2700, "power": 1.4, "every": 8.0, "pool": ["armored", "priest", "skeleton"],
+	{"id": 18, "name": "철갑 대장", "fortress": 4400, "power": 1.51, "every": 8.0, "pool": ["armored", "priest", "skeleton"],
 		"waves": [[30.0, ["armored", "armored", "priest"]], [60.0, ["skeleton", "skeleton", "skeleton", "armored"]]], "boss": "iron_captain", "new": "보스 등장"},
-	{"id": 19, "name": "마왕성 정문", "fortress": 2800, "power": 1.4, "every": 8.0, "pool": ["orc", "wolf", "armored"],
+	{"id": 19, "name": "마왕성 정문", "fortress": 4550, "power": 1.36, "every": 8.0, "pool": ["orc", "wolf", "armored"],
 		"waves": [[25.0, ["wolf", "wolf", "wolf", "orc"]], [55.0, ["armored", "armored", "orc"]]], "boss": "", "new": ""},
-	{"id": 20, "name": "골렘과 사제", "fortress": 2900, "power": 1.45, "every": 8.0, "pool": ["golem", "priest"],
+	{"id": 20, "name": "골렘과 사제", "fortress": 4700, "power": 1.14, "every": 8.0, "pool": ["golem", "priest"],
 		"waves": [[30.0, ["golem", "priest", "priest"]], [65.0, ["golem", "golem", "priest"]]], "boss": "", "new": ""},
-	{"id": 21, "name": "하늘을 덮는 날개", "fortress": 3000, "power": 1.45, "every": 7.0, "pool": ["bat", "bat", "gob_archer"],
+	{"id": 21, "name": "하늘을 덮는 날개", "fortress": 5250, "power": 1.51, "every": 7.0, "pool": ["bat", "bat", "gob_archer"],
 		"waves": [[20.0, ["bat", "bat", "bat", "bat"]], [45.0, ["bat", "bat", "bat", "bat", "gob_archer"]], [70.0, ["bat", "bat", "bat", "wolf", "wolf"]]], "boss": "", "new": ""},
-	{"id": 22, "name": "오크 군단", "fortress": 3100, "power": 1.5, "every": 8.0, "pool": ["orc", "orc", "gob_archer"],
+	{"id": 22, "name": "오크 군단", "fortress": 5400, "power": 1.58, "every": 8.0, "pool": ["orc", "orc", "gob_archer"],
 		"waves": [[30.0, ["orc", "orc", "gob_archer", "gob_archer"]], [60.0, ["orc", "orc", "orc"]]], "boss": "", "new": ""},
-	{"id": 23, "name": "총공세", "fortress": 3200, "power": 1.5, "every": 7.0, "pool": ["slime", "goblin", "wolf", "gob_archer", "skeleton", "bat", "armored", "priest", "golem", "orc"],
+	{"id": 23, "name": "총공세", "fortress": 5600, "power": 1.58, "every": 7.0, "pool": ["slime", "goblin", "wolf", "gob_archer", "skeleton", "bat", "armored", "priest", "golem", "orc"],
 		"waves": [[20.0, ["wolf", "wolf", "bat", "bat"]], [45.0, ["armored", "armored", "golem", "priest"]], [70.0, ["orc", "orc", "gob_archer", "gob_archer"]]], "boss": "", "new": ""},
-	{"id": 24, "name": "마왕", "fortress": 3500, "power": 1.55, "every": 7.0, "pool": ["orc", "golem", "armored", "bat", "priest"],
+	{"id": 24, "name": "마왕", "fortress": 6100, "power": 1.48, "every": 7.0, "pool": ["orc", "golem", "armored", "bat", "priest"],
 		"waves": [[30.0, ["orc", "orc", "bat", "bat"]], [60.0, ["golem", "armored", "armored"]]], "boss": "demon_lord", "new": "최종 보스"},
 ]
 

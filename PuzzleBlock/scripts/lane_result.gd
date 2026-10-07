@@ -98,13 +98,13 @@ func show_result(stage_id: int, won: bool, stars: int, gems: int, castle_ratio: 
 		tw.tween_property(st, "scale", Vector2.ONE, 0.08)
 		if won and i < stars:
 			tw.tween_callback(func(): SoundManager.play_battle("b_summon", -6.0))
-	gems_label.text = "+%d" % gems if won else "+0"
+	gems_label.text = "+%d" % gems
 	if won:
 		info.text = "남은 성 체력 %d%%" % roundi(castle_ratio * 100.0)
 		tip.text = "본부에서 보석으로 병사를 뽑고\n덱을 정비한 뒤 다음 스테이지로!"
 	else:
 		info.text = "놓을 수 있는 블록이 없어요" if reason == "stuck" else "성이 무너졌어요"
-		tip.text = "덱을 바꾸거나 병사를 더 모아서\n다시 도전해 보세요"
+		tip.text = "요새를 깎은 만큼 보석을 받았어요\n병사를 뽑고 합성해서 다시 도전!"
 	visible = true
 	board.scale = Vector2(0.85, 0.85)
 	modulate.a = 0.0

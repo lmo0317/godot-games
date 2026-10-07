@@ -99,6 +99,7 @@ var castle_hp: int = CASTLE_HP
 var fortress_hp: float = 1.0
 var fortress_max: float = 1.0
 var boss_out: bool = false
+var rally_done: int = 0               # counterattacks sent (at 2/3 and 1/3 of the fortress)
 var finished: bool = true
 var switching: bool = false
 var trickle_timer: float = 0.0
@@ -490,6 +491,10 @@ func _tick(delta: float) -> void:
 			_kill(u)
 	if fortress_hp <= fortress_max * 0.5 and not boss_out and not switching:
 		_boss_entry()
+	# The fortress fights back as it falls: a big wave at 2/3 and at 1/3, so wins stay close
+	if not switching and rally_done < 2 and fortress_hp <= fortress_max * (2.0 - rally_done) / 3.0:
+		rally_done += 1
+		_rally()
 	if fortress_hp <= 0.0 and not switching:
 		_stage_cleared()
 	elif castle_hp <= 0 and not finished:
@@ -535,6 +540,15 @@ func _spawn_enemy(kind: String, k: float, group: bool = true) -> void:
 			return
 		var u := _spawn(kind, -1, k)
 		u["node"].position.x += i * 14.0
+
+func _rally() -> void:
+	_sfx("b_horn", -3.0)
+	_banner("요새의 반격!", "적 대군이 몰려와요", Color(1.0, 0.55, 0.45))
+	_shake_lane(5.0, 0.25)
+	var pool: Array = stage_data["pool"]
+	var n: int = 3 + rally_done + stage / 8
+	for i in range(n):
+		_pending.append([0.5 + i * 0.5, pool[rng.randi() % pool.size()], power])
 
 func _boss_entry() -> void:
 	boss_out = true
@@ -728,6 +742,7 @@ func _start_stage() -> void:
 	fortress_max = float(stage_data["fortress"])
 	fortress_hp = fortress_max
 	boss_out = stage_data["boss"] == ""
+	rally_done = 0
 	elapsed = 0.0
 	wave_index = 0
 	var waves: Array = stage_data["waves"]

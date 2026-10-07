@@ -56,6 +56,7 @@ const GEMS_FIRST: int = 150
 const GEMS_FIRST_BOSS: int = 300
 const GEMS_PER_STAR: int = 30
 const GEMS_REPLAY: int = 30
+const GEMS_FAIL_MAX: int = 40          # a lost stage still pays, by how much of the fortress fell
 
 static func melee(kind: String) -> bool:
 	return not UNITS[kind].has("shot")
@@ -222,6 +223,14 @@ static func set_deck_slot(slot: int, kind: String) -> void:
 	save_army(army)
 
 # ---------------------------------------------------------------------------
+# A lost stage pays a little, by the share of the fortress destroyed, so replays keep the army growing
+static func reward_fail(fortress_damaged: float) -> Dictionary:
+	var army := load_army()
+	var gems: int = int(round(GEMS_FAIL_MAX * clampf(fortress_damaged, 0.0, 1.0)))
+	army["gems"] += gems
+	save_army(army)
+	return {"gems": gems}
+
 # Rewards for a stage clear: gems only. Returns {"gems"}
 static func reward_clear(stage_id: int, first: bool, new_stars: int, boss: bool) -> Dictionary:
 	var army := load_army()

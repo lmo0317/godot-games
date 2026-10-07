@@ -1438,6 +1438,8 @@ func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	var reward: Dictionary = {}
 	if won:
 		reward = LaneUnits.reward_clear(battle_stage, stars_before == 0, maxi(0, stars - stars_before), LaneStages.get_stage(battle_stage).get("boss", "") != "")
+	else:
+		reward = LaneUnits.reward_fail(1.0 - battle.fortress_hp / maxf(1.0, battle.fortress_max))
 	Achievements.add_stat("games_played", 1)
 	if won:
 		Achievements.max_stat("battle_best_stage", battle_stage)
