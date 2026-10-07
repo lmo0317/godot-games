@@ -246,13 +246,16 @@ func _ready() -> void:
 	$UI.move_child(lane_deck, settings_modal.get_index())
 	lane_select.gacha_pressed.connect(func(): lane_gacha.open())
 	lane_select.deck_pressed.connect(func(): lane_deck.open())
-	lane_gacha.closed.connect(func(): lane_select.refresh())
+	start_screen.gacha_pressed.connect(func(): lane_gacha.open())
+	start_screen.deck_pressed.connect(func(): lane_deck.open())
+	# Back from the gacha or the soldiers screen to whichever screen opened it, refreshed
+	lane_gacha.closed.connect(_after_lane_screen)
 	# Stage results sit over the battle and lead back to the base
 	lane_result = LaneResult.new()
 	$UI.add_child(lane_result)
 	$UI.move_child(lane_result, lane_select.get_index())
 	lane_result.back_pressed.connect(_open_lane_select)
-	lane_deck.closed.connect(func(): lane_select.refresh())
+	lane_deck.closed.connect(_after_lane_screen)
 	
 	# Game Over connections
 	go_btn_retry.pressed.connect(start_new_game.bind(true))
@@ -1371,6 +1374,12 @@ func _open_lane_select() -> void:
 	start_screen.visible = false
 	game_over_panel.visible = false
 	lane_select.open()
+
+func _after_lane_screen() -> void:
+	if lane_select.visible:
+		lane_select.refresh()
+	if start_screen.visible:
+		_update_home_profile_ui()
 
 # Leaving a stage (house button in the lane, or the back button) goes to the stage select
 func _leave_battle() -> void:

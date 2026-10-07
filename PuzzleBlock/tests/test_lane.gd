@@ -364,6 +364,25 @@ func _run() -> void:
 	main.lane_deck.close()
 	main.lane_select.visible = false
 
+	# The home lobby: tabs open the gacha and the soldiers screen and come back home, gems on top
+	main._open_home_screen()
+	await get_tree().process_frame
+	_expect(main.start_screen.gem_label.text == str(LaneUnits.load_army()["gems"]), "the home shows the gems")
+	main.start_screen.gacha_pressed.emit()
+	await get_tree().process_frame
+	_expect(main.lane_gacha.visible, "the home gacha tab opens the gacha")
+	main.lane_gacha.close()
+	main.start_screen.deck_pressed.emit()
+	await get_tree().process_frame
+	_expect(main.lane_deck.visible, "the home soldiers tab opens the soldiers screen")
+	main.lane_deck.close()
+	await get_tree().process_frame
+	_expect(main.start_screen.visible and not main.lane_select.visible, "closing goes back to the home")
+	main.start_screen.battle_pressed.emit()
+	await get_tree().process_frame
+	_expect(main.lane_select.visible, "출전 opens the stage select")
+	main.lane_select.visible = false
+
 	# Classic gets the normal layout back
 	main.game_over_panel.visible = false
 	main._on_start_play_pressed()
