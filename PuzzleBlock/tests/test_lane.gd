@@ -181,7 +181,7 @@ func _run() -> void:
 
 	# Roles: the tank takes less, the crossbow hits flyers hard, the cannoneer hits the fortress hard,
 	# the cleric heals
-	b.levels = {"shield": 1, "crossbow": 1, "cannoneer": 1, "cleric": 1}
+	b.tiers = {}
 	var tank := b._spawn("shield", 1, 1.0)
 	var gob2 := b._spawn("goblin", -1, 1.0)
 	_expect(is_equal_approx(b._damage(gob2, tank), gob2["atk"] * 0.7), "the shield bearer takes 30% less")
@@ -195,8 +195,8 @@ func _run() -> void:
 	tank["node"].position.x = cl["node"].position.x + 20.0
 	b._heal_around(cl)
 	_expect(tank["hp"] > tank["max_hp"] - 30.0, "the cleric heals")
-	var lv5 := LaneUnits.stats("knight", 5)
-	_expect(is_equal_approx(lv5["hp"], LaneUnits.UNITS["knight"]["hp"] * 1.4), "level 5 has +40% HP")
+	var legend := LaneUnits.stats("knight", 5)
+	_expect(is_equal_approx(legend["hp"], LaneUnits.UNITS["knight"]["hp"] * 2.25), "a 전설 knight has +125% HP")
 	for u in [tank, gob2, xb, bat4, cn, cl]:
 		b._kill(u)
 
@@ -246,7 +246,8 @@ func _run() -> void:
 	f.store_string(JSON.stringify(old))
 	f.close()
 	var migrated: Dictionary = LaneUnits.load_army()
-	_expect(migrated["owned"].has("archer") and migrated["deck"].has("archer") and int(migrated["owned"]["knight"]) == 3, "old saves get the starter archer")
+	_expect(migrated["owned"].has("archer") and migrated["deck"].has("archer"), "old saves get the starter archer")
+	_expect(migrated["owned"]["knight"]["tier"] == 0 and migrated["owned"]["knight"]["copies"] == 2, "an old level 3 becomes 2 copies to merge")
 	LaneUnits.save_army(LaneUnits.default_army())
 	b.deck = ["knight", "", "", ""]
 	b._rotation = b._auto_rotation()
@@ -315,7 +316,7 @@ func _run() -> void:
 	rng2.seed = 7
 	var res: Array = LaneUnits.pull(10, rng2)
 	_expect(res.size() == 10 and LaneUnits.load_army()["gems"] == 100 + res.reduce(func(acc, r): return acc + r["refund"], 0), "ten pulls cost 900")
-	_expect(res.any(func(r): return LaneUnits.UNITS[r["kind"]]["rarity"] >= 2), "ten pulls give a rare or better")
+	_expect(res.any(func(r): return LaneUnits.UNITS[r["kind"]]["tier"] >= 1), "ten pulls give a 레어 or better")
 	_expect(LaneUnits.pull(10, rng2).is_empty(), "no pull without gems")
 	main.lane_select.open()
 	main.lane_select.gacha_pressed.emit()
@@ -325,6 +326,22 @@ func _run() -> void:
 	main.lane_select.deck_pressed.emit()
 	await get_tree().process_frame
 	_expect(main.lane_deck.visible, "the base opens the deck screen")
+	# Merging copies raises the star tier
+	var army3 := LaneUnits.load_army()
+	army3["owned"]["knight"] = {"tier": 0, "copies": 3}
+	LaneUnits.save_army(army3)
+	_expect(LaneUnits.can_merge("knight") and LaneUnits.merge("knight") == 1, "1 copy merges a 노멀 knight into 레어")
+	_expect(LaneUnits.merge("knight") == 2 and LaneUnits.load_army()["owned"]["knight"]["copies"] == 0, "2 more copies make it 유니크")
+	_expect(LaneUnits.merge("knight") == -1, "no merge without copies")
+	_expect(is_equal_approx(LaneUnits.stats("knight", 2)["atk"], LaneUnits.UNITS["knight"]["atk"] * 1.5), "유니크 knight hits 50% harder")
+	army3 = LaneUnits.load_army()
+	army3["owned"]["archer"] = {"tier": 0, "copies": 1}
+	LaneUnits.save_army(army3)
+	main.lane_deck.selected = "archer"
+	main.lane_deck.refresh()
+	_expect(not main.lane_deck.merge_btn.disabled, "the merge button is ready with enough copies")
+	main.lane_deck._on_merge()
+	_expect(LaneUnits.tier_of("archer") == 1 and main.lane_deck.merge_btn.disabled, "merging from the deck screen")
 	var spare: String = ""
 	for k in LaneUnits.load_army()["owned"]:
 		if not LaneUnits.deck().has(k):

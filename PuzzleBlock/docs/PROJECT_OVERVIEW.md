@@ -85,11 +85,12 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `adventure_select.gd` | 스테이지 선택 화면 (코드로 UI 구성) |
 | `lane_stages.gd` (`LaneStages`) | 블록 기사단 24스테이지 데이터(요새·배율·몬스터·웨이브·보스·장 색), 병사 해금, 별 계산, 진행 저장 (`docs/LANE_STAGES.md`) |
 | `lane_stage_select.gd` (`LaneStageSelect`) | 블록 기사단 본부(스테이지 선택): 보석·별, 장 제목 아래 6칸씩 24스테이지(번호·이름·별, 보스 빨간 테두리, 잠금), [병사 뽑기] [덱 편성] |
-| `lane_units.gd` (`LaneUnits`) | 병사 8종 데이터(역할·등급·능력치·특기), 레벨, 보석, 뽑기(확률·10회 보장), 덱 4칸, 클리어 보상, 저장 (`docs/LANE_UNITS.md`) |
+| `lane_units.gd` (`LaneUnits`) | 병사 8종 데이터(역할·시작 성급·능력치·특기), 성급 6단계·복제·합성, 보석, 뽑기(확률·10회 보장), 덱 4칸, 클리어 보상, 저장 (`docs/LANE_UNITS.md`) |
 | `lane_ui.gd` (`LaneUI`) | 블록 기사단 픽셀 UI 도우미: UI 키트(`assets/art/ui/`)로 9-slice 판·버튼·아이콘·리본·별·재화 바·어두운 전장 배경 |
 | `lane_result.gd` (`LaneResult`) | 블록 기사단 결과 창: 리본 제목, 별 3개가 하나씩, 보석 보상, [본부로 돌아가기] |
 | `lane_gacha.gd` (`LaneGacha`) | 병사 뽑기 화면: 보석, 확률표, 1회·10회, 카드가 하나씩 뒤집히는 결과 |
-| `lane_deck.gd` (`LaneDeck`) | 덱 편성 화면: 덱 4칸, 병사 8칸(없는 병사는 ?), 능력치 설명, 넣기·빼기 |
+| `lane_deck.gd` (`LaneDeck`) | 병사·덱 화면: 덱 4칸, 보유 병사 8칸(성급 카드), 능력치·복제 설명, 넣기·빼기, 합성(성급 올리기) 연출 |
+| `lane_tier_card.gd` (`LaneTierCard`) | 성급 색 카드 배경 + 돌 테두리 + 성급별 효과(빛줄기·반짝이·맥동 빛·무지개), 합성 번쩍임 |
 | `settings_manager.gd` | 사운드·흔들림·가이드라인·진동·스킨 설정 저장, 진동 호출 |
 | `leaderboard_modal.gd` | 전체/주간/오늘 탭, 내 순위, 끌어서 스크롤 (닉네임은 설정의 프로필 탭에서만 변경) |
 | `settings_modal.gd` | 게임/프로필/업적 탭: 옵션 토글·스킨, 프로필 편집·초기화, 업적 목록 |
@@ -112,7 +113,7 @@ UI 문구 규칙: 메뉴와 버튼은 한국어만 씁니다(영어 병기 없�
 | `player_profile.json` | `user_id`, 닉네임, 아바타, 마지막 순위 |
 | `adventure_progress.json` | 해금된 스테이지, 스테이지별 별 |
 | `lane_progress.json` | 블록 기사단 열린 스테이지, 스테이지별 별 |
-| `lane_army.json` | 블록 기사단 보석, 가진 병사와 레벨, 덱 4칸 |
+| `lane_army.json` | 블록 기사단 보석, 가진 병사(성급·복제), 덱 4칸 |
 | `achievements.json` | 누적 통계, 달성한 업적, 챌린지 참여일 |
 
 ## 4. 게임 흐름

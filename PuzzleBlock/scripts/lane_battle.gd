@@ -6,7 +6,7 @@ extends Control
 #   Big hits knock units back (each kind has a knockback count), deaths fly off with a poof.
 # - The 4 summon buttons are the player's deck (LaneUnits, built outside battles with the gacha and
 #   the deck screen). Each soldier has a role: melee, tank, armor breaker, ranged, anti-air, mage,
-#   healer, siege; levels from duplicates raise HP and attack.
+#   healer, siege; star tiers (merged from duplicates) raise HP and attack.
 # - Gold trickles in up to the wallet's limit; clears pay more. "수입 UP" raises income and limit.
 # - Clears and combos charge the castle cannon; one tap blasts every monster.
 # - Stages (LaneStages) set the monsters, waves and a boss that roars in at half the fortress.
@@ -93,7 +93,7 @@ var cannon: float = 0.0               # 0..100
 var charging: bool = true             # false = hold in front of the castle
 var auto_summon: bool = false         # kept between runs in this session
 var deck: Array = []                  # the 4 soldier kinds of this battle ("" = empty slot)
-var levels: Dictionary = {}           # kind -> level
+var tiers: Dictionary = {}            # kind -> star tier (LaneUnits.TIER_NAME)
 var _auto_timer: float = 0.0
 var castle_hp: int = CASTLE_HP
 var fortress_hp: float = 1.0
@@ -175,7 +175,9 @@ func begin(stage_id: int = 1) -> void:
 	power = stage_data["power"]
 	var army: Dictionary = LaneUnits.load_army()
 	deck = army["deck"].duplicate()
-	levels = army["owned"].duplicate()
+	tiers = {}
+	for k in army["owned"]:
+		tiers[k] = int(army["owned"][k]["tier"])
 	_setup_slots()
 	_rotation = _auto_rotation()
 	_auto_index = 0
@@ -758,7 +760,7 @@ func _stage_cleared() -> void:
 # =========================================================
 
 func _spawn(kind: String, side: int, k: float) -> Dictionary:
-	var st: Dictionary = LaneUnits.stats(kind, int(levels.get(kind, 1))) if side == 1 else ENEMIES[kind]
+	var st: Dictionary = LaneUnits.stats(kind, int(tiers.get(kind, ALLIES[kind]["tier"]))) if side == 1 else ENEMIES[kind]
 	var node := Sprite2D.new()
 	node.texture = tex[kind]
 	node.scale = Vector2.ONE * UNIT_PX
@@ -1111,7 +1113,16 @@ func _build() -> void:
 		veil.size = Vector2(100, 0)
 		veil.position = Vector2(4, 4)
 		btn.add_child(veil)
-		_slots.append({"btn": btn, "icon": icon, "name": n, "cost": c, "lv": lv, "veil": veil})
+		# The tier card sits behind everything on the button
+		var card := LaneTierCard.new(0, btn.size)
+		btn.add_child(card)
+		btn.move_child(card, 0)
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		btn.button_down.connect(func(): btn.scale = Vector2(0.94, 0.94))
+		btn.button_up.connect(func(): btn.scale = Vector2.ONE)
+		btn.pivot_offset = btn.size * 0.5
+		_slots.append({"btn": btn, "icon": icon, "name": n, "cost": c, "lv": lv, "veil": veil, "card": card})
 	_cannon_btn = Button.new()
 	_cannon_btn.position = Vector2(606, 8)
 	_cannon_btn.size = Vector2(106, 84)
@@ -1152,23 +1163,19 @@ func _setup_slots() -> void:
 			s["cost"].text = ""
 			s["lv"].text = ""
 			s["btn"].get_node("Coin").visible = false
-			_style_slot(s["btn"], Color(0.45, 0.45, 0.5))
+			s["card"].set_tier(0)
+			s["card"].modulate = Color(0.5, 0.5, 0.55)
 			continue
 		var st: Dictionary = ALLIES[kind]
+		var t: int = int(tiers.get(kind, st["tier"]))
 		s["btn"].get_node("Coin").visible = true
-		_style_slot(s["btn"], {1: Color(1, 1, 1), 2: Color(0.6, 0.8, 1.25), 3: Color(1.35, 1.1, 0.5)}[int(st["rarity"])])
+		s["card"].set_tier(t)
+		s["card"].modulate = Color.WHITE
 		s["icon"].texture = tex[kind]
 		s["name"].text = st["name"]
 		s["cost"].text = str(st["cost"])
-		s["lv"].text = "Lv %d" % int(levels.get(kind, 1))
-
-# Summon buttons are stone cards tinted by the soldier's grade
-func _style_slot(btn: Button, tint: Color) -> void:
-	btn.add_theme_stylebox_override("normal", LaneUI.box("card_frame", 6, tint))
-	btn.add_theme_stylebox_override("hover", LaneUI.box("card_frame", 6, tint * 1.15))
-	btn.add_theme_stylebox_override("pressed", LaneUI.box("card_frame", 6, tint * 0.8))
-	btn.add_theme_stylebox_override("hover_pressed", LaneUI.box("card_frame", 6, tint * 0.8))
-	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		s["lv"].text = LaneUnits.TIER_NAME[t]
+		s["lv"].add_theme_color_override("font_color", LaneUnits.tier_color(t).lightened(0.35))
 
 func set_menu_icons(home: Texture2D, settings: Texture2D, sound: Texture2D) -> void:
 	_menu["home"].texture_normal = home
