@@ -16,6 +16,7 @@ const START_ZOOM := 2.0        # one tile 128 px wide (sprites 1:1), like Kairos
 const MAX_RECT := 16
 const EDIT_ZOOM := 3.0          # editing zooms in so a tile is bigger than a fingertip on phones
 const UNDO_STEPS := 30
+const TURN_CELLS := 2           # the road brush bends only when the finger is this far off its line
 const HOLD_MS := 250            # with a tool, hold this long before dragging to draw; a quick drag pans
 const EDGE := 70.0             # dragging a ghost this close to the screen edge moves the map
 const EDGE_SPEED := 700.0
@@ -64,6 +65,9 @@ var fac_cell := -1
 var rect_a := -1                # zone / demolish box being dragged out
 var rect_b := -1
 var paint_last := -1            # last cell the road brush built on
+var paint_anchor := Vector2i.ZERO   # where the current straight part of the stroke starts
+var paint_axis := -1            # 0: the straight part runs along x, 1: along y, -1: not yet known
+var paint_hover := -1           # cell under the finger before the direction is known
 var hold_cell := -1             # cell under a finger that may become a stroke (drag == "hold")
 var hold_start := 0
 var build_ok := false
@@ -985,7 +989,7 @@ func _pick_tool(key: String) -> void:
 func _edit_hint() -> String:
 	match tool:
 		"road":
-			return "도로 %s/칸 · 꾹 누른 채 끌면 지나간 칸에 깔려요 · 톡 누르면 한 칸 · 그냥 끌면 맵 이동" % UIKit.money(Defs.ROAD_COST)
+			return "도로 %s/칸 · 꾹 누른 채 비스듬히 끌면 곧게 깔리고, 옆으로 2칸 넘게 가면 꺾여요 · 그냥 끌면 맵 이동" % UIKit.money(Defs.ROAD_COST)
 		"zone1", "zone2", "zone3":
 			if rect_a >= 0:
 				return _box_summary()
@@ -1176,6 +1180,9 @@ func _begin_paint(cell: int) -> void:
 	if tool == "road":
 		drag = "paint"
 		paint_last = cell
+		paint_anchor = City.pos(cell)
+		paint_axis = -1
+		paint_hover = -1
 		_road_at(cell)
 		map.queue_redraw()
 		_update_hud()
@@ -1191,19 +1198,25 @@ func _paint_to(p: Vector2) -> void:
 	if cell < 0:
 		return
 	if drag == "paint":
-		if cell == paint_last:
-			return
-		# walk cell by cell to the finger, so fast strokes leave no gaps and the road follows the finger
-		var a := City.pos(paint_last)
-		var b := City.pos(cell)
-		while a != b:
-			var d := b - a
-			if absi(d.x) >= absi(d.y):
-				a.x += signi(d.x)
-			else:
-				a.y += signi(d.y)
-			_road_at(City.idx(a.x, a.y))
-		paint_last = cell
+		# keep the road straight: it runs along the first direction the finger went and ignores
+		# small wobbles; only a clear move sideways (TURN_CELLS) bends it there
+		var d := City.pos(cell) - paint_anchor
+		if paint_axis < 0:
+			# wait until the finger has clearly gone somewhere, so a first wobble does not pick the way
+			paint_hover = cell
+			if maxi(absi(d.x), absi(d.y)) < TURN_CELLS:
+				return
+			paint_axis = 0 if absi(d.x) >= absi(d.y) else 1
+		var along := Vector2i(d.x, 0) if paint_axis == 0 else Vector2i(0, d.y)
+		var side := d - along
+		if absi(side.x) + absi(side.y) >= TURN_CELLS:
+			var corner := paint_anchor + along
+			_walk_road(corner)
+			paint_anchor = corner
+			paint_axis = 1 - paint_axis
+			_walk_road(corner + side)
+		else:
+			_walk_road(paint_anchor + along)
 		map.queue_redraw()
 		_update_hud()
 	elif drag == "box":
@@ -1217,9 +1230,26 @@ func _paint_to(p: Vector2) -> void:
 			_box_preview()
 
 
+func _walk_road(to: Vector2i) -> void:
+	## Builds road cell by cell from the end of the stroke to `to` (no gaps on fast strokes).
+	var a := City.pos(paint_last)
+	while a != to:
+		var d := to - a
+		if absi(d.x) >= absi(d.y):
+			a.x += signi(d.x)
+		else:
+			a.y += signi(d.y)
+		if not City.inside(a.x, a.y):
+			break
+		_road_at(City.idx(a.x, a.y))
+		paint_last = City.idx(a.x, a.y)
+
+
 func _end_paint() -> void:
 	## The finger lifts: a road stroke or a box becomes one undo step.
 	if drag == "paint":
+		if paint_axis < 0 and paint_hover >= 0:
+			_walk_road(City.pos(paint_hover))   # a short drag of one cell still makes a two-cell road
 		_finish_edit("place", paint_last)
 	elif drag == "box":
 		var z := _tool_zone()
