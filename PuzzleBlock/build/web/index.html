@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
-		<title>PuzzleBlock</title>
+		<title>퍼즐블록 (PuzzleBlock)</title>
 		<style>
 html, body, #canvas {
 	margin: 0;
@@ -93,7 +93,46 @@ body {
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 
-	</head>
+	
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background-color: #070b14;
+    color: #e2e8f0;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    width: 100vw;
+    height: 100vh;
+  }
+  #canvas {
+    display: block;
+    margin: 0 auto;
+  }
+  #canvas:focus {
+    outline: none;
+  }
+</style>
+
+<script>
+  (function () {
+    function sync() {
+      var ctx = window.__godotAudioCtx;
+      if (!ctx) return;
+      if (document.hidden) { if (ctx.state === "running") ctx.suspend(); }
+      else if (ctx.state === "suspended") { ctx.resume(); }
+    }
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("pagehide", sync);
+    window.addEventListener("pageshow", sync);
+  })();
+</script>
+
+</head>
 	<body>
 		<canvas id="canvas">
 			Your browser does not support the canvas tag.
@@ -164,6 +203,8 @@ const engine = new Engine(GODOT_CONFIG);
 
 	const missing = Engine.getMissingFeatures({
 		threads: GODOT_THREADS_ENABLED,
+	}).filter(function(item) {
+		return !item.toLowerCase().includes('secure context');
 	});
 
 	if (missing.length !== 0) {
