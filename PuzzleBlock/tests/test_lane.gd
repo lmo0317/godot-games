@@ -239,6 +239,18 @@ func _run() -> void:
 	_expect(main.go_title.text == "STAGE 2 실패", "a fallen castle fails the stage (%s)" % main.go_title.text)
 	_expect(LaneStages.load_progress()["unlocked"] == 2, "a failed stage opens nothing")
 
+	# The house button in the lane leads back to the stage select
+	main.game_over_panel.visible = false
+	main.is_game_over = false
+	main._start_lane_stage(1)
+	await _wait_until(func(): return not main._is_tray_empty() and not b.finished)
+	b.home_pressed.emit()
+	await get_tree().process_frame
+	_expect(main.lane_select.visible and not main.start_screen.visible and not b.visible, "the house button goes to the stage select")
+	main.lane_select.close()
+	await get_tree().process_frame
+	_expect(main.start_screen.visible, "closing the stage select goes home")
+
 	# Classic gets the normal layout back
 	main.game_over_panel.visible = false
 	main._on_start_play_pressed()

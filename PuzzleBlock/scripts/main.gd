@@ -203,7 +203,7 @@ func _ready() -> void:
 	battle.visible = false
 	battle.defeated.connect(func(_stage: int): _finish_battle(false, "ko"))
 	battle.cleared.connect(func(_stage: int, stars: int): _finish_battle(true, "clear", stars))
-	battle.home_pressed.connect(_open_home_screen)
+	battle.home_pressed.connect(_leave_battle)
 	battle.settings_pressed.connect(_open_settings)
 	battle.sound_pressed.connect(_on_sound_toggled)
 	_sync_battle_menu()
@@ -294,6 +294,8 @@ func _on_back_pressed() -> void:
 			_show_exit_confirm()
 		else:
 			get_tree().quit()
+	elif not start_screen.visible and game_mode == "battle" and not game_over_panel.visible:
+		_leave_battle()
 	elif not start_screen.visible:
 		_open_home_screen()
 
@@ -1336,6 +1338,11 @@ func _open_lane_select() -> void:
 	start_screen.visible = false
 	game_over_panel.visible = false
 	lane_select.open()
+
+# Leaving a stage (house button in the lane, or the back button) goes to the stage select
+func _leave_battle() -> void:
+	_open_home_screen() # logs the quit and closes any popup
+	_open_lane_select()
 
 func _start_lane_stage(stage_id: int) -> void:
 	if LaneStages.get_stage(stage_id).is_empty():
