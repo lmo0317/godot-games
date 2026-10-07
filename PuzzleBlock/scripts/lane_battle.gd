@@ -12,6 +12,9 @@ extends Control
 # - Enemy traits ask for the right soldier: bats fly (only archers and mages reach them), armored
 #   skeletons shrug off everything but spears, slimes come in swarms (mage splash).
 # - One toggle switches the army between charging and holding in front of the castle.
+# - Auto mode plays the battle so the player can stay on the puzzle: it summons as gold comes in
+#   (a front line of knights, archers for bats, spears for armor, a mix otherwise), fires the cannon
+#   into crowds or the boss, and buys income upgrades once the army stands.
 # The battle pauses while the settings window is open (MainGame sets `paused`).
 # Art: Codex pixel art cut by tools/import_lane_art.py, drawn at whole-number scales.
 
@@ -39,11 +42,11 @@ const KB_DIST: float = 36.0
 const KB_TIME: float = 0.45
 const MAX_ALLIES: int = 10
 const MAX_ENEMIES: int = 14
-const CASTLE_HP: int = 500
+const CASTLE_HP: int = 600
 const START_GOLD: int = 60
 # Wallet levels: limit, gold per second, cost of the next level
 const WALLET_MAX: Array[int] = [200, 320, 480, 700, 1000]
-const WALLET_INCOME: Array[float] = [2.5, 3.5, 4.6, 6.0, 7.5]
+const WALLET_INCOME: Array[float] = [3.0, 4.0, 5.0, 6.2, 7.5]
 const WALLET_COST: Array[int] = [80, 160, 260, 400]
 const GOLD_PER_LINE: int = 18
 const GOLD_PER_POINT: float = 0.5
@@ -69,7 +72,7 @@ const ENEMIES := {
 	"armored": {"hp": 80.0, "atk": 12.0, "range": 44.0, "speed": 20.0, "every": 1.3, "kb": 3, "armor": true},
 	"orc": {"hp": 130.0, "atk": 18.0, "range": 50.0, "speed": 20.0, "every": 1.5, "kb": 2},
 }
-const ENEMY_GROWTH: float = 1.15
+const ENEMY_GROWTH: float = 1.12
 const FORTRESS_HP: float = 240.0
 const FORTRESS_GROWTH: float = 1.25
 
@@ -79,6 +82,8 @@ var gold: int = START_GOLD
 var wallet: int = 0                   # wallet level index
 var cannon: float = 0.0               # 0..100
 var charging: bool = true             # false = hold in front of the castle
+var auto_summon: bool = false         # kept between runs in this session
+var _auto_timer: float = 0.0
 var castle_hp: int = CASTLE_HP
 var fortress_hp: float = FORTRESS_HP
 var fortress_max: float = FORTRESS_HP
@@ -116,6 +121,7 @@ var _gold_label: Label
 var _wallet_label: Label
 var _income_btn: Button
 var _march_btn: Button
+var _auto_btn: Button
 var _cannon_btn: Button
 var _cannon_fill: ColorRect
 var _cannon_label: Label
@@ -284,6 +290,60 @@ func _fx(frames: Array, at: Vector2, times: Array) -> void:
 			tw.tween_interval(times[i])
 	tw.tween_callback(sp.queue_free)
 
+func toggle_auto() -> void:
+	auto_summon = not auto_summon
+	_auto_timer = 0.0
+	_auto_index = 0
+	SoundManager.play_click()
+	_refresh()
+
+# What auto mode summons next: answer bats with archers and armor with spears, keep knights in
+# front when monsters come close, otherwise follow a steady rotation. A soldier that is not ready
+# is skipped for a knight, so gold keeps turning into an army.
+const AUTO_ROTATION: Array[String] = ["knight", "archer", "knight", "mage", "knight", "spearman"]
+var _auto_index: int = 0
+
+func auto_pick() -> String:
+	var mine: Dictionary = {"knight": 0, "archer": 0, "mage": 0, "spearman": 0}
+	for u in units:
+		if u["side"] == 1:
+			mine[u["kind"]] += 1
+	var foes: Array = units.filter(func(u): return u["side"] == -1)
+	var bats: int = foes.filter(func(u): return u["flying"]).size()
+	var armored: int = foes.filter(func(u): return u["armor"]).size()
+	var close: bool = foes.any(func(u): return u["node"].position.x < DEFEND_X + 40.0)
+	var want: String = AUTO_ROTATION[_auto_index % AUTO_ROTATION.size()]
+	if mine["knight"] == 0 or (close and mine["knight"] < 3):
+		want = "knight"
+	elif bats > 0 and mine["archer"] + mine["mage"] < bats + 1:
+		want = "archer"
+	elif armored > 0 and mine["spearman"] < armored:
+		want = "spearman"
+	if not _can_summon(want) and _can_summon("knight") and want != "knight" and mine["knight"] < 3:
+		return "knight"
+	return want
+
+func _can_summon(kind: String) -> bool:
+	return gold >= ALLIES[kind]["cost"] and cooldown.get(kind, 0.0) <= 0.0
+
+func _auto_step() -> void:
+	# The cannon goes off when it can hit a crowd (or the boss); the wallet grows once the army stands
+	var foes: Array = units.filter(func(u): return u["side"] == -1)
+	if cannon >= 100.0 and (foes.size() >= 2 or foes.any(func(u): return u.get("boss", false))):
+		fire_cannon()
+	if wallet < 2 and gold >= WALLET_COST[wallet] + 40:
+		upgrade_wallet()
+	if _count(1) >= MAX_ALLIES:
+		return
+	var kind: String = auto_pick()
+	if kind == AUTO_ROTATION[_auto_index % AUTO_ROTATION.size()] and _can_summon(kind):
+		_auto_index += 1
+	if summon(kind):
+		var btn: Button = _buttons[kind]
+		btn.scale = Vector2(0.92, 0.92)
+		btn.pivot_offset = btn.size * 0.5
+		btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.15)
+
 func toggle_march() -> void:
 	charging = not charging
 	SoundManager.play_click()
@@ -307,6 +367,11 @@ func _tick(delta: float) -> void:
 		_gold_acc = 0.0
 	if not switching:
 		_waves(delta)
+	if auto_summon:
+		_auto_timer -= delta
+		if _auto_timer <= 0.0:
+			_auto_timer = 0.3
+			_auto_step()
 	# Units may overlap (as in The Battle Cats) so a crowd fights together; each stands at its own
 	# distance inside its range, which spreads them out
 	for u in units.duplicate():
@@ -375,7 +440,7 @@ func _waves(delta: float) -> void:
 	if wave_timer <= 0.0:
 		wave_timer = BIG_WAVE_EVERY
 		warned = false
-		for i in range(mini(3 + stage / 2, 8)):
+		for i in range(mini(2 + stage / 2, 8)):
 			_pending.append([i * 0.7, _pick_enemy(), k])
 	for p in _pending.duplicate():
 		p[0] -= delta
@@ -397,9 +462,9 @@ func _boss_entry() -> void:
 	_sfx("b_roar", -2.0)
 	_banner("보스 등장!", "충격파에 밀려나요", Color(1.0, 0.45, 0.4))
 	castle_hit.emit(0)
-	# Boss: an orc with x2.5 HP and x1.25 attack, bigger and slower
-	var boss := _spawn("orc", -1, pow(ENEMY_GROWTH, stage - 1) * 1.25)
-	boss["max_hp"] *= 2.0
+	# Boss: an orc with x2 HP and x1.2 attack, bigger and slower
+	var boss := _spawn("orc", -1, pow(ENEMY_GROWTH, stage - 1) * 1.2)
+	boss["max_hp"] *= 1.67
 	boss["hp"] = boss["max_hp"]
 	boss["speed"] = 16.0
 	boss["node"].scale = Vector2.ONE * PX * 1.5
@@ -499,7 +564,7 @@ func _knock(u: Dictionary, dist: float) -> void:
 	tw.chain().tween_property(node, "offset:y", base_off, KB_TIME * 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 func _trickle_every() -> float:
-	return maxf(4.0, 9.0 - 0.5 * (stage - 1))
+	return maxf(4.0, 10.0 - 0.6 * (stage - 1))
 
 func _pick_enemy() -> String:
 	var pool: Array = ["slime", "slime"]
@@ -719,8 +784,9 @@ func _build() -> void:
 	_bars_layer = Node2D.new()
 	_view.add_child(_bars_layer)
 	_stage_label = _outlined("", 26, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	_stage_label.position = Vector2(290, 8)
-	_stage_label.size = Vector2(140, 36)
+	_stage_label.position = Vector2(352, 8)
+	_stage_label.size = Vector2(140, 44)
+	_stage_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_view.add_child(_stage_label)
 	# HP bars sit on the ground under each building (the top-right corner is Toss's button area)
 	var cb := _bar(_view, Vector2(CASTLE_X - BASE_BAR_W * 0.5, LANE_H - 26), Vector2(BASE_BAR_W, 20))
@@ -757,10 +823,16 @@ func _build() -> void:
 	pill.mouse_filter = Control.MOUSE_FILTER_PASS
 	_march_btn = Button.new()
 	_march_btn.position = Vector2(156, 8)
-	_march_btn.size = Vector2(110, 44)
+	_march_btn.size = Vector2(90, 44)
 	_march_btn.focus_mode = Control.FOCUS_NONE
 	_march_btn.pressed.connect(toggle_march)
 	_view.add_child(_march_btn)
+	_auto_btn = Button.new()
+	_auto_btn.position = Vector2(254, 8)
+	_auto_btn.size = Vector2(92, 44)
+	_auto_btn.focus_mode = Control.FOCUS_NONE
+	_auto_btn.pressed.connect(toggle_auto)
+	_view.add_child(_auto_btn)
 	# Summon bar right under the lane: gold and income on the left, soldiers, then the cannon
 	var bar := Panel.new()
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -900,6 +972,10 @@ func _refresh() -> void:
 		_income_btn.modulate = Color(0.6, 0.6, 0.65)
 	UIKit.style_button(_march_btn, "primary" if charging else "secondary", 18, 22)
 	_march_btn.text = "돌격" if charging else "수비"
+	UIKit.style_button(_auto_btn, "secondary", 18, 22)
+	if auto_summon: # green while on, so it reads as a mode rather than a button
+		UIKit.style_raised(_auto_btn, Color(0.16, 0.6, 0.34), Color(0.5, 0.92, 0.62), Color(0.04, 0.24, 0.12), 22)
+	_auto_btn.text = "자동 ON" if auto_summon else "자동"
 	for kind in _buttons:
 		var ok: bool = gold >= ALLIES[kind]["cost"] and _count(1) < MAX_ALLIES and not finished
 		_buttons[kind].modulate = Color.WHITE if ok else Color(0.5, 0.5, 0.56)

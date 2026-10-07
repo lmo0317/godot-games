@@ -159,6 +159,30 @@ func _run() -> void:
 	await get_tree().create_timer(0.3).timeout
 	_expect(b.boss_out and b.units.any(func(u): return u.get("boss", false)), "the boss appears at half the fortress")
 
+	# Auto mode summons by itself and answers the lane
+	for u in b.units.duplicate():
+		b._kill(u)
+	b._pending.clear()
+	b.trickle_timer = 99.0
+	b.wave_timer = 99.0
+	for k in LaneBattle.ALLY_ORDER:
+		b.cooldown[k] = 0.0
+	_expect(b.auto_pick() == "knight", "auto starts with a knight")
+	b.gold = 400
+	b.toggle_auto()
+	_expect(b.auto_summon, "auto mode on")
+	await get_tree().create_timer(0.5).timeout
+	_expect(b._count(1) >= 1, "auto mode summons without a tap (%d)" % b._count(1))
+	var bat2 := b._spawn("bat", -1, 1.0)
+	bat2["node"].position.x = 500.0
+	_expect(b.auto_pick() == "archer", "auto answers a bat with an archer (%s)" % b.auto_pick())
+	b._kill(bat2)
+	var arm2 := b._spawn("armored", -1, 1.0)
+	arm2["node"].position.x = 500.0
+	_expect(b.auto_pick() == "spearman", "auto answers armor with a spear (%s)" % b.auto_pick())
+	b._kill(arm2)
+	b.toggle_auto()
+
 	# Breaking the fortress moves to the next stage
 	for u in b.units.duplicate():
 		if u["side"] == -1:
@@ -167,6 +191,7 @@ func _run() -> void:
 	b.wave_timer = 99.0
 	b._pending.clear()
 	await get_tree().create_timer(0.6).timeout # let the boss shockwave knockback finish
+	knight = b._spawn("knight", 1, 1.0)
 	knight["hp"] = 999.0
 	knight["stun"] = 0.0
 	knight["node"].position.x = LaneBattle.ENEMY_BASE_X - 20.0
