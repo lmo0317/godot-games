@@ -193,17 +193,20 @@ func _unit_card(kind: String, army: Dictionary) -> Button:
 	var line: String = LaneUnits.TIER_NAME[tier] + ("  · 덱" if owned and army["deck"].has(kind) else "") if owned else "미보유"
 	_fill(b, kind, line, CARD_SIZE, tier, not owned)
 	if kind == selected:
-		var mark := NinePatchRect.new()
-		mark.texture = LaneUI.tex("card_frame")
-		mark.patch_margin_left = 16
-		mark.patch_margin_right = 16
-		mark.patch_margin_top = 18
-		mark.patch_margin_bottom = 18
-		mark.draw_center = false
-		mark.modulate = Color(2.2, 2.0, 1.0)
+		# Selected: a gold outline that breathes
+		var mark := Panel.new()
+		var sb := StyleBoxFlat.new()
+		sb.draw_center = false
+		sb.set_border_width_all(4)
+		sb.border_color = LaneUI.GOLD
+		sb.set_corner_radius_all(8)
+		mark.add_theme_stylebox_override("panel", sb)
 		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		mark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		b.add_child(mark)
+		var mt := mark.create_tween().set_loops()
+		mt.tween_property(mark, "modulate:a", 0.4, 0.6)
+		mt.tween_property(mark, "modulate:a", 1.0, 0.6)
 	if owned and LaneUnits.can_merge(kind):
 		var badge := LaneUI.label("합성!", 15, Color(0.6, 1.0, 0.6), HORIZONTAL_ALIGNMENT_RIGHT)
 		badge.position = Vector2(0, 8)

@@ -1,7 +1,8 @@
 class_name LaneTierCard
 extends Panel
-# A soldier card background in its star tier's colour (docs/LANE_UNITS.md) with the stone frame from
-# the UI kit, and effects that grow with the tier:
+# A soldier card background in its star tier's colour (docs/LANE_UNITS.md) inside that tier's own
+# frame (assets/art/ui/frame_0..5: iron, sapphire, amethyst, topaz, ruby, winged diamond), and
+# effects that grow with the tier:
 #   유니크+   a light band sweeps across now and then
 #   레전더리+ small stars twinkle on the card
 #   신화+     the card glows and pulses
@@ -9,8 +10,17 @@ extends Panel
 # Content (soldier, labels) is added by the caller; the effects sit on top of it. Mouse input passes
 # through, so it can sit inside a button.
 
+# Per frame: 9-slice corner size, and how far in its bars sit (the colour fills inside the bars)
+const FRAME_MARGIN: Array[int] = [32, 32, 32, 36, 40, 46]
+# Deep card colours per tier (노멀 slate, 레어 navy, 유니크 violet, 레전더리 amber, 신화 crimson,
+# 전설 warm gold)
+const TIER_BG: Array[Color] = [Color("#3a3f4a"), Color("#173a78"), Color("#45206f"), Color("#7a3e08"), Color("#6f1222"), Color("#9a6c12")]
+const FRAME_INSET: Array[Vector2] = [Vector2(7, 9), Vector2(7, 9), Vector2(9, 9), Vector2(7, 11), Vector2(11, 15), Vector2(17, 19)]
+
 var tier: int = 0
+var frame_scale: float = 1.0          # small cards draw the frame smaller so its corners fit
 var _frame: NinePatchRect
+var _fill: Panel
 var _bg: StyleBoxFlat
 var _fx: Control
 var _shine: ColorRect
@@ -18,25 +28,24 @@ var _clock: float = 0.0
 var _next_shine: float = 0.6
 var _next_spark: float = 0.2
 
-func _init(t: int = 0, sz: Vector2 = Vector2(120, 140)) -> void:
+func _init(t: int = 0, sz: Vector2 = Vector2(120, 140), fscale: float = -1.0) -> void:
 	tier = t
 	size = sz
 	custom_minimum_size = sz
+	frame_scale = fscale if fscale > 0.0 else (1.0 if minf(sz.x, sz.y) >= 110.0 else 0.6)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip_contents = true
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_bg = StyleBoxFlat.new()
-	_bg.set_corner_radius_all(6)
-	add_theme_stylebox_override("panel", _bg)
+	_bg.set_corner_radius_all(4)
+	_fill = Panel.new()
+	_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fill.add_theme_stylebox_override("panel", _bg)
+	add_child(_fill)
 	_frame = NinePatchRect.new()
-	_frame.texture = LaneUI.tex("card_frame")
-	_frame.patch_margin_left = 16
-	_frame.patch_margin_right = 16
-	_frame.patch_margin_top = 18
-	_frame.patch_margin_bottom = 18
 	_frame.draw_center = false
 	_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_frame)
 	set_tier(t)
 
@@ -58,9 +67,22 @@ func _ready() -> void:
 func set_tier(t: int) -> void:
 	tier = clampi(t, 0, LaneUnits.MAX_TIER)
 	var col: Color = LaneUnits.tier_color(tier)
-	_bg.bg_color = col.darkened(0.5)
+	_bg.bg_color = TIER_BG[tier]
 	_bg.shadow_size = 0
-	_frame.modulate = col.lightened(0.35) if tier >= 1 else Color(1, 1, 1)
+	# The frame is laid out at 1/frame_scale and scaled down, so small cards get smaller corners
+	var k: float = frame_scale
+	_frame.texture = LaneUI.tex("frame_%d" % tier)
+	var m: int = FRAME_MARGIN[tier]
+	_frame.patch_margin_left = m
+	_frame.patch_margin_right = m
+	_frame.patch_margin_top = m
+	_frame.patch_margin_bottom = m
+	_frame.scale = Vector2(k, k)
+	_frame.position = Vector2.ZERO
+	_frame.size = size / k
+	var inset: Vector2 = FRAME_INSET[tier] * k
+	_fill.position = inset
+	_fill.size = size - inset * 2.0
 
 func _process(delta: float) -> void:
 	if not is_visible_in_tree():

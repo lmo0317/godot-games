@@ -91,6 +91,14 @@ TRANSPARENT background (PNG with alpha). Wide canvas. Retro 16-bit PIXEL ART lik
 Subject: a PIXEL-ART GAME UI KIT sheet for a cozy fantasy defense game, drawn in EXACTLY the same retro 16-bit pixel style, pixel size, outline and palette as the attached character reference sheet. All pieces laid out in a neat grid, each piece clearly separated from the others by wide empty transparent gaps, all flat front view. Pieces: 1 a large square PANEL: dark walnut wooden board with a thick golden brass rim and small rivets in the four corners (about 48x48 art pixels, plain center so it can be stretched); 2 a large square PARCHMENT panel ...; 3-6 GREEN / BLUE / RED-ORANGE / GREY wide BUTTONs ...; 7 GEM icon; 8 GOLD COIN icon; 9 filled GOLD STAR; 10 EMPTY STAR; 11 iron PADLOCK; 12 wide red cloth TITLE RIBBON ...; 13 round bronze STAGE MEDALLION ...; 14 round dark-red BOSS MEDALLION with a small skull and horns ...; 15 small square CARD FRAME: dark slate stone frame ... + 스타일 문구
 ```
 
+### 성급 테두리 (2026-10-07)
+
+"배경의 테두리가 구리다"(성급 색 카드에 회색 돌 테두리 하나를 색만 입혀 씀) → 성급마다 다른 테두리 6개를 한 장에 그림. 장식은 네 모서리에만 두고 변은 곧게(9-slice로 늘림), 가운데는 비움. 2장 중 굵은 B. `tools/import_lane_ui.py`가 `frames.png`를 도트 크기 5로 잘라 `frame_0..5`로 저장.
+
+```text
+Subject: a SPRITE SHEET of 6 ornate CARD FRAMES for game character cards, laid out in ONE horizontal row with wide empty gaps, drawn in EXACTLY the same retro 16-bit pixel style ... as the attached reference sheet. Every frame is the same portrait rectangle (about 32x40 art pixels), with a border 3 to 4 art pixels thick, a completely EMPTY TRANSPARENT center, straight plain sides so it can be stretched, and all decoration kept inside the four CORNERS only. 1 plain dark iron frame with small rivets; 2 polished steel with blue sapphire studs; 3 silver with purple amethyst gems; 4 gold with orange topaz gems and tiny leaf curls; 5 dark gold with red ruby gems and small sharp spikes; 6 radiant bright gold with white diamond gems and tiny feathered wings at the two top corners. + 스타일 문구
+```
+
 ### 병사 원화 스케치 (2026-10-07)
 
 사용자 요청("각 캐릭터마다 아트 시안 원화 스케치 느낌으로")으로 병사 8종을 한 장씩 그렸습니다. 게임 도트 그림을 크게 키운 것을 `-i`로 넘겨 디자인을 맞췄습니다. 배경이 투명하거나 어둡게 나오면 다시 그림(기사·방패병 1번씩).
@@ -122,6 +130,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 
 - 2026-10-05: Codex로 그린 디펜스 픽셀 아트 — 그림마다 픽셀 크기가 달랐고(성벽 3배, 캐릭터 1~1.6배), 디테일이 많은 큰 머리 꼬마 그림이라 "구리다". 정면 아군도 거절(아군은 뒷모습). 디펜스는 코드 도트로 바꿈.
 - 2026-10-05: 성문과 겹치는 유닛 배치.
+- 2026-10-07: 성급 카드에 회색 돌 테두리 하나를 색만 입혀 쓴 것 — "배경의 테두리가 구리다". 성급마다 따로 그린 테두리로 교체.
 - 2026-10-07: 대포 효과를 그림 없이 노란 사각형으로 낸 것 — "대포 이미지가 완전 구리다". 눈에 띄는 연출은 임시 도형으로 내보내지 말고 처음부터 그림(Codex 시트)으로.
 - 2026-10-06: 몬스터 배틀의 카툰 그림(큰 머리 꼬마)과 코드 도트 캐릭터 — 블록 기사단에서 Codex 한 장 시트 픽셀 아트로 교체.
 
@@ -150,6 +159,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 전투 효과 | `assets/art/lane/spark.png`, `slash.png`, `arrow.png`, `bolt.png`, `fireball.png`, `holy.png`, `heal.png`, `dust.png`, `ring.png` | Codex 시트 | 위 `fx2.png` | 타격 불꽃·베기·투사체·회복·먼지·충격 고리 | 완료 |
 | 병사 원화 스케치 8종 | `art/concept/units/*.jpg` | Codex (도트 그림을 참고로 연필·수채 원화) | 아래 "병사 원화" | 기획 참고용 (게임에 안 들어감) | 완료 |
 | 블록 기사단 UI 키트 15종 | `assets/art/ui/panel_wood.png`, `panel_paper.png`, `btn_green/blue/red/grey.png`, `icon_gem/coin/star/star_empty/lock.png`, `ribbon.png`, `medal.png`, `medal_boss.png`, `card_frame.png` | Codex 시트 | 위 "블록 기사단 UI" | 본부·뽑기·덱·전투 소환 줄·결과 창 (`LaneUI`) | 완료 |
+| 성급 카드 테두리 6종 | `assets/art/ui/frame_0.png` ~ `frame_5.png` | Codex 시트(2장 중 B, 도트 크기 5) | 아래 "성급 테두리" | 성급 카드(`LaneTierCard`): 노멀 철·레어 사파이어·유니크 자수정·레전더리 토파즈·신화 루비 가시·전설 다이아 날개 | 완료 |
 | 날개·방패 표시 | `LaneBattle._pixel_icon()` (7px) | 코드 | 문자열 도트 | 박쥐·갑옷 해골 머리 위 | 완료 |
 | 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
 | 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |

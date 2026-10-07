@@ -3,6 +3,8 @@
 Raw file (prompt in docs/ART_GUIDE.md, "블록 기사단 UI"): ui.png, one sheet with a wooden panel,
 a parchment panel, green/blue/red/grey buttons, gem/coin/star/empty star/lock icons, a title ribbon,
 a stage medallion, a boss medallion and a stone card frame.
+frames.png (optional): six card frames in one row, one per star tier (iron, sapphire, amethyst,
+topaz, ruby, diamond with wings), saved as frame_0 .. frame_5.
 
 The sheet is brought back to its pixel grid with one art-pixel size (BLOCK), pieces are cut by their
 connected opaque areas (each crop keeps only its own pixels) and named by where they sit on the
@@ -19,6 +21,7 @@ from PIL import Image
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, "assets", "art", "ui")
 BLOCK = 6
+FRAME_BLOCK = 5    # frames.png was drawn with a smaller art pixel
 UI_SCALE = 2
 # Where each piece's centre sits on the sheet (fractions of the width and height)
 PIECES = {
@@ -30,9 +33,9 @@ PIECES = {
 }
 
 
-def to_grid(img):
+def to_grid(img, block=BLOCK):
     img = img.convert("RGBA")
-    small = img.resize((max(1, round(img.width / BLOCK)), max(1, round(img.height / BLOCK))), Image.Resampling.NEAREST)
+    small = img.resize((max(1, round(img.width / block)), max(1, round(img.height / block))), Image.Resampling.NEAREST)
     small.putalpha(small.getchannel("A").point(lambda a: 255 if a >= 128 else 0))
     return small
 
@@ -86,6 +89,24 @@ def main():
         path = os.path.join(OUT, name + ".png")
         crop.save(path, optimize=True)
         print(f"{name} {crop.size}")
+    frames_path = os.path.join(src, "frames.png")
+    if os.path.exists(frames_path):
+        img = to_grid(Image.open(frames_path), FRAME_BLOCK)
+        label, comps = components(img)
+        comps = sorted([c for c in comps if c["n"] >= 60], key=lambda c: c["box"][0])
+        if len(comps) != 6:
+            sys.exit(f"expected 6 frames, found {len(comps)}")
+        for i, c in enumerate(comps):
+            x0, y0, x1, y1 = c["box"]
+            crop = img.crop((x0, y0, x1, y1))
+            px = crop.load()
+            for yy in range(y1 - y0):
+                for xx in range(x1 - x0):
+                    if label[y0 + yy][x0 + xx] != c["id"]:
+                        px[xx, yy] = (0, 0, 0, 0)
+            crop = crop.resize((crop.width * UI_SCALE, crop.height * UI_SCALE), Image.Resampling.NEAREST)
+            crop.save(os.path.join(OUT, f"frame_{i}.png"), optimize=True)
+            print(f"frame_{i} {crop.size}")
 
 
 if __name__ == "__main__":
