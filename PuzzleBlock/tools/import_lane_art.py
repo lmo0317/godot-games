@@ -7,6 +7,8 @@ Raw files (prompts in docs/ART_GUIDE.md, "블록 기사단 픽셀 아트"):
   lane.png   wide side-view background
   foes.png   (optional) two more monsters drawn with sheet.png as the style reference:
              bat (flying), armored skeleton
+  fx.png     (optional) castle cannon pieces, same reference: cannon, cannonball, muzzle flash,
+             small explosion, big explosion, smoke
 
 Each image is brought back to its own pixel grid (the size of one art pixel is measured from runs
 of equal colour) and the sprites are cut apart by their connected opaque areas. The game draws them
@@ -25,6 +27,7 @@ OUT = os.path.join(ROOT, "assets", "art", "lane")
 UNITS = ["knight", "archer", "mage", "spearman", "slime", "goblin", "skeleton", "orc"]
 BASES = ["castle", "fortress"]
 FOES = ["bat", "armored"]
+FX = ["cannon", "cannonball", "flash", "boom_s", "boom_l", "smoke"]
 
 
 def block_size(img):
@@ -121,6 +124,13 @@ def main():
         if len(foes) != len(FOES):
             sys.exit(f"expected {len(FOES)} sprites in foes.png, found {len(foes)}")
         for name, sp in zip(FOES, foes):
+            save(sp, name)
+    fx_path = os.path.join(src, "fx.png")
+    if os.path.exists(fx_path):
+        fx = split(to_grid(Image.open(fx_path)))
+        if len(fx) != len(FX):
+            sys.exit(f"expected {len(FX)} pieces in fx.png, found {len(fx)}")
+        for name, sp in zip(FX, fx):
             save(sp, name)
 
 

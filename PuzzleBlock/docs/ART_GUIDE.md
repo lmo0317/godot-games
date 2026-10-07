@@ -74,6 +74,7 @@ TRANSPARENT background (PNG with alpha). Wide canvas. Retro 16-bit PIXEL ART lik
 | `sheet.png` | a SPRITE SHEET of 8 tiny game characters standing in ONE horizontal row, evenly spaced with clear gaps, all the same height (each about 24x24 art pixels), all standing on the same baseline, full body side view. From left to right: 1 a knight with sword and round shield, 2 an archer with a bow, 3 a mage with a staff and pointed hat, 4 a spearman with a long spear — these four FACE RIGHT; then 5 a green slime, 6 a goblin with a wooden club, 7 a skeleton warrior with a rusty sword, 8 a big orc with an axe — these four FACE LEFT. |
 | `bases.png` | two tiny pixel-art buildings side by side, same scale, same baseline, clear gap: LEFT a small friendly stone castle tower with a blue flag and a wooden door facing right; RIGHT a small dark spiky enemy fortress of purple-black stone with a red banner, door facing left. Each about 48x56 art pixels. |
 | `foes.png` (2026-10-07, `-i sheet.png --`로 원래 시트를 참고 이미지로 넘김) | a SPRITE SHEET of 2 tiny game monsters standing in ONE horizontal row with a clear gap, drawn in EXACTLY the same style, pixel size, outline and palette as the attached reference sheet (each about 24x24 art pixels). 1 a purple bat flying with wings spread wide, small fangs, FACING LEFT; 2 an armored skeleton warrior wearing a dented iron helmet and holding a big iron shield and a short sword, FACING LEFT. |
+| `fx.png` (2026-10-07, 같은 참고 방식, 2장 뽑아 작은 쪽 선택) | a SPRITE SHEET of 6 separate pixel-art game pieces in ONE horizontal row, each clearly separated by wide empty gaps, same style as the reference sheet: 1 a chunky black iron castle cannon on a small wooden carriage with two wheels, barrel pointing RIGHT (about 28x18 art pixels); 2 a round black cannonball with a short orange fire trail, flying RIGHT; 3 a muzzle flash burst pointing RIGHT; 4 a small explosion puff; 5 a big explosion; 6 a fading grey smoke cloud. |
 | `lane.png` | a WIDE side-view battle lane background (about 2:1): soft blue sky with a few chunky pixel clouds, distant layered hills, a tree line, and in the lower third a flat strip of grass with a dirt path running left to right. Calm and slightly muted so small characters stand out. No characters, no buildings. |
 
 ### (보관) 블록 디펜스 도트 (코드로 그림, 2026-10-05) — 모드 삭제로 지금은 쓰지 않음
@@ -95,6 +96,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 
 - 2026-10-05: Codex로 그린 디펜스 픽셀 아트 — 그림마다 픽셀 크기가 달랐고(성벽 3배, 캐릭터 1~1.6배), 디테일이 많은 큰 머리 꼬마 그림이라 "구리다". 정면 아군도 거절(아군은 뒷모습). 디펜스는 코드 도트로 바꿈.
 - 2026-10-05: 성문과 겹치는 유닛 배치.
+- 2026-10-07: 대포 효과를 그림 없이 노란 사각형으로 낸 것 — "대포 이미지가 완전 구리다". 눈에 띄는 연출은 임시 도형으로 내보내지 말고 처음부터 그림(Codex 시트)으로.
 - 2026-10-06: 몬스터 배틀의 카툰 그림(큰 머리 꼬마)과 코드 도트 캐릭터 — 블록 기사단에서 Codex 한 장 시트 픽셀 아트로 교체.
 
 - 2026-09: 홍보 이미지처럼 화려하고 시선을 빼앗는 게임 배경. 배경은 플레이 영역보다 조용해야 함.
@@ -116,6 +118,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 블록 기사단 병사 | `assets/art/lane/knight.png`, `archer.png`, `mage.png`, `spearman.png` | Codex 시트 | 위 `sheet.png` | 전장 유닛, 소환 버튼, 홈 카드(기사) | 완료 |
 | 블록 기사단 몬스터 | `assets/art/lane/slime.png`, `goblin.png`, `skeleton.png`, `orc.png` | Codex 시트 | 위 `sheet.png` | 전장 유닛 | 완료 |
 | 박쥐·갑옷 해골 | `assets/art/lane/bat.png` (66×29), `armored.png` (47×43) | Codex 시트(원래 시트 참고) | 위 `foes.png` | 전장 유닛(날아다님·갑옷) | 완료 |
+| 성 대포·포탄·효과 | `assets/art/lane/cannon.png` (39×26), `cannonball.png`, `flash.png`, `boom_s.png`, `boom_l.png`, `smoke.png` | Codex 시트(원래 시트 참고) | 위 `fx.png` | 성 오른쪽 탑 위 대포, 대포 버튼 아이콘, 발사 연출(불꽃 → 포탄 → 연쇄 폭발 → 연기) | 완료 |
 | 날개·방패 표시 | `LaneBattle._pixel_icon()` (7px) | 코드 | 문자열 도트 | 박쥐·갑옷 해골 머리 위 | 완료 |
 | 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
 | 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |

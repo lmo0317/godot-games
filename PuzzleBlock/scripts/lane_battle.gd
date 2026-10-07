@@ -104,6 +104,7 @@ var _view: Control
 var _units_layer: Node2D
 var _bars_layer: Node2D
 var _castle_sprite: Sprite2D
+var _cannon_sprite: Sprite2D
 var _fort_sprite: Sprite2D
 var _stage_label: Label
 var _castle_fill: Panel
@@ -129,6 +130,7 @@ func _ready() -> void:
 	var names: Array = ["castle", "fortress", "lane"]
 	names.append_array(ALLY_ORDER)
 	names.append_array(ENEMIES.keys())
+	names.append_array(["cannon", "cannonball", "flash", "boom_s", "boom_l", "smoke"])
 	for k in names:
 		tex[k] = load("res://assets/art/lane/%s.png" % k)
 	_icons["armor"] = _pixel_icon([".XXXXX.", "XWWWWWX", "XWWWWWX", "XWWWWWX", ".XWWWX.", "..XWX..", "...X..."], Color(0.8, 0.85, 0.95))
@@ -208,44 +210,79 @@ func upgrade_wallet() -> bool:
 	_refresh()
 	return true
 
+# The castle cannon fires: recoil and muzzle flash, a cannonball arcs to the nearest monster, then
+# explosions ripple through every monster on the lane (damage and knockback land with each blast)
 func fire_cannon() -> bool:
 	if finished or switching or cannon < 100.0:
 		return false
 	cannon = 0.0
 	_sfx("b_cannon", -3.0)
 	castle_hit.emit(0) # a small screen shake
-	# A bright wave sweeps from the castle to the fortress
-	var wave := ColorRect.new()
-	wave.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	wave.color = Color(1.0, 0.92, 0.55, 0.8)
-	wave.position = Vector2(150, 70)
-	wave.size = Vector2(40, GROUND - 50)
-	wave.z_index = 6
-	_view.add_child(wave)
-	var flash := ColorRect.new()
-	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	flash.color = Color(1.0, 0.95, 0.8, 0.45)
-	flash.size = _view.size
-	flash.z_index = 5
-	_view.add_child(flash)
-	var ft := flash.create_tween()
-	ft.tween_property(flash, "modulate:a", 0.0, 0.3)
-	ft.tween_callback(flash.queue_free)
-	var tw := wave.create_tween()
-	tw.tween_property(wave, "position:x", ENEMY_BASE_X, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tw.parallel().tween_property(wave, "modulate:a", 0.0, 0.35).set_delay(0.15)
-	tw.tween_callback(wave.queue_free)
+	var gun: Sprite2D = _cannon_sprite
+	var rest: Vector2 = gun.position
+	var rt := gun.create_tween()
+	rt.tween_property(gun, "position:x", rest.x - 8.0, 0.05)
+	rt.tween_property(gun, "position:x", rest.x, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var tip: Vector2 = rest + Vector2(gun.texture.get_width() * PX, gun.texture.get_height() * PX * 0.35)
+	_fx(["flash"], tip + Vector2(10, 0), [0.12])
+	var foes: Array = units.filter(func(u): return u["side"] == -1)
+	foes.sort_custom(func(a, b): return a["node"].position.x < b["node"].position.x)
+	var land: Vector2 = Vector2(360, GROUND - 20) if foes.is_empty() else _mid(foes[0])
+	var ball := Sprite2D.new()
+	ball.texture = tex["cannonball"]
+	ball.scale = Vector2.ONE * PX
+	ball.position = tip
+	ball.z_index = 6
+	_view.add_child(ball)
+	var flight: float = 0.28
+	var bt := ball.create_tween()
+	bt.tween_method(func(t: float):
+		ball.position = tip.lerp(land, t) + Vector2(0, -70.0 * sin(PI * t))
+		ball.rotation = lerpf(-0.5, 0.6, t), 0.0, 1.0, flight)
+	bt.tween_callback(ball.queue_free)
 	var dmg: float = CANNON_DAMAGE * pow(ENEMY_GROWTH, stage - 1)
-	for u in units.duplicate():
-		if u["side"] == -1:
+	if foes.is_empty():
+		get_tree().create_timer(flight).timeout.connect(func(): _boom(land))
+	for i in range(foes.size()):
+		var u: Dictionary = foes[i]
+		get_tree().create_timer(flight + i * 0.07).timeout.connect(func():
+			if not units.has(u):
+				return
+			_boom(_mid(u))
 			u["hp"] -= dmg
 			_flash(u["node"])
 			_number(_head(u), dmg, Color(1.0, 0.9, 0.4))
 			if u["hp"] > 0.0:
 				_knock(u, KB_DIST * 1.5)
-	_hitstop = 0.08
-	_dirty = true
+			_dirty = true)
 	return true
+
+func _boom(at: Vector2) -> void:
+	_fx(["boom_s", "boom_l", "smoke"], at, [0.06, 0.12, 0.3])
+	_sfx("b_hit", -8.0)
+	_hitstop = maxf(_hitstop, 0.04)
+
+func _mid(u: Dictionary) -> Vector2:
+	return u["node"].position + Vector2(0, -_height(u["node"]) * 0.5)
+
+# A short frame-by-frame effect; the last frame fades out
+func _fx(frames: Array, at: Vector2, times: Array) -> void:
+	var sp := Sprite2D.new()
+	sp.texture = tex[frames[0]]
+	sp.scale = Vector2.ONE * PX
+	sp.position = at
+	sp.z_index = 7
+	_view.add_child(sp)
+	var tw := sp.create_tween()
+	for i in range(frames.size()):
+		if i > 0:
+			var f: String = frames[i]
+			tw.tween_callback(func(): sp.texture = tex[f])
+		if i == frames.size() - 1:
+			tw.tween_property(sp, "modulate:a", 0.0, times[i])
+		else:
+			tw.tween_interval(times[i])
+	tw.tween_callback(sp.queue_free)
 
 func toggle_march() -> void:
 	charging = not charging
@@ -669,6 +706,13 @@ func _build() -> void:
 			_castle_sprite = b
 		else:
 			_fort_sprite = b
+	# The cannon stands on the castle's right tower (its top is 52 art pixels below the castle top)
+	_cannon_sprite = Sprite2D.new()
+	_cannon_sprite.texture = tex["cannon"]
+	_cannon_sprite.scale = Vector2.ONE * PX
+	_cannon_sprite.centered = false
+	_cannon_sprite.position = Vector2(_castle_sprite.position.x + 112.0 - tex["cannon"].get_width() * PX * 0.35, _castle_sprite.position.y + 106.0 - tex["cannon"].get_height() * PX)
+	_view.add_child(_cannon_sprite)
 	_units_layer = Node2D.new()
 	_units_layer.y_sort_enabled = true
 	_view.add_child(_units_layer)
@@ -798,12 +842,17 @@ func _build() -> void:
 	_cannon_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_cannon_fill.color = Color(1.0, 0.55, 0.15, 0.55)
 	_cannon_btn.add_child(_cannon_fill)
-	var ct := _outlined("대포", 22, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	ct.position = Vector2(0, 10)
-	ct.size = Vector2(106, 30)
-	_cannon_btn.add_child(ct)
-	_cannon_label = _outlined("", 17, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	_cannon_label.position = Vector2(0, 42)
+	var gun := TextureRect.new()
+	gun.texture = tex["cannon"]
+	gun.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	gun.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	gun.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	gun.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	gun.position = Vector2(13, 6)
+	gun.size = Vector2(80, 40)
+	_cannon_btn.add_child(gun)
+	_cannon_label = _outlined("", 18, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_cannon_label.position = Vector2(0, 46)
 	_cannon_label.size = Vector2(106, 26)
 	_cannon_btn.add_child(_cannon_label)
 

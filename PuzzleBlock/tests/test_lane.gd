@@ -119,6 +119,7 @@ func _run() -> void:
 	b.cannon = 100.0
 	var ghp: float = gob["hp"]
 	_expect(b.fire_cannon() and b.cannon == 0.0, "fire the cannon")
+	await get_tree().create_timer(1.0).timeout # the cannonball flies, then the blasts ripple
 	_expect(gob["hp"] < ghp, "the cannon hurts monsters")
 
 	# Traits: melee soldiers ignore bats, archers hit them; armor halves damage except spears
