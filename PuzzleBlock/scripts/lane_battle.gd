@@ -1084,29 +1084,36 @@ func _build() -> void:
 		var slot := i
 		btn.pressed.connect(func(): summon(deck[slot] if slot < deck.size() else ""))
 		bar.add_child(btn)
+		# Kept simple so it breathes: the soldier in the middle, its price on a small strip below
+		# (the tier shows in the frame and colour; name and tier name stay hidden)
 		var icon := TextureRect.new()
 		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.position = Vector2(2, 10)
-		icon.size = Vector2(44, 58)
+		icon.position = Vector2(18, 9)
+		icon.size = Vector2(64, 48)
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(icon)
 		var n := _outlined("", 15, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-		n.position = Vector2(42, 6)
-		n.size = Vector2(58, 22)
+		n.visible = false
 		btn.add_child(n)
-		var c := _outlined("", 20, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-		c.position = Vector2(50, 30)
-		c.size = Vector2(48, 28)
-		btn.add_child(c)
+		var strip := Panel.new()
+		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		strip.add_theme_stylebox_override("panel", UIKit.box(Color(0.04, 0.03, 0.06, 0.7), Color.TRANSPARENT, 9))
+		strip.position = Vector2(20, 58)
+		strip.size = Vector2(60, 20)
+		strip.name = "Strip"
+		btn.add_child(strip)
 		var cc := LaneUI.icon("icon_coin", Vector2(14, 14))
-		cc.position = Vector2(44, 37)
+		cc.position = Vector2(25, 61)
 		cc.name = "Coin"
 		btn.add_child(cc)
+		var c := _outlined("", 17, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		c.position = Vector2(38, 56)
+		c.size = Vector2(40, 24)
+		btn.add_child(c)
 		var lv := _outlined("", 13, Color(0.75, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-		lv.position = Vector2(42, 56)
-		lv.size = Vector2(58, 18)
+		lv.visible = false
 		btn.add_child(lv)
 		# Cooldown veil: covers the button and shrinks as the cooldown runs out
 		var veil := ColorRect.new()
@@ -1116,7 +1123,7 @@ func _build() -> void:
 		veil.position = Vector2(4, 4)
 		btn.add_child(veil)
 		# The tier card sits behind everything on the button
-		var card := LaneTierCard.new(0, btn.size)
+		var card := LaneTierCard.new(0, btn.size, 0.5)
 		btn.add_child(card)
 		btn.move_child(card, 0)
 		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
@@ -1165,12 +1172,14 @@ func _setup_slots() -> void:
 			s["cost"].text = ""
 			s["lv"].text = ""
 			s["btn"].get_node("Coin").visible = false
+			s["btn"].get_node("Strip").visible = false
 			s["card"].set_tier(0)
 			s["card"].modulate = Color(0.5, 0.5, 0.55)
 			continue
 		var st: Dictionary = ALLIES[kind]
 		var t: int = int(tiers.get(kind, st["tier"]))
 		s["btn"].get_node("Coin").visible = true
+		s["btn"].get_node("Strip").visible = true
 		s["card"].set_tier(t)
 		s["card"].modulate = Color.WHITE
 		s["icon"].texture = tex[kind]
