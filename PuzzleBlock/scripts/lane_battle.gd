@@ -91,7 +91,7 @@ var gold: int = START_GOLD
 var wallet: int = 0                   # wallet level index
 var cannon: float = 0.0               # 0..100
 var charging: bool = true             # false = hold in front of the castle
-var auto_summon: bool = false         # kept between runs in this session
+var auto_summon: bool = true          # every stage starts with auto on (the player can turn it off)
 var deck: Array = []                  # the 4 soldier kinds of this battle ("" = empty slot)
 var tiers: Dictionary = {}            # kind -> star tier (LaneUnits.TIER_NAME)
 var _auto_timer: float = 0.0
@@ -181,6 +181,8 @@ func begin(stage_id: int = 1) -> void:
 	_setup_slots()
 	_rotation = _auto_rotation()
 	_auto_index = 0
+	auto_summon = true
+	_auto_timer = 0.0
 	paused = false
 	wallet = LaneStages.start_wallet(stage_id)
 	gold = mini(wallet_max(), LaneStages.start_gold(stage_id))

@@ -47,7 +47,14 @@ func _run() -> void:
 	_expect(s2 != null and s2.disabled, "stage 2 is locked at first")
 	main._start_lane_stage(1)
 	await _wait_until(func(): return not main._is_tray_empty() and not b.finished)
-	_expect(not main.lane_select.visible and b.visible and b.stage == 1 and b.castle_hp == LaneBattle.CASTLE_HP and b.gold == LaneBattle.START_GOLD, "battle starts at stage 1")
+	_expect(not main.lane_select.visible and b.visible and b.stage == 1 and b.castle_hp == LaneBattle.CASTLE_HP and b.gold <= LaneBattle.START_GOLD, "battle starts at stage 1")
+	_expect(b.auto_summon, "auto mode is on by default")
+	b.auto_summon = false # the checks below drive the battle by hand
+	for u in b.units.duplicate():
+		if u["side"] == 1:
+			b._kill(u)
+	for k in LaneBattle.ALLY_ORDER:
+		b.cooldown[k] = 0.0
 	_expect(b._count(-1) >= 1, "the fortress sends a first monster")
 	_expect(is_equal_approx(main.board.scale.x, MainGame.COMPACT_SCALE), "board is shrunk in the battle")
 	_expect(is_equal_approx(BlockPiece.board_scale, MainGame.COMPACT_SCALE), "held pieces match the board scale")
@@ -282,7 +289,7 @@ func _run() -> void:
 	_expect(main.lane_select.visible and main.lane_select.gem_bar_text().contains(str(army0["gems"])), "back at the base with the gems on top")
 	main._start_lane_stage(2)
 	await _wait_until(func(): return b.stage == 2 and not b.finished and not main._is_tray_empty(), 6.0)
-	_expect(b.stage == 2 and b.fortress_max == float(LaneStages.get_stage(2)["fortress"]) and b.castle_hp == LaneBattle.CASTLE_HP and b.gold >= LaneStages.start_gold(2), "stage 2 starts fresh")
+	_expect(b.stage == 2 and b.fortress_max == float(LaneStages.get_stage(2)["fortress"]) and b.castle_hp == LaneBattle.CASTLE_HP and b.auto_summon, "stage 2 starts fresh, auto on again")
 	_expect(b.deck == ["knight", "archer", "", ""] and b._slots[1]["name"].text == "궁수", "the battle uses the saved deck")
 
 	# The castle falls: the run ends with the result window
