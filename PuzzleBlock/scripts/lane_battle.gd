@@ -80,7 +80,12 @@ const ENEMIES: Dictionary = {
 	"demon": {"hp": 220.0, "atk": 26.0, "range": 60.0, "speed": 18.0, "every": 1.3, "kb": 3},
 }
 # Projectile sprite per shot kind
-const SHOT_TEX: Dictionary = {"arrow": "arrow", "bolt": "bolt", "orb": "fireball", "light": "holy", "ball": "cannonball", "dark": "fireball"}
+const SHOT_TEX: Dictionary = {"arrow": "arrow", "bolt": "bolt", "orb": "fireball", "light": "holy", "ball": "cannonball", "dark": "fireball", "ice": "holy", "note": "holy", "fireball": "fireball"}
+# Tints for shots that reuse another projectile
+const SHOT_TINT: Dictionary = {"dark": Color(0.75, 0.45, 1.0), "ice": Color(0.55, 0.9, 1.0), "note": Color(1.0, 0.85, 0.35)}
+const SLOW_K: float = 0.5             # speed while slowed (얼음 마법사)
+const SLOWED_TINT: Color = Color(0.6, 0.85, 1.0)
+const CHEERED_TINT: Color = Color(1.15, 1.05, 0.75)
 
 var stage: int = 1
 var stage_data: Dictionary = {}       # one entry of LaneStages.STAGES
@@ -337,8 +342,15 @@ func _auto_rotation() -> Array:
 		r = [front]
 	return r
 
+# Who holds the line, who answers bats, who breaks armor (best first), and supports kept to 2
+# The front-liner is summoned most, so cheap ones come first
+const FRONT_KINDS: Array[String] = ["knight", "rogue", "shield", "berserker", "spearman", "cavalry", "hero", "paladin"]
+const AIR_KINDS: Array[String] = ["crossbow", "dragon", "archer", "mage", "icemage"]
+const BREAKER_KINDS: Array[String] = ["spearman", "cannoneer", "hero"]
+const SUPPORT_KINDS: Array[String] = ["cleric", "bard"]
+
 func _front_kind() -> String:
-	for k in ["knight", "shield", "spearman"]:
+	for k in FRONT_KINDS:
 		if deck.has(k):
 			return k
 	var kinds: Array = deck.filter(func(k): return k != "")
@@ -375,8 +387,8 @@ func auto_pick() -> String:
 			ranged_n += mine[k]
 	var want: String = _rotation[_auto_index % _rotation.size()] if not _rotation.is_empty() else front
 	var counter: bool = false
-	var air: String = _first_in_deck(["crossbow", "archer", "mage"])
-	var breaker: String = _first_in_deck(["spearman", "cannoneer"])
+	var air: String = _first_in_deck(AIR_KINDS)
+	var breaker: String = _first_in_deck(BREAKER_KINDS)
 	if armored > 0 and close and breaker != "" and _can_summon(breaker):
 		return breaker
 	if bats > 0 and air != "" and (air_close or ranged_n < bats + 1):
@@ -387,7 +399,7 @@ func auto_pick() -> String:
 	elif armored > 0 and breaker != "" and mine.get(breaker, 0) < armored + 1:
 		want = breaker
 		counter = true
-	if want == "cleric" and mine.get("cleric", 0) >= 2:
+	if SUPPORT_KINDS.has(want) and mine.get(want, 0) >= 2:
 		_auto_index += 1
 		want = front
 	if _can_summon(want):
@@ -454,6 +466,7 @@ func _tick(delta: float) -> void:
 		var side: int = u["side"]
 		var base_off: float = -node.texture.get_height() * 0.5
 		u["cd"] = maxf(0.0, u["cd"] - delta)
+		_tick_effects(u, delta)
 		if u["heal"] > 0.0:
 			u["heal_t"] -= delta
 			if u["heal_t"] <= 0.0:
@@ -479,9 +492,9 @@ func _tick(delta: float) -> void:
 			limit = minf(limit, stop_at) if side == 1 else maxf(limit, stop_at)
 		var nx: float = x
 		if side == 1 and not charging and x > limit + 1.0:
-			nx = maxf(limit, x - u["speed"] * delta) # fall back to the hold line
+			nx = maxf(limit, x - _speed(u) * delta) # fall back to the hold line
 		else:
-			nx = x + side * u["speed"] * delta
+			nx = x + side * _speed(u) * delta
 			nx = minf(nx, limit) if side == 1 else maxf(nx, limit)
 			nx = maxf(nx, x) if side == 1 else minf(nx, x)
 		node.position.x = nx
@@ -580,7 +593,8 @@ func _boss_entry() -> void:
 # The nearest opponent in range (also behind: bats fly over the front line), else the enemy base
 func _target_for(u: Dictionary):
 	var x: float = u["node"].position.x
-	var melee: bool = u["side"] == 1 and u["shot"] == ""
+	# Melee can't reach flyers: soldiers vs bats, monsters vs the 용기사
+	var melee: bool = u["shot"] == ""
 	var best = null
 	var best_d: float = INF
 	for c in units:
@@ -601,11 +615,11 @@ func _target_for(u: Dictionary):
 			return "castle"
 	return null
 
-# Melee soldiers can neither hit nor be blocked by flying enemies
+# Melee units can neither hit nor be blocked by flyers
 func _nearest_opponent(u: Dictionary):
 	var best = null
 	var x: float = u["node"].position.x
-	var melee: bool = u["side"] == 1 and u["shot"] == ""
+	var melee: bool = u["shot"] == ""
 	for o in units:
 		if o["side"] == u["side"] or o["hp"] <= 0.0:
 			continue
@@ -634,6 +648,15 @@ func _damage(attacker: Dictionary, target) -> float:
 
 func _attack(u: Dictionary, target) -> void:
 	var dmg: float = _damage(u, target)
+	# 음유시인's cheer, 도적's critical hits, 기마 기사's first charge
+	if u["buff_t"] > 0.0:
+		dmg *= 1.0 + u["buff"]
+	if u.get("crit", 0.0) > 0.0 and rng.randf() < u["crit"]:
+		dmg *= 2.0
+	if u.get("charge", 0.0) > 0.0:
+		dmg *= u["charge"]
+		u["charge"] = 0.0
+		_fx_once("ring", _mid(target) if not target is String else Vector2(FORT_X, GROUND - 40), 0.3)
 	if u["shot"] == "":
 		_lunge(u)
 		_land_hit(u, target, dmg)
@@ -648,8 +671,8 @@ func _attack(u: Dictionary, target) -> void:
 	sp.scale = Vector2.ONE * FX_PX
 	sp.position = from
 	sp.z_index = 6
-	if u["shot"] == "dark":
-		sp.modulate = Color(0.75, 0.45, 1.0)
+	if SHOT_TINT.has(u["shot"]):
+		sp.modulate = SHOT_TINT[u["shot"]]
 	var flight: float = clampf(from.distance_to(to) / 520.0, 0.12, 0.3)
 	var arc: float = 18.0 if u["shot"] in ["arrow", "bolt"] else (34.0 if u["shot"] == "ball" else 0.0)
 	_fx_layer.add_child(sp)
@@ -684,6 +707,8 @@ func _land_hit(attacker: Dictionary, target, dmg: float) -> void:
 				castle_hit.emit(roundi(dmg))
 		return
 	_hurt(target, dmg, attacker["side"] == 1)
+	if attacker.get("slow", 0.0) > 0.0:
+		target["slow_t"] = attacker["slow"]
 	if attacker["shot"] == "":
 		_slash(target, attacker["side"])
 		_sfx("b_hit", -12.0)
@@ -706,6 +731,37 @@ func _hurt(u: Dictionary, dmg: float, by_ally: bool) -> void:
 	if u["hp"] > 0.0 and u["hp"] <= u["kb_mark"]:
 		u["kb_mark"] -= u["max_hp"] / u["kb"]
 		_knock(u, KB_DIST)
+
+# Slow and cheer timers (with their tints), and the bard's song every HEAL_EVERY seconds
+func _tick_effects(u: Dictionary, delta: float) -> void:
+	var node: Sprite2D = u["node"]
+	if u["slow_t"] > 0.0:
+		u["slow_t"] -= delta
+		node.self_modulate = SLOWED_TINT if u["slow_t"] > 0.0 else Color.WHITE
+	elif u["buff_t"] > 0.0:
+		u["buff_t"] -= delta
+		node.self_modulate = CHEERED_TINT if u["buff_t"] > 0.0 else Color.WHITE
+	if u["aura"] > 0.0:
+		u["aura_t"] -= delta
+		if u["aura_t"] <= 0.0:
+			u["aura_t"] = HEAL_EVERY
+			_cheer_around(u)
+
+func _speed(u: Dictionary) -> float:
+	return u["speed"] * (SLOW_K if u["slow_t"] > 0.0 else 1.0)
+
+func _cheer_around(u: Dictionary) -> void:
+	var any := false
+	for o in units:
+		if o["side"] != u["side"] or o == u or o["hp"] <= 0.0:
+			continue
+		if absf(o["node"].position.x - u["node"].position.x) > u["aura_r"]:
+			continue
+		o["buff_t"] = HEAL_EVERY + 0.5
+		o["buff"] = maxf(o["buff"], u["aura"])
+		any = true
+	if any:
+		_fx_once("ring", _mid(u), 0.35)
 
 # Healers: every HEAL_EVERY seconds, hurt friends around get HP back
 func _heal_around(u: Dictionary) -> void:
@@ -797,13 +853,15 @@ func _spawn(kind: String, side: int, k: float) -> Dictionary:
 		"stand": maxf(16.0, st["range"] * rng.randf_range(0.5, 0.9)),
 		"flying": st.get("flying", false), "armor": st.get("armor", false), "guard": st.get("guard", 0.0),
 		"heal": st.get("heal", 0.0), "heal_r": st.get("heal_r", 0.0), "heal_t": HEAL_EVERY,
+		"aura": st.get("aura", 0.0), "aura_r": st.get("aura_r", 0.0), "aura_t": HEAL_EVERY * 0.5,
+		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
 		"base_scale": Vector2.ONE * UNIT_PX}
-	for key in ["air", "armor_break", "siege"]:
+	for key in ["air", "armor_break", "siege", "crit", "charge", "slow"]:
 		if st.has(key):
 			u[key] = st[key]
 	u["bar"] = _unit_bar(node)
 	for mark in ["armor", "flying"]:
-		if u[mark]:
+		if u[mark] and side == -1:
 			var icon := Sprite2D.new()
 			icon.texture = _icons[mark]
 			icon.position = Vector2(0, -node.texture.get_height() - 6)

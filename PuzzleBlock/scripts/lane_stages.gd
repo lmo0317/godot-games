@@ -116,16 +116,16 @@ static func fail_advice(stage_id: int, deck: Array, power: int) -> Array:
 		kinds.append(BOSSES[s["boss"]]["kind"])
 	var has := func(list: Array) -> bool: return list.any(func(k): return deck.has(k))
 	var lines: Array = []
-	if kinds.has("bat") and not has.call(["archer", "crossbow", "mage", "cannoneer", "cleric"]):
-		lines.append("박쥐는 원거리 병사(궁수·석궁병)만 맞혀요")
+	if kinds.has("bat") and not has.call(["archer", "crossbow", "mage", "cannoneer", "cleric", "icemage", "bard", "dragon"]):
+		lines.append("박쥐는 원거리 병사(궁수·석궁병·용기사)만 맞혀요")
 	elif kinds.count("bat") >= 4 and not deck.has("crossbow"):
 		lines.append("박쥐 떼는 석궁병이 2.5배로 잡아요")
-	if (kinds.has("armored") or kinds.has("golem")) and not has.call(["spearman", "cannoneer"]):
-		lines.append("갑옷·골렘은 창병·대포병이 강해요")
-	if kinds.has("priest") and not has.call(["archer", "crossbow", "mage"]):
+	if (kinds.has("armored") or kinds.has("golem")) and not has.call(["spearman", "cannoneer", "hero"]):
+		lines.append("갑옷·골렘은 창병·대포병·영웅 검사가 강해요")
+	if kinds.has("priest") and not has.call(["archer", "crossbow", "mage", "icemage", "dragon"]):
 		lines.append("회복하는 사제는 원거리로 먼저 잡아요")
-	if (kinds.count("slime") >= 4 or kinds.count("goblin") >= 4) and not has.call(["mage", "cannoneer"]):
-		lines.append("떼로 오는 적은 마법사 광역으로")
+	if (kinds.count("slime") >= 4 or kinds.count("goblin") >= 4) and not has.call(["mage", "cannoneer", "berserker", "hero", "dragon"]):
+		lines.append("떼로 오는 적은 마법사·광전사 광역으로")
 	var rec: int = recommended_power(stage_id)
 	if power < rec:
 		lines.append("권장 전투력 %d · 내 덱 %d — 뽑고 합성해서 키워요" % [rec, power])

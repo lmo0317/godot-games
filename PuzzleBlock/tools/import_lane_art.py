@@ -7,7 +7,9 @@ Raw files (prompts in docs/ART_GUIDE.md, "블록 기사단 픽셀 아트"):
   lane.png   wide side-view background
   foes.png   (optional) two more monsters drawn with sheet.png as the style reference:
              bat (flying), armored skeleton
-  allies2.png (optional) 8 more soldiers, same reference (shield, crossbow, cleric, cannoneer kept)
+  allies2.png (optional) 8 more soldiers, same reference: shield, crossbow, cleric, cavalry, ice mage,
+             cannoneer, paladin, hero (the 4 middle ones joined on 2026-10-08)
+  allies3.png (optional) rogue, berserker, bard, dragon rider, with allies2.png as the reference
   foes2.png  (optional) wolf, goblin archer, dark priest, golem, demon lord
   fx2.png    (optional) hit spark, slash, arrow, bolt, fireball, holy orb, heal plus, dust, (coin), ring
   summon.png (optional) gacha pieces, same reference: summoning altar, swirling portal, pillar of
@@ -33,9 +35,10 @@ UNITS = ["knight", "archer", "mage", "spearman", "slime", "goblin", "skeleton", 
 BASES = ["castle", "fortress"]
 FOES = ["bat", "armored"]
 FX = ["cannon", "cannonball", "flash", "boom_s", "boom_l", "smoke"]
-# allies2.png has 8 figures; only the 4 used by the game are kept. Its art-pixel size is 6 screen
-# pixels (the measure finds 5, which would draw them 1.2x too big)
-ALLIES2 = ["shield", "crossbow", "cleric", None, None, "cannoneer", None, None]
+# allies2.png: 8 figures, all used since the 16-soldier update. Its art-pixel size is 6 screen pixels
+# (the measure finds 5, which would draw them 1.2x too big); allies3.png is 7 (measured 4)
+ALLIES2 = ["shield", "crossbow", "cleric", "cavalry", "icemage", "cannoneer", "paladin", "hero"]
+ALLIES3 = ["rogue", "berserker", "bard", "dragon"]
 FOES2 = ["wolf", "gob_archer", "priest", "golem", "demon"]
 FX2 = ["spark", "slash", "arrow", "bolt", "fireball", "holy", "heal", "dust", None, "ring"]
 # summon.png pieces are full of loose light specks, so they are cut by empty columns instead
@@ -181,7 +184,7 @@ def main():
             sys.exit(f"expected {len(FOES)} sprites in foes.png, found {len(foes)}")
         for name, sp in zip(FOES, foes):
             save(sp, name)
-    extra = [("allies2.png", ALLIES2, 6), ("foes2.png", FOES2, 0), ("fx2.png", FX2, 0)]
+    extra = [("allies2.png", ALLIES2, 6), ("allies3.png", ALLIES3, 7), ("foes2.png", FOES2, 0), ("fx2.png", FX2, 0)]
     for file, names, block in extra:
         path = os.path.join(src, file)
         if not os.path.exists(path):

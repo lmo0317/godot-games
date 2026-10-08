@@ -4,7 +4,7 @@ extends Control
 #   1 the altar: a summoning altar with a swirling portal and slow light rays, the rates on
 #     parchment, 1 pull (100) or 10 pulls (900, one 레어 or better promised)
 #   2 charge: sparkles rush into the portal and a pillar of light rises; its colour tells the best
-#     soldier coming (white 노멀 / blue 레어 / purple 유니크). Sometimes it shows a lower colour first
+#     soldier coming (white 노멀 / blue 레어 / purple 유니크 / gold 레전더리). Sometimes it shows a lower colour first
 #     and then turns (the "shift"), which is the moment players remember
 #   3 reveal: every soldier comes out one by one, big, on turning rays, with its name, tier and role,
 #     a NEW! stamp or its copies toward the next merge; rarer ones get a starburst, flash and shake.
@@ -20,7 +20,7 @@ const CARD_SIZE: Vector2 = Vector2(110, 150)
 const PORTAL_AT: Vector2 = Vector2(360, 430)
 const ALTAR_AT: Vector2 = Vector2(360, 600)
 # Light colour by the base tier of the soldier coming out
-const LIGHT: Array[Color] = [Color(0.92, 0.96, 1.0), Color(0.4, 0.68, 1.0), Color(0.82, 0.5, 1.0)]
+const LIGHT: Array[Color] = [Color(0.92, 0.96, 1.0), Color(0.4, 0.68, 1.0), Color(0.82, 0.5, 1.0), Color(1.0, 0.68, 0.22)]
 const SHOW_CARD: Vector2 = Vector2(300, 360)
 
 var rng := RandomNumberGenerator.new()
@@ -88,41 +88,42 @@ func _ready() -> void:
 	# Rates, always visible, on parchment
 	var rates := Panel.new()
 	LaneUI.dress(rates, "panel_paper")
-	rates.position = Vector2(40, 708)
-	rates.size = Vector2(640, 112)
+	rates.position = Vector2(30, 698)
+	rates.size = Vector2(660, 140)
 	add_child(rates)
-	var y := 12
-	for t in [2, 1, 0]:
+	var y := 10
+	for t in [3, 2, 1, 0]:
 		var kinds: Array = LaneUnits.ORDER.filter(func(k): return LaneUnits.UNITS[k]["tier"] == t)
 		var col: Color = LaneUnits.tier_color(t).darkened(0.45) if t > 0 else LaneUI.INK
-		var line := LaneUI.label("%s %d%%  ·  %s" % [LaneUnits.TIER_NAME[t], roundi(LaneUnits.BASE_RATE[t] * 100.0), ", ".join(kinds.map(func(k): return LaneUnits.UNITS[k]["name"]))], 18, col, HORIZONTAL_ALIGNMENT_LEFT, false)
-		line.position = Vector2(26, y)
-		line.size = Vector2(590, 28)
+		var pct: String = ("%.1f%%" % (LaneUnits.BASE_RATE[t] * 100.0)).replace(".0%", "%")
+		var line := LaneUI.label("%s %s  ·  %s" % [LaneUnits.TIER_NAME[t], pct, ", ".join(kinds.map(func(k): return LaneUnits.UNITS[k]["name"]))], 16, col, HORIZONTAL_ALIGNMENT_LEFT, false)
+		line.position = Vector2(20, y)
+		line.size = Vector2(620, 24)
 		rates.add_child(line)
-		y += 30
+		y += 26
 	var promise := LaneUI.label("같은 병사는 복제가 되어 합성(성급 올리기)에 써요", 15, Color(0.36, 0.25, 0.15), HORIZONTAL_ALIGNMENT_LEFT, false)
-	promise.position = Vector2(26, y)
+	promise.position = Vector2(20, y)
 	promise.size = Vector2(590, 22)
 	rates.add_child(promise)
 
 	pull1 = Button.new()
 	LaneUI.button(pull1, "green", 24)
-	pull1.position = Vector2(20, 836)
-	pull1.size = Vector2(334, 104)
+	pull1.position = Vector2(20, 852)
+	pull1.size = Vector2(334, 100)
 	pull1.pressed.connect(func(): pull(1))
 	add_child(pull1)
 	pull10 = Button.new()
 	LaneUI.button(pull10, "red", 24)
-	pull10.position = Vector2(366, 836)
-	pull10.size = Vector2(334, 104)
+	pull10.position = Vector2(366, 852)
+	pull10.size = Vector2(334, 100)
 	pull10.pressed.connect(func(): pull(10))
 	add_child(pull10)
 	for b in [pull1, pull10]:
 		var gi := LaneUI.icon("icon_gem", Vector2(26, 30))
-		gi.position = Vector2(24, 37)
+		gi.position = Vector2(24, 35)
 		b.add_child(gi)
 	note = LaneUI.label("", 21, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	note.position = Vector2(0, 956)
+	note.position = Vector2(0, 964)
 	note.size = Vector2(720, 34)
 	add_child(note)
 	back = Button.new()
@@ -255,7 +256,9 @@ func _shake(node: CanvasItem, power: float, dur: float) -> void:
 # The altar charges; the light's colour hints at the best soldier coming
 func _charge(best: int, count: int) -> void:
 	var start := best
-	if best == 2 and rng.randf() < 0.5:
+	if best == 3 and rng.randf() < 0.6:
+		start = 2
+	elif best == 2 and rng.randf() < 0.5:
 		start = 1
 	elif best >= 1 and rng.randf() < 0.3:
 		start = 0
@@ -388,8 +391,11 @@ func _reveal(res: Dictionary, i: int, n: int) -> void:
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.size = Vector2(art.texture.get_width(), art.texture.get_height())
-	art.scale = Vector2(5, 5)
-	art.position = Vector2((SHOW_CARD.x - art.size.x * 5) * 0.5, 40 + (230 - art.size.y * 5) * 0.5)
+	# Whole-number scale, x5 for a soldier; big ones (the dragon rider) get less and may reach past
+	# the frame a little
+	var k: float = clampf(roundf(minf(330.0 / art.size.x, 230.0 / art.size.y)), 2.0, 5.0)
+	art.scale = Vector2(k, k)
+	art.position = Vector2((SHOW_CARD.x - art.size.x * k) * 0.5, 40 + (230 - art.size.y * k) * 0.5)
 	card.add_child(art)
 	var role := LaneUI.label(u["role"], 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	role.position = Vector2(0, SHOW_CARD.y - 74)
@@ -432,12 +438,18 @@ func _reveal(res: Dictionary, i: int, n: int) -> void:
 	var lt := create_tween().set_parallel(true)
 	lt.tween_property(name_l, "modulate:a", 1.0, 0.25).set_delay(0.15)
 	lt.tween_property(tier_l, "modulate:a", 1.0, 0.25).set_delay(0.25)
-	SoundManager.play_battle("g_reveal_%d" % rarity, -2.0 if rarity == 2 else -4.0)
+	SoundManager.play_battle("g_reveal_%d" % mini(rarity, 2), -2.0 if rarity >= 2 else -4.0)
 	if rarity >= 1:
-		_flash_screen(0.5 + 0.3 * rarity, 0.35, col)
-	if rarity == 2:
-		_shake(_show_box, 12.0, 0.35)
+		_flash_screen(minf(0.95, 0.5 + 0.3 * rarity), 0.35 + 0.15 * maxi(0, rarity - 2), col)
+	if rarity >= 2:
+		_shake(_show_box, 12.0 + 8.0 * (rarity - 2), 0.35 + 0.25 * (rarity - 2))
 		card.burst()
+	if rarity >= 3:
+		# 레전더리: a second boom and a long shower of sparks
+		get_tree().create_timer(0.35).timeout.connect(func():
+			SoundManager.play_battle("g_reveal_2", -4.0)
+			_flash_screen(0.7, 0.4, Color(1, 0.95, 0.7))
+			_burst_sparkles(col, 24))
 	_burst_sparkles(col, 6 + 8 * rarity)
 	# The tag slams in a moment later
 	var tt := tag.create_tween()

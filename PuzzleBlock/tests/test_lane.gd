@@ -207,6 +207,33 @@ func _run() -> void:
 	for u in [tank, gob2, xb, bat4, cn, cl]:
 		b._kill(u)
 
+	# The 8 soldiers added on 2026-10-08: ice slows, the bard cheers, the cavalry's first hit,
+	# the dragon rider flies over melee monsters
+	_expect(LaneUnits.ORDER.size() == 16 and LaneUnits.ORDER.all(func(k): return b.tex.has(k)), "16 soldiers, all drawn")
+	var ice := b._spawn("icemage", 1, 1.0)
+	var gob3 := b._spawn("goblin", -1, 1.0)
+	b._land_hit(ice, gob3, 1.0)
+	_expect(gob3["slow_t"] > 0.0 and is_equal_approx(b._speed(gob3), gob3["speed"] * LaneBattle.SLOW_K), "the ice mage slows")
+	var bard := b._spawn("bard", 1, 1.0)
+	var friend := b._spawn("knight", 1, 1.0)
+	friend["node"].position.x = bard["node"].position.x + 30.0
+	b._cheer_around(bard)
+	_expect(friend["buff_t"] > 0.0 and is_equal_approx(friend["buff"], 0.25), "the bard cheers friends nearby")
+	var cav := b._spawn("cavalry", 1, 1.0)
+	_expect(cav["charge"] == 3.0, "the cavalry charges")
+	var dragon := b._spawn("dragon", 1, 1.0)
+	dragon["node"].position.x = gob3["node"].position.x - 20.0
+	var gob_target = b._target_for(gob3)
+	_expect(dragon["flying"] and not (gob_target is Dictionary and gob_target == dragon), "melee monsters can't hit the dragon rider")
+	for u in [ice, gob3, bard, friend, cav, dragon]:
+		b._kill(u)
+	var rng_t := RandomNumberGenerator.new()
+	rng_t.seed = 5
+	var seen := {}
+	for i in range(4000):
+		seen[LaneUnits.roll_kind(rng_t)] = true
+	_expect(seen.size() == 16, "the gacha can give all 16 (%d seen)" % seen.size())
+
 	# Auto mode summons by itself and answers the lane
 	for u in b.units.duplicate():
 		b._kill(u)

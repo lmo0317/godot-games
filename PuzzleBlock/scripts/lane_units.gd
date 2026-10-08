@@ -25,11 +25,15 @@ const MAX_TIER: int = 5
 const MERGE_COST: Array[int] = [1, 2, 3, 4, 5]   # copies to go from tier i to i + 1
 const TIER_BONUS: float = 0.25                  # +25% HP and attack per tier above the base
 # The gacha picks a base tier first, then a soldier of that tier
-const BASE_RATE: Dictionary = {0: 0.65, 1: 0.28, 2: 0.07}
+# (16 soldiers since 2026-10-08: 6 노멀, 6 레어, 3 유니크, 1 레전더리)
+const BASE_RATE: Dictionary = {0: 0.60, 1: 0.30, 2: 0.085, 3: 0.015}
 
 # speed: px per second, every: seconds between hits, cool: summon cooldown, kb: knockbacks per life
 # shot: projectile (ranged), splash: px around the target, air: x vs flying, armor_break: x vs armor,
-# siege: x vs the fortress, guard: share of damage taken away, heal: HP every 2 s around (heal_r px)
+# siege: x vs the fortress, guard: share of damage taken away, heal: HP every 2 s around (heal_r px),
+# crit: chance of a double hit, charge: x on the first hit, slow: seconds a hit halves the target's
+# speed, aura: attack bonus every 2 s to friends within aura_r px, flying: over the ground (melee
+# monsters can't hit it and ground monsters don't block it)
 const UNITS: Dictionary = {
 	"knight": {"name": "기사", "role": "근거리", "tier": 0, "cost": 50, "hp": 70.0, "atk": 12.0, "range": 44.0, "speed": 34.0, "every": 1.0, "cool": 2.0, "kb": 2,
 		"desc": "싸고 빠른 앞줄. 자주 뽑아 벽을 세워요."},
@@ -47,13 +51,32 @@ const UNITS: Dictionary = {
 		"desc": "2초마다 주변 아군 체력을 12씩 회복해요."},
 	"cannoneer": {"name": "대포병", "role": "공성", "tier": 2, "cost": 200, "hp": 60.0, "atk": 30.0, "range": 180.0, "speed": 20.0, "every": 3.0, "cool": 15.0, "kb": 1, "shot": "ball", "splash": 40.0, "siege": 4.0,
 		"desc": "적 요새에 4배 피해. 포탄이 주변까지 터져요."},
+	# 2026-10-08: 8 more for the collection (docs/LANE_UNITS.md "16종")
+	"rogue": {"name": "도적", "role": "암살", "tier": 0, "cost": 70, "hp": 45.0, "atk": 14.0, "range": 36.0, "speed": 55.0, "every": 0.7, "cool": 3.0, "kb": 2, "crit": 0.3,
+		"desc": "아주 빠르게 찌르고, 30% 확률로 2배 치명타."},
+	"berserker": {"name": "광전사", "role": "광역 근접", "tier": 0, "cost": 110, "hp": 95.0, "atk": 14.0, "range": 44.0, "speed": 30.0, "every": 1.3, "cool": 6.0, "kb": 3, "splash": 35.0,
+		"desc": "도끼를 휘둘러 옆의 적까지 베요."},
+	"icemage": {"name": "얼음 마법사", "role": "둔화", "tier": 1, "cost": 110, "hp": 32.0, "atk": 10.0, "range": 120.0, "speed": 28.0, "every": 1.5, "cool": 8.0, "kb": 1, "shot": "ice", "slow": 2.5,
+		"desc": "맞은 적을 2.5초 동안 절반 속도로 얼려요. 하늘도 맞혀요."},
+	"cavalry": {"name": "기마 기사", "role": "돌진", "tier": 1, "cost": 140, "hp": 150.0, "atk": 18.0, "range": 50.0, "speed": 60.0, "every": 1.2, "cool": 9.0, "kb": 4, "charge": 3.0,
+		"desc": "빠르게 달려가 첫 공격에 3배 피해. 단단해요."},
+	"bard": {"name": "음유시인", "role": "응원", "tier": 1, "cost": 100, "hp": 40.0, "atk": 5.0, "range": 100.0, "speed": 26.0, "every": 1.5, "cool": 10.0, "kb": 1, "shot": "note", "aura": 0.25, "aura_r": 120.0,
+		"desc": "노래로 2초마다 주변 아군 공격력 +25%."},
+	"paladin": {"name": "성기사", "role": "수호", "tier": 2, "cost": 180, "hp": 220.0, "atk": 12.0, "range": 44.0, "speed": 22.0, "every": 1.3, "cool": 12.0, "kb": 5, "guard": 0.35, "heal": 8.0, "heal_r": 80.0,
+		"desc": "받는 피해 35% 감소, 2초마다 주변 아군 체력 8 회복."},
+	"hero": {"name": "영웅 검사", "role": "만능", "tier": 2, "cost": 190, "hp": 160.0, "atk": 24.0, "range": 48.0, "speed": 34.0, "every": 1.0, "cool": 12.0, "kb": 4, "splash": 30.0, "armor_break": 1.5,
+		"desc": "강한 일격이 옆까지 베고, 갑옷에도 강해요."},
+	"dragon": {"name": "용기사", "role": "비행", "tier": 3, "cost": 260, "hp": 180.0, "atk": 20.0, "range": 130.0, "speed": 30.0, "every": 1.6, "cool": 18.0, "kb": 3, "shot": "fireball", "splash": 45.0, "air": 1.5, "siege": 2.0, "flying": true,
+		"desc": "하늘을 날아 근접 몬스터에게 맞지 않아요. 불꽃이 광역으로, 요새에 2배."},
 }
-const ORDER: Array[String] = ["knight", "shield", "spearman", "archer", "crossbow", "mage", "cleric", "cannoneer"]
+const ORDER: Array[String] = ["knight", "shield", "spearman", "archer", "rogue", "berserker", "crossbow", "mage", "cleric", "icemage", "cavalry", "bard", "cannoneer", "paladin", "hero", "dragon"]
 
 # Clear rewards are gems only (soldiers come from the gacha): first clear, boss first clear, new star,
 # replay
-const GEMS_FIRST: int = 150
-const GEMS_FIRST_BOSS: int = 300
+# 16 soldiers spread the copies thinner than 8, so first clears pay a bit more (econ check in
+# docs/LANE_UNITS.md)
+const GEMS_FIRST: int = 200
+const GEMS_FIRST_BOSS: int = 400
 const GEMS_PER_STAR: int = 30
 const GEMS_REPLAY: int = 50
 const GEMS_FAIL_MAX: int = 60          # a lost stage still pays, by how much of the fortress fell
@@ -177,12 +200,15 @@ static func merge(kind: String) -> int:
 # Gacha
 
 static func roll_kind(rng: RandomNumberGenerator, min_tier: int = 0) -> String:
+	# Rarest first: 레전더리, 유니크, 레어, else 노멀
 	var r: float = rng.randf()
 	var base: int = 0
-	if r < BASE_RATE[2]:
-		base = 2
-	elif r < BASE_RATE[2] + BASE_RATE[1]:
-		base = 1
+	var acc: float = 0.0
+	for t in [3, 2, 1]:
+		acc += BASE_RATE[t]
+		if r < acc:
+			base = t
+			break
 	base = maxi(base, min_tier)
 	var pool: Array = ORDER.filter(func(k): return UNITS[k]["tier"] == base)
 	return pool[rng.randi() % pool.size()]
