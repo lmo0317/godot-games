@@ -236,6 +236,13 @@ static func set_deck_slot(slot: int, kind: String) -> void:
 		return # the deck is never empty
 	save_army(army)
 
+# Test gems (the home's "+" next to the gem count, dev builds only)
+static func add_gems(n: int) -> int:
+	var army := load_army()
+	army["gems"] = int(army["gems"]) + n
+	save_army(army)
+	return int(army["gems"])
+
 # ---------------------------------------------------------------------------
 # A lost stage pays a little, by the share of the fortress destroyed, so replays keep the army growing
 static func reward_fail(fortress_damaged: float) -> Dictionary:

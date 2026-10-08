@@ -20,6 +20,9 @@ const W: float = 720.0
 const GROUND: float = 820.0
 const NAV_Y: float = 1100.0
 
+# Gems added by the test "+" button on the gem count (0 hides it; see _build_top_bar)
+const DEV_GEMS: int = 1000
+
 var sound_on_tex: Texture2D = preload("res://assets/sprites/sound_on.png")
 var sound_off_tex: Texture2D = preload("res://assets/sprites/sound_off.png")
 
@@ -30,6 +33,7 @@ var sound_btn: Button
 var settings_btn: Button
 var top_chip: Button
 var gem_label: Label
+var gem_add: Button
 var gem_box: Panel
 var battle_status: Label
 var next_label: Label
@@ -168,6 +172,26 @@ func _build_top_bar() -> void:
 	_place(gem_label, 54, 16, 110, 40)
 	gem_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	gem_box.add_child(gem_label)
+	# Test button (user request 2026-10-08): "+" tops up gems for trying the gacha. dev branch only;
+	# take it out (DEV_GEMS = 0) before dev goes to master for the stores
+	if DEV_GEMS > 0:
+		_place(gem_label, 50, 16, 76, 40)
+		gem_label.add_theme_font_size_override("font_size", 22)
+		gem_add = Button.new()
+		gem_add.text = "+"
+		LaneUI.button(gem_add, "green", 24)
+		# A small square: no padding, so the 9-slice stays at its size
+		for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+			var sb: StyleBox = gem_add.get_theme_stylebox(st)
+			sb.content_margin_left = 0
+			sb.content_margin_right = 0
+			sb.content_margin_top = 0
+			sb.content_margin_bottom = 2
+		_place(gem_add, 126, 19, 36, 36)
+		gem_add.tooltip_text = "보석 +%d (테스트)" % DEV_GEMS
+		gem_add.pressed.connect(_on_gem_add)
+		gem_box.mouse_filter = Control.MOUSE_FILTER_PASS
+		gem_box.add_child(gem_add)
 
 	sound_btn = _icon_button(sound_on_tex)
 	_place(sound_btn, 504, 14, 74, 74)
@@ -177,6 +201,20 @@ func _build_top_bar() -> void:
 	_place(settings_btn, 590, 14, 74, 74)
 	settings_btn.pressed.connect(func(): settings_pressed.emit())
 	add_child(settings_btn)
+
+func _on_gem_add() -> void:
+	SoundManager.play_battle("g_new", -6.0)
+	gem_label.text = str(LaneUnits.add_gems(DEV_GEMS))
+	gem_label.pivot_offset = gem_label.size * 0.5
+	gem_label.scale = Vector2(1.3, 1.3)
+	gem_label.create_tween().tween_property(gem_label, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var pop := LaneUI.label("+%d" % DEV_GEMS, 24, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_place(pop, gem_box.position.x, gem_box.position.y + 70, gem_box.size.x, 30)
+	add_child(pop)
+	var tw := pop.create_tween().set_parallel(true)
+	tw.tween_property(pop, "position:y", pop.position.y + 26, 0.6)
+	tw.tween_property(pop, "modulate:a", 0.0, 0.6).set_delay(0.2)
+	tw.chain().tween_callback(pop.queue_free)
 
 func _build_title() -> void:
 	var rib := LaneUI.ribbon("블록 기사단", 520, 40)

@@ -399,6 +399,9 @@ func _run() -> void:
 	main._open_home_screen()
 	await get_tree().process_frame
 	_expect(main.start_screen.gem_label.text == str(LaneUnits.load_army()["gems"]), "the home shows the gems")
+	var gems_before: int = LaneUnits.load_army()["gems"]
+	main.start_screen.gem_add.pressed.emit()
+	_expect(LaneUnits.load_army()["gems"] == gems_before + HomeScreen.DEV_GEMS and main.start_screen.gem_label.text == str(gems_before + HomeScreen.DEV_GEMS), "the test + button adds gems")
 	main.start_screen.gacha_pressed.emit()
 	await get_tree().process_frame
 	_expect(main.lane_gacha.visible, "the home gacha tab opens the gacha")
