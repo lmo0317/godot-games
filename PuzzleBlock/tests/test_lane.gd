@@ -373,20 +373,28 @@ func _run() -> void:
 	main.lane_select.gacha_pressed.emit()
 	await get_tree().process_frame
 	_expect(main.lane_gacha.visible, "the base opens the gacha")
-	# The pull show: charge, one by one reveal (skippable), then a summary of all ten
+	# The card pack: pay, rip it open, cards face down, flip one, flip all, the result stays
 	var ag := LaneUnits.load_army()
 	ag["gems"] = 1000
 	LaneUnits.save_army(ag)
-	main.lane_gacha._refresh()
-	var got: Array = main.lane_gacha.pull(10)
-	_expect(got.size() == 10 and main.lane_gacha.pull1.disabled and main.lane_gacha.back.disabled, "a pull locks the buttons during the show")
-	await _wait_until(func(): return main.lane_gacha._show.visible, 5.0)
-	_expect(main.lane_gacha._show.visible and main.lane_gacha._show_count.text == "1 / 10", "soldiers are revealed one by one")
-	main.lane_gacha._skip = true
-	await _wait_until(func(): return main.lane_gacha._summary.visible, 5.0)
-	_expect(main.lane_gacha._summary.visible and main.lane_gacha._sum_grid.get_child_count() == 10, "the summary shows all ten")
-	main.lane_gacha._sum_ok.pressed.emit()
-	_expect(not main.lane_gacha._busy and not main.lane_gacha._summary.visible and not main.lane_gacha.back.disabled, "확인 goes back to the altar")
+	var g: LaneGacha = main.lane_gacha
+	g._refresh()
+	var got: Array = g.pull(10)
+	_expect(got.size() == 10 and g.pull1.disabled and g.back.disabled and g._pack.visible, "a pull puts the sealed pack in play and locks the buttons")
+	g.open_pack()
+	await _wait_until(func(): return g._cards.size() == 10, 3.0)
+	_expect(g._table.visible and g._cards.size() == 10 and g._cards.all(func(c): return not c["open"]), "ten cards are dealt face down")
+	g.flip(g._cards[0], true)
+	_expect(g._cards[0]["open"], "a tap flips a card")
+	g.flip_all()
+	var waited := 0.0
+	while waited < 15.0 and not g._sum_ok.visible:
+		g._advance = true
+		await get_tree().create_timer(0.1).timeout
+		waited += 0.1
+	_expect(g._sum_ok.visible and g._cards.all(func(c): return c["open"]) and g._table_line.text.begins_with("새 병사"), "all flipped: the result stays with 확인")
+	g._sum_ok.pressed.emit()
+	_expect(not g._busy and not g._table.visible and not g.back.disabled and g._pack.visible, "확인 goes back to the pack")
 	main.lane_gacha.close()
 	main.lane_select.deck_pressed.emit()
 	await get_tree().process_frame

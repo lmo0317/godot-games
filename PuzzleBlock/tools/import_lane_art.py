@@ -14,6 +14,8 @@ Raw files (prompts in docs/ART_GUIDE.md, "블록 기사단 픽셀 아트"):
   fx2.png    (optional) hit spark, slash, arrow, bolt, fireball, holy orb, heal plus, dust, (coin), ring
   summon.png (optional) gacha pieces, same reference: summoning altar, swirling portal, pillar of
              light, starburst, ray sunburst, sparkle (light pieces are pale so the game tints them)
+  cards.png  (optional) gacha card back and sealed card pack, with allies2.png as the reference; the
+             pack is cut along a zig-zag tear line into card_pack_top / card_pack_body
   fx.png     (optional) castle cannon pieces, same reference: cannon, cannonball, muzzle flash,
              small explosion, big explosion, smoke
 
@@ -159,6 +161,21 @@ def whiten(img):
     return out
 
 
+def tear(pack, frac=0.2, tooth=3):
+    """The pack cut along a zig-zag line: (top strip, body), both the full pack size so they line up."""
+    w, h = pack.size
+    top = Image.new("RGBA", (w, h))
+    body = Image.new("RGBA", (w, h))
+    src = pack.load()
+    tp, bp = top.load(), body.load()
+    base = round(h * frac)
+    for x in range(w):
+        cut = base + (1 if (x // tooth) % 2 else -1)
+        for y in range(h):
+            (tp if y < cut else bp)[x, y] = src[x, y]
+    return top, body
+
+
 def save(img, name):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name + ".png")
@@ -202,6 +219,15 @@ def main():
             sys.exit(f"expected {len(SUMMON)} pieces in summon.png, found {len(pieces)}")
         for name, sp in zip(SUMMON, pieces):
             save(sp if name == "summon_altar" else whiten(sp), name)
+    cards_path = os.path.join(src, "cards.png")
+    if os.path.exists(cards_path):
+        pieces = split_columns(to_grid(Image.open(cards_path)))
+        if len(pieces) != 2:
+            sys.exit(f"expected 2 pieces in cards.png, found {len(pieces)}")
+        save(pieces[0], "card_back")
+        top, body = tear(pieces[1])
+        save(top, "card_pack_top")
+        save(body, "card_pack_body")
     fx_path = os.path.join(src, "fx.png")
     if os.path.exists(fx_path):
         fx = split(to_grid(Image.open(fx_path)))

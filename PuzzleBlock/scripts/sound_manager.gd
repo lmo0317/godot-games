@@ -36,7 +36,7 @@ func _ready() -> void:
 	_load_sound("fever", "res://assets/sfx/fever.wav")
 	_load_sound("perfect", "res://assets/sfx/perfect.wav")
 	for k in ["b_hit", "b_arrow", "b_magic", "b_death", "b_cannon", "b_horn", "b_roar", "b_summon", "b_castle",
-			"g_charge", "g_shift", "g_reveal_0", "g_reveal_1", "g_reveal_2", "g_new"]:
+			"g_charge", "g_shift", "g_reveal_0", "g_reveal_1", "g_reveal_2", "g_new", "g_tear", "g_flip"]:
 		_load_sound(k, "res://assets/sfx/%s.wav" % k)
 
 func _load_sound(key: String, path: String) -> void:

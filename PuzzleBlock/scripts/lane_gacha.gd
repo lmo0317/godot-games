@@ -1,27 +1,31 @@
 class_name LaneGacha
 extends Control
-# 블록 기사단 soldier gacha (docs/LANE_UNITS.md "뽑기 연출"), in the pixel-art UI (LaneUI):
-#   1 the altar: a summoning altar with a swirling portal and slow light rays, the rates on
-#     parchment, 1 pull (100) or 10 pulls (900, one 레어 or better promised)
-#   2 charge: sparkles rush into the portal and a pillar of light rises; its colour tells the best
-#     soldier coming (white 노멀 / blue 레어 / purple 유니크 / gold 레전더리). Sometimes it shows a lower colour first
-#     and then turns (the "shift"), which is the moment players remember
-#   3 reveal: every soldier comes out one by one, big, on turning rays, with its name, tier and role,
-#     a NEW! stamp or its copies toward the next merge; rarer ones get a starburst, flash and shake.
-#     Tap for the next one, or skip to the end
-#   4 summary: all cards of the pull, what is new, and which soldiers can now merge (with a button
-#     to the soldiers screen)
-# Pieces: assets/art/lane/summon_* (Codex sheet, docs/ART_GUIDE.md), sounds g_* (tools/generate_sfx.py).
+# 블록 기사단 soldier gacha as a card pack (docs/GACHA_RESEARCH.md, docs/LANE_UNITS.md "뽑기"),
+# in the pixel-art UI (LaneUI):
+#   1 the pack floats on slow light rays; the rates on parchment, 1 pull (100) or 10 pulls (900, one
+#     레어 or better promised)
+#   2 after paying, the pack shakes with an aura in the colour of the best card inside (white / blue
+#     레어 / purple 유니크 / gold 레전더리; sometimes it turns up a step, the moment players remember).
+#     Swipe across it (or tap) to rip the top off (포켓몬 카드 게임 Pocket)
+#   3 the cards fly out face down; each back glows in its rarity's colour (하스스톤), so the player picks
+#     the order. Tapping one flips it in place; 유니크 and 레전더리 also get the big full-screen show.
+#     [모두 뒤집기] turns the rest
+#   4 the flipped cards stay as the result: NEW! or the copies toward the next merge, how many are
+#     new, which soldiers can merge now ([합성하러 가기]), and [확인] / [다시 뽑기]
+# Pieces: assets/art/lane/card_back, card_pack(_top/_body), summon_* (Codex sheets, docs/ART_GUIDE.md),
+# sounds g_* (tools/generate_sfx.py).
 
 signal closed
 signal deck_requested
 
-const CARD_SIZE: Vector2 = Vector2(110, 150)
-const PORTAL_AT: Vector2 = Vector2(360, 430)
-const ALTAR_AT: Vector2 = Vector2(360, 600)
-# Light colour by the base tier of the soldier coming out
+const PACK_AT: Vector2 = Vector2(360, 430)
+const PACK_K: float = 4.0
+# Light colour by the base tier of a card (노멀, 레어, 유니크, 레전더리)
 const LIGHT: Array[Color] = [Color(0.92, 0.96, 1.0), Color(0.4, 0.68, 1.0), Color(0.82, 0.5, 1.0), Color(1.0, 0.68, 0.22)]
 const SHOW_CARD: Vector2 = Vector2(300, 360)
+const CARD_10: Vector2 = Vector2(114, 150)   # card back (38x50) x3
+const CARD_1: Vector2 = Vector2(152, 200)    # card back x4
+const SUM_CARD: Vector2 = Vector2(110, 150)
 
 var rng := RandomNumberGenerator.new()
 var gem_bar: Panel
@@ -29,33 +33,39 @@ var note: Label
 var pull1: Button
 var pull10: Button
 var back: Button
+var rates: Panel
 var _busy: bool = false
+var _clock: float = 0.0
 
-# Altar scene
+# 1 the pack
 var _stage: Node2D
 var _rays: Sprite2D
-var _portal: Sprite2D
-var _pillar: Sprite2D
-var _altar: Sprite2D
-var _spin: float = 0.6
-var _clock: float = 0.0
-var _next_mote: float = 0.0
+var _aura: Sprite2D
+var _pack: Control
+var _pack_top: TextureRect
+var _pack_body: TextureRect
+var _pack_hint: Label
+var _press_x: float = -1.0
+var _pack_open: bool = false
 
-# Reveal and summary layers
+# 3 the cards
+var _table: Control
+var _cards: Array = []            # {"node", "res", "open", "glow", "size"}
+var _results: Array = []
+var _table_line: Label
+var _table_merge: Label
+var _flip_all: Button
+var _sum_ok: Button
+var _sum_deck: Button
+var _again: Button
+
+# The big show for a rare card
 var _show: Control
 var _show_rays: Sprite2D
 var _show_burst: Sprite2D
 var _show_box: Control
-var _show_count: Label
-var _summary: Control
-var _sum_grid: GridContainer
-var _sum_line: Label
-var _sum_merge: Label
-var _sum_ok: Button
-var _sum_deck: Button
 var _flash: ColorRect
 var _advance: bool = false
-var _skip: bool = false
 
 func _ready() -> void:
 	rng.randomize()
@@ -73,20 +83,16 @@ func _ready() -> void:
 	title.position = Vector2(160, 92)
 	add_child(title)
 
-	# The altar: slow rays, the swirling portal over the stone altar
 	_stage = Node2D.new()
 	add_child(_stage)
-	_rays = _sprite("summon_rays", PORTAL_AT, 5.0)
-	_rays.modulate = Color(LIGHT[0], 0.18)
-	_pillar = _sprite("summon_pillar", ALTAR_AT + Vector2(0, -18), 4.0)
-	_pillar.offset = Vector2(0, -_pillar.texture.get_height() * 0.5)
-	_pillar.modulate = Color(1, 1, 1, 0)
-	_altar = _sprite("summon_altar", ALTAR_AT, 4.0)
-	_portal = _sprite("summon_portal", PORTAL_AT, 3.0)
-	_portal.modulate = Color(LIGHT[0], 0.85)
+	_rays = _sprite("summon_rays", PACK_AT, 5.0)
+	_rays.modulate = Color(LIGHT[0], 0.16)
+	_aura = _sprite("summon_burst", PACK_AT, 6.0)
+	_aura.modulate = Color(1, 1, 1, 0)
+	_build_pack()
 
 	# Rates, always visible, on parchment
-	var rates := Panel.new()
+	rates = Panel.new()
 	LaneUI.dress(rates, "panel_paper")
 	rates.position = Vector2(30, 698)
 	rates.size = Vector2(660, 140)
@@ -134,8 +140,8 @@ func _ready() -> void:
 	back.pressed.connect(close)
 	add_child(back)
 
+	_build_table()
 	_build_show()
-	_build_summary()
 	_flash = ColorRect.new()
 	_flash.color = Color(1, 1, 1, 0)
 	_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -151,20 +157,50 @@ func _sprite(name: String, at: Vector2, k: float, parent: Node = null) -> Sprite
 	(parent if parent else _stage).add_child(s)
 	return s
 
+func _tex_rect(name: String, k: float) -> TextureRect:
+	var r := TextureRect.new()
+	r.texture = load("res://assets/art/lane/%s.png" % name)
+	r.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_SCALE
+	r.size = Vector2(r.texture.get_width(), r.texture.get_height()) * k
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+
+# The pack: its body and its top strip (cut along the tear line by the importer), one control that
+# takes the swipe
+func _build_pack() -> void:
+	_pack = Control.new()
+	_pack.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_pack)
+	_pack_body = _tex_rect("card_pack_body", PACK_K)
+	_pack_top = _tex_rect("card_pack_top", PACK_K)
+	_pack.size = _pack_body.size
+	_pack.position = PACK_AT - _pack.size * 0.5
+	_pack.pivot_offset = _pack.size * 0.5
+	_pack.add_child(_pack_body)
+	_pack.add_child(_pack_top)
+	_pack_top.pivot_offset = _pack_top.size * 0.5
+	_pack.gui_input.connect(_on_pack_input)
+	_pack_hint = LaneUI.label("", 22, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_pack_hint.position = Vector2(0, PACK_AT.y + _pack.size.y * 0.5 + 18)
+	_pack_hint.size = Vector2(720, 32)
+	add_child(_pack_hint)
+
 func open() -> void:
 	SoundManager.play_click()
 	_show.visible = false
-	_summary.visible = false
+	_table.visible = false
 	_busy = false
+	_reset_pack()
 	note.text = "보석은 스테이지를 깨면 받아요"
 	_refresh()
 	visible = true
 
 func close() -> void:
 	SoundManager.play_click()
-	_skip = true
 	_show.visible = false
-	_summary.visible = false
+	_table.visible = false
 	visible = false
 	closed.emit()
 
@@ -176,29 +212,54 @@ func _refresh() -> void:
 	pull1.disabled = gems < LaneUnits.PULL_COST or _busy
 	pull10.disabled = gems < LaneUnits.PULL10_COST or _busy
 	back.disabled = _busy
+	if _again:
+		_again.disabled = gems < (LaneUnits.PULL10_COST if _results.size() >= 10 else LaneUnits.PULL_COST)
 
-# Idle life: the rays and the portal turn, motes drift up from the altar
+func _reset_pack() -> void:
+	_pack_open = false
+	_pack.visible = true
+	_pack.modulate = Color.WHITE
+	_pack.scale = Vector2.ONE
+	_pack.rotation = 0.0
+	_pack.position = PACK_AT - _pack.size * 0.5
+	_pack_top.position = Vector2.ZERO
+	_pack_top.rotation = 0.0
+	_pack_top.modulate.a = 1.0
+	_pack_hint.text = ""
+	_aura.modulate.a = 0.0
+	_rays.modulate = Color(LIGHT[0], 0.16)
+	_rays.scale = Vector2(5.0, 5.0)
+
 func _process(delta: float) -> void:
 	if not visible:
 		return
 	_clock += delta
 	_rays.rotation += delta * 0.12
-	_portal.rotation -= delta * _spin
-	_portal.position.y = PORTAL_AT.y + sin(_clock * 1.6) * 6.0
+	_aura.rotation -= delta * 0.4
 	if _show.visible:
 		_show_rays.rotation += delta * 0.35
-	_next_mote -= delta
-	if _next_mote <= 0.0 and not _busy:
-		_next_mote = 0.35
-		var m := _sprite("summon_sparkle", ALTAR_AT + Vector2(rng.randf_range(-110, 110), -20), rng.randf_range(1.0, 2.0))
-		m.modulate = Color(_portal.modulate, 0.0)
-		var tw := m.create_tween().set_parallel(true)
-		tw.tween_property(m, "position:y", m.position.y - rng.randf_range(120, 220), 1.6)
-		tw.tween_property(m, "modulate:a", 0.8, 0.4)
-		tw.chain().tween_property(m, "modulate:a", 0.0, 0.5)
-		tw.chain().tween_callback(m.queue_free)
+	# The sealed pack floats; once paid for, it trembles harder the better the card inside
+	if _pack.visible and not _pack_open:
+		var base: Vector2 = PACK_AT - _pack.size * 0.5
+		if _busy:
+			var k: float = 1.5 + 2.5 * _best_rarity()
+			_pack.position = base + Vector2(rng.randf_range(-k, k), rng.randf_range(-k, k) * 0.5)
+			_aura.scale = Vector2.ONE * (6.0 + 0.4 * sin(_clock * 6.0))
+		else:
+			_pack.position = base + Vector2(0, sin(_clock * 1.6) * 6.0)
+	for c in _cards:
+		if not c["open"] and c["glow"] != null:
+			var g: Sprite2D = c["glow"]
+			g.rotation += delta * 0.8
+			g.modulate.a = 0.55 + 0.35 * sin(_clock * 5.0 + c["node"].position.x * 0.02)
 
-# Pulls and plays the whole show; returns the results at once (empty if gems ran short)
+func _best_rarity() -> int:
+	var best := 0
+	for r in _results:
+		best = maxi(best, int(LaneUnits.UNITS[r["kind"]]["tier"]))
+	return best
+
+# Pays and puts the sealed pack in play; returns the results at once (empty if gems ran short)
 func pull(count: int) -> Array:
 	if _busy:
 		return []
@@ -208,53 +269,18 @@ func pull(count: int) -> Array:
 		SoundManager.play_invalid()
 		return []
 	SoundManager.play_click()
+	_results = results
 	_busy = true
-	_skip = false
+	_table.visible = false
+	_reset_pack()
 	note.text = ""
 	_refresh()
-	_play(results)
+	_charge_pack()
 	return results
 
-func _play(results: Array) -> void:
-	var best := 0
-	for r in results:
-		best = maxi(best, int(LaneUnits.UNITS[r["kind"]]["tier"]))
-	await _charge(best, results.size())
-	if not visible:
-		return
-	if not _skip:
-		for i in range(results.size()):
-			await _reveal(results[i], i, results.size())
-			if _skip or not visible:
-				break
-	_show.visible = false
-	if visible:
-		_show_summary(results)
-
-# Wait that a tap (or skip) can cut short
-func _hold(limit: float) -> void:
-	_advance = false
-	var t := 0.0
-	while t < limit and not _advance and not _skip and visible:
-		await get_tree().process_frame
-		t += get_process_delta_time()
-
-func _flash_screen(a: float, dur: float, col: Color = Color.WHITE) -> void:
-	_flash.color = Color(col, a)
-	var tw := _flash.create_tween()
-	tw.tween_property(_flash, "color:a", 0.0, dur)
-
-func _shake(node: CanvasItem, power: float, dur: float) -> void:
-	var base: Vector2 = node.position
-	var tw := node.create_tween()
-	var steps := int(dur / 0.04)
-	for i in range(steps):
-		var k: float = power * (1.0 - float(i) / steps)
-		tw.tween_property(node, "position", base + Vector2(rng.randf_range(-k, k), rng.randf_range(-k, k)), 0.04)
-	tw.tween_property(node, "position", base, 0.04)
-
-# The altar charges; the light's colour hints at the best soldier coming
-func _charge(best: int, count: int) -> void:
+# The aura tells the best card inside, sometimes one step low first and then turning up
+func _charge_pack() -> void:
+	var best := _best_rarity()
 	var start := best
 	if best == 3 and rng.randf() < 0.6:
 		start = 2
@@ -262,59 +288,309 @@ func _charge(best: int, count: int) -> void:
 		start = 1
 	elif best >= 1 and rng.randf() < 0.3:
 		start = 0
-	var dur: float = 1.5 if count > 1 else 1.1
-	SoundManager.play_battle("g_charge", -4.0)
-	_set_light(LIGHT[start], 0.25)
-	_spin = 6.0
+	SoundManager.play_battle("g_charge", -6.0)
+	_aura.modulate = Color(LIGHT[start], 0.0)
 	var tw := create_tween().set_parallel(true)
-	tw.tween_property(_portal, "scale", Vector2(4.2, 4.2), dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tw.tween_property(_pillar, "modulate:a", 0.95, dur * 0.6)
-	tw.tween_property(_pillar, "scale", Vector2(5.0, 6.0), dur)
-	tw.tween_property(_rays, "modulate:a", 0.55, dur)
-	tw.tween_property(_rays, "scale", Vector2(7.0, 7.0), dur)
-	# Sparkles rush in from all sides
-	for i in range(18):
-		var ang: float = rng.randf() * TAU
-		var m := _sprite("summon_sparkle", PORTAL_AT + Vector2.from_angle(ang) * rng.randf_range(260, 360), rng.randf_range(1.5, 3.0))
-		m.modulate = Color(LIGHT[start], 0.0)
-		var mt := m.create_tween()
-		mt.tween_interval(rng.randf() * dur * 0.6)
-		mt.tween_property(m, "modulate:a", 1.0, 0.1)
-		mt.tween_property(m, "position", PORTAL_AT, rng.randf_range(0.35, 0.6)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		mt.tween_callback(m.queue_free)
+	tw.tween_property(_aura, "modulate:a", 0.85 if start > 0 else 0.4, 0.5)
+	tw.tween_property(_rays, "modulate", Color(LIGHT[start], 0.4), 0.5)
+	_pack_hint.text = "팩을 옆으로 쓸어서 열어요"
 	if start != best:
-		await get_tree().create_timer(dur * 0.62).timeout
-		if not visible:
-			return
-		SoundManager.play_battle("g_shift", -3.0)
-		_flash_screen(0.6, 0.3, LIGHT[best])
-		_set_light(LIGHT[best], 0.15)
-		_shake(_stage, 8.0, 0.25)
-		await get_tree().create_timer(dur * 0.38).timeout
-	else:
-		await get_tree().create_timer(dur).timeout
-	if not visible:
-		return
-	_flash_screen(0.95, 0.5, Color(1, 1, 1))
-	_shake(_stage, 10.0 + 6.0 * best, 0.3)
-	# Back to rest under the reveal
-	_spin = 0.6
-	var back_tw := create_tween().set_parallel(true)
-	back_tw.tween_property(_portal, "scale", Vector2(3.0, 3.0), 0.4)
-	back_tw.tween_property(_pillar, "modulate:a", 0.0, 0.5)
-	back_tw.tween_property(_pillar, "scale", Vector2(4.0, 4.0), 0.5)
-	back_tw.tween_property(_rays, "modulate:a", 0.18, 0.5)
-	back_tw.tween_property(_rays, "scale", Vector2(5.0, 5.0), 0.5)
-	_set_light(LIGHT[0], 0.6)
+		get_tree().create_timer(0.9).timeout.connect(func():
+			if not _busy or _pack_open:
+				return
+			SoundManager.play_battle("g_shift", -3.0)
+			_flash_screen(0.55, 0.3, LIGHT[best])
+			var t2 := create_tween().set_parallel(true)
+			t2.tween_property(_aura, "modulate", Color(LIGHT[best], 0.95), 0.15)
+			t2.tween_property(_rays, "modulate", Color(LIGHT[best], 0.45), 0.15))
 
-func _set_light(col: Color, dur: float) -> void:
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(_portal, "modulate", Color(col, 0.95), dur)
-	tw.tween_property(_pillar, "modulate", Color(col, _pillar.modulate.a), dur)
-	tw.tween_property(_rays, "modulate", Color(col, _rays.modulate.a), dur)
+func _on_pack_input(ev: InputEvent) -> void:
+	if not _busy or _pack_open:
+		return
+	if (ev is InputEventMouseButton or ev is InputEventScreenTouch) and ev.pressed:
+		_press_x = ev.position.x
+	elif ev is InputEventMouseMotion or ev is InputEventScreenDrag:
+		if _press_x >= 0.0 and absf(ev.position.x - _press_x) > 90.0:
+			open_pack(signf(ev.position.x - _press_x))
+	elif (ev is InputEventMouseButton or ev is InputEventScreenTouch) and not ev.pressed:
+		if _press_x >= 0.0:
+			open_pack(1.0)
+		_press_x = -1.0
+
+# Rips the top off and deals the cards face down
+func open_pack(dir: float = 1.0) -> void:
+	if not _busy or _pack_open:
+		return
+	_pack_open = true
+	_press_x = -1.0
+	_pack_hint.text = ""
+	SoundManager.play_battle("g_tear", -2.0)
+	SettingsManager.vibrate(40)
+	var tt := _pack_top.create_tween().set_parallel(true)
+	tt.tween_property(_pack_top, "position", Vector2(dir * 260.0, -140.0), 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tt.tween_property(_pack_top, "rotation", dir * 1.4, 0.45)
+	tt.tween_property(_pack_top, "modulate:a", 0.0, 0.45).set_delay(0.15)
+	_flash_screen(0.7, 0.35, _aura.modulate)
+	_shake(_stage, 8.0 + 4.0 * _best_rarity(), 0.25)
+	var pt := _pack.create_tween()
+	pt.tween_interval(0.25)
+	pt.tween_property(_pack, "position:y", _pack.position.y + 420.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	pt.parallel().tween_property(_pack, "modulate:a", 0.0, 0.35)
+	pt.tween_callback(func(): _pack.visible = false)
+	var at := create_tween().set_parallel(true)
+	at.tween_property(_aura, "modulate:a", 0.0, 0.4)
+	at.tween_property(_rays, "modulate:a", 0.16, 0.4)
+	get_tree().create_timer(0.3).timeout.connect(_deal_cards)
 
 # ---------------------------------------------------------------------------
-# Reveal: one soldier, big
+# The table: cards face down, tap to flip, the result stays
+
+func _build_table() -> void:
+	_table = Control.new()
+	_table.visible = false
+	_table.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_table.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_table)
+	var shade := ColorRect.new()
+	shade.color = Color(0.03, 0.02, 0.06, 0.88)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_table.add_child(shade)
+	# The gem count stays visible over the shade
+	var gems := LaneUI.gem_bar(680)
+	gems.name = "Gems"
+	gems.position = Vector2(20, 18)
+	_table.add_child(gems)
+	var ttl := LaneUI.ribbon("뽑기 결과", 400, 32)
+	ttl.position = Vector2(160, 92)
+	_table.add_child(ttl)
+	_table_line = LaneUI.label("", 24, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	_table_line.position = Vector2(0, 740)
+	_table_line.size = Vector2(720, 34)
+	_table.add_child(_table_line)
+	_table_merge = LaneUI.label("", 21, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_table_merge.position = Vector2(40, 776)
+	_table_merge.size = Vector2(640, 60)
+	_table_merge.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_table.add_child(_table_merge)
+	_flip_all = Button.new()
+	_flip_all.text = "모두 뒤집기"
+	LaneUI.button(_flip_all, "blue", 24)
+	_flip_all.position = Vector2(190, 860)
+	_flip_all.size = Vector2(340, 84)
+	_flip_all.pressed.connect(flip_all)
+	_table.add_child(_flip_all)
+	_sum_ok = Button.new()
+	_sum_ok.text = "확인"
+	LaneUI.button(_sum_ok, "blue", 24)
+	_sum_ok.size = Vector2(210, 84)
+	_sum_ok.pressed.connect(func():
+		SoundManager.play_click()
+		_finish_table())
+	_table.add_child(_sum_ok)
+	_again = Button.new()
+	LaneUI.button(_again, "red", 22)
+	_again.size = Vector2(210, 84)
+	_again.pressed.connect(func():
+		var n: int = _results.size()
+		_finish_table()
+		pull(n))
+	_table.add_child(_again)
+	_sum_deck = Button.new()
+	_sum_deck.text = "합성하러 가기"
+	LaneUI.button(_sum_deck, "green", 22)
+	_sum_deck.size = Vector2(210, 84)
+	_sum_deck.pressed.connect(func():
+		SoundManager.play_click()
+		_finish_table()
+		visible = false
+		deck_requested.emit())
+	_table.add_child(_sum_deck)
+
+func _finish_table() -> void:
+	_table.visible = false
+	_busy = false
+	_reset_pack()
+	_refresh()
+
+func _deal_cards() -> void:
+	for c in _cards:
+		c["node"].queue_free()
+	_cards.clear()
+	LaneUI.set_gem_bar(_table.get_node("Gems"))
+	_table.visible = true
+	_table_line.text = "카드를 눌러 뒤집어요"
+	_table_merge.text = ""
+	_flip_all.visible = true
+	_sum_ok.visible = false
+	_again.visible = false
+	_sum_deck.visible = false
+	var n: int = _results.size()
+	var sz: Vector2 = CARD_10 if n > 1 else CARD_1
+	for i in range(n):
+		var at: Vector2
+		if n == 1:
+			at = Vector2(360, 470) - sz * 0.5
+		else:
+			at = Vector2((720.0 - (sz.x * 5 + 12 * 4)) * 0.5 + (i % 5) * (sz.x + 12), 300 + (i / 5) * (sz.y + 26))
+		var card := _card_back(_results[i], sz)
+		card.position = PACK_AT - sz * 0.5
+		card.scale = Vector2(0.3, 0.3)
+		card.modulate.a = 0.0
+		_table.add_child(card)
+		var tw := card.create_tween()
+		tw.tween_interval(0.06 * i)
+		tw.tween_callback(func(): SoundManager.play_deal())
+		tw.set_parallel(true)
+		tw.tween_property(card, "position", at, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(card, "scale", Vector2.ONE, 0.3)
+		tw.tween_property(card, "modulate:a", 1.0, 0.15)
+
+# A face-down card that glows in its rarity's colour; tap to flip
+func _card_back(res: Dictionary, sz: Vector2) -> Control:
+	var rarity: int = int(LaneUnits.UNITS[res["kind"]]["tier"])
+	var holder := Control.new()
+	holder.size = sz
+	holder.pivot_offset = sz * 0.5
+	holder.mouse_filter = Control.MOUSE_FILTER_STOP
+	var glow: Sprite2D = null
+	if rarity >= 1:
+		glow = Sprite2D.new()
+		glow.texture = load("res://assets/art/lane/summon_burst.png")
+		glow.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		glow.position = sz * 0.5
+		glow.scale = Vector2.ONE * (sz.x / 30.0) * (1.0 + 0.15 * rarity)
+		glow.modulate = Color(LIGHT[rarity], 0.8)
+		holder.add_child(glow)
+	var face := _tex_rect("card_back", 1.0)
+	face.size = sz
+	face.name = "Back"
+	holder.add_child(face)
+	var entry := {"node": holder, "res": res, "open": false, "glow": glow, "size": sz}
+	_cards.append(entry)
+	holder.gui_input.connect(func(ev: InputEvent):
+		if (ev is InputEventMouseButton or ev is InputEventScreenTouch) and ev.pressed:
+			flip(entry))
+	# Rarer backs tremble now and then (유니크+)
+	if rarity >= 2:
+		var tw := holder.create_tween().set_loops()
+		entry["wobble"] = tw
+		tw.tween_interval(0.8 + rng.randf() * 0.6)
+		tw.tween_property(holder, "rotation", 0.06, 0.05)
+		tw.tween_property(holder, "rotation", -0.06, 0.08)
+		tw.tween_property(holder, "rotation", 0.0, 0.05)
+	return holder
+
+# Turns one card over: in place for 노멀 and 레어, with the big show for 유니크 and 레전더리
+func flip(entry: Dictionary, quiet: bool = false) -> void:
+	if entry["open"]:
+		return
+	entry["open"] = true
+	if entry.has("wobble"):
+		entry["wobble"].kill()
+	var holder: Control = entry["node"]
+	var res: Dictionary = entry["res"]
+	var rarity: int = int(LaneUnits.UNITS[res["kind"]]["tier"])
+	var sz: Vector2 = entry["size"]
+	SoundManager.play_battle("g_flip", -4.0)
+	var tw := holder.create_tween()
+	tw.tween_property(holder, "scale", Vector2(0.0, 1.06), 0.1)
+	tw.tween_callback(func():
+		holder.rotation = 0.0
+		for c in holder.get_children():
+			c.queue_free()
+		entry["glow"] = null
+		var front := _card(res, sz)
+		holder.add_child(front)
+		if not quiet:
+			SoundManager.play_battle("g_reveal_%d" % mini(rarity, 1), -8.0 if rarity == 0 else -5.0)
+			if res["new"] and rarity < 2:
+				SoundManager.play_battle("g_new", -8.0)
+		if rarity >= 1:
+			front.burst())
+	tw.tween_property(holder, "scale", Vector2(1.1, 1.1), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(holder, "scale", Vector2.ONE, 0.08)
+	if rarity >= 2 and not quiet:
+		tw.tween_callback(func(): _big_show(res))
+	tw.tween_callback(_check_done)
+
+func flip_all() -> void:
+	SoundManager.play_click()
+	var i := 0
+	for c in _cards:
+		if c["open"]:
+			continue
+		var entry: Dictionary = c
+		var rarity: int = int(LaneUnits.UNITS[entry["res"]["kind"]]["tier"])
+		get_tree().create_timer(0.07 * i).timeout.connect(func(): flip(entry, rarity < 2))
+		i += 1
+
+func _check_done() -> void:
+	if _cards.any(func(c): return not c["open"]) or _show.visible:
+		return
+	var fresh := 0
+	var merge: Array = []
+	for r in _results:
+		if r["new"]:
+			fresh += 1
+		var nm: String = LaneUnits.UNITS[r["kind"]]["name"]
+		if LaneUnits.can_merge(r["kind"]) and not merge.has(nm):
+			merge.append(nm)
+	_table_line.text = "새 병사 %d명 · 복제 %d개" % [fresh, _results.size() - fresh]
+	_table_merge.text = ("합성할 수 있어요: " + ", ".join(merge)) if not merge.is_empty() else ""
+	LaneUI.set_gem_bar(_table.get_node("Gems"))
+	_flip_all.visible = false
+	_sum_ok.visible = true
+	_again.visible = true
+	_again.text = "다시 %d회" % _results.size()
+	_sum_deck.visible = not merge.is_empty()
+	var buttons: Array = [_sum_ok, _again] + ([_sum_deck] if _sum_deck.visible else [])
+	var w: float = 210.0 * buttons.size() + 16.0 * (buttons.size() - 1)
+	for i in range(buttons.size()):
+		buttons[i].position = Vector2((720.0 - w) * 0.5 + i * 226.0, 860)
+	_refresh()
+
+# The front of a card: tier card, the soldier, its name and NEW! / the copies toward a merge
+func _card(res: Dictionary, sz: Vector2 = SUM_CARD) -> LaneTierCard:
+	var kind: String = res["kind"]
+	var u: Dictionary = LaneUnits.UNITS[kind]
+	var t: int = int(res["tier"])
+	var c := LaneTierCard.new(t, sz)
+	var tex: Texture2D = load("res://assets/art/lane/%s.png" % kind)
+	var art := TextureRect.new()
+	art.texture = tex
+	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_SCALE
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The soldier as big as fits (x2 for most); the frame colour shows the tier, so no tier text
+	var area := Vector2(sz.x - 14, sz.y * 0.63)
+	# Rounded, so a tall soldier still gets x2 and stands a little over the frame top
+	var k: float = clampf(roundf(minf(area.x / tex.get_width(), area.y / tex.get_height())), 1.0, 2.0)
+	art.size = Vector2(tex.get_width(), tex.get_height()) * k
+	art.position = Vector2((sz.x - art.size.x) * 0.5, 8 + area.y - art.size.y)
+	c.add_child(art)
+	var fs: int = 18 if sz.x >= 140 else 16
+	var n := LaneUI.label(u["name"], fs, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	n.position = Vector2(0, sz.y * 0.67)
+	n.size = Vector2(sz.x, 24)
+	c.add_child(n)
+	var tag_text: String = "NEW!" if res["new"] else ("+%d 보석" % res["refund"] if res["refund"] > 0 else _copies_short(int(res["copies"]), t))
+	var ready: bool = not res["new"] and LaneUnits.merge_need(t) > 0 and int(res["copies"]) >= LaneUnits.merge_need(t)
+	var tag := LaneUI.label(tag_text, 15, LaneUI.GOLD if res["new"] or ready else Color(0.7, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	tag.position = Vector2(0, sz.y - 30)
+	tag.size = Vector2(sz.x, 22)
+	c.add_child(tag)
+	return c
+
+func _copies_short(copies: int, tier: int) -> String:
+	var need: int = LaneUnits.merge_need(tier)
+	if need <= 0:
+		return "+1"
+	return "합성!" if copies >= need else "+1  %d/%d" % [copies, need]
+
+# ---------------------------------------------------------------------------
+# The big show for 유니크 and 레전더리: the soldier big on turning rays, tap to close
 
 func _build_show() -> void:
 	_show = Control.new()
@@ -338,25 +614,12 @@ func _build_show() -> void:
 	_show_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_show_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_show.add_child(_show_box)
-	_show_count = LaneUI.label("", 22, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	_show_count.position = Vector2(0, 150)
-	_show_count.size = Vector2(720, 30)
-	_show.add_child(_show_count)
-	var hint := LaneUI.label("화면을 누르면 다음", 18, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER)
+	var hint := LaneUI.label("화면을 누르면 닫혀요", 18, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER)
 	hint.position = Vector2(0, 1040)
 	hint.size = Vector2(720, 26)
 	_show.add_child(hint)
-	var skip := Button.new()
-	skip.text = "건너뛰기"
-	LaneUI.button(skip, "grey", 20)
-	skip.position = Vector2(250, 1090)
-	skip.size = Vector2(220, 60)
-	skip.pressed.connect(func():
-		SoundManager.play_click()
-		_skip = true)
-	_show.add_child(skip)
 
-func _reveal(res: Dictionary, i: int, n: int) -> void:
+func _big_show(res: Dictionary) -> void:
 	var kind: String = res["kind"]
 	var u: Dictionary = LaneUnits.UNITS[kind]
 	var rarity: int = int(u["tier"])
@@ -365,21 +628,18 @@ func _reveal(res: Dictionary, i: int, n: int) -> void:
 	for c in _show_box.get_children():
 		c.queue_free()
 	_show.visible = true
-	_show_count.text = "%d / %d" % [i + 1, n] if n > 1 else ""
 	_show_rays.modulate = Color(col, 0.0)
 	_show_rays.scale = Vector2(4.0, 4.0)
 	var rt := _show_rays.create_tween().set_parallel(true)
 	rt.tween_property(_show_rays, "modulate:a", 0.3 + 0.2 * rarity, 0.25)
 	rt.tween_property(_show_rays, "scale", Vector2(6.0, 6.0) + Vector2.ONE * rarity, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_show_burst.modulate = Color(col, 0.0)
-	if rarity >= 1:
-		_show_burst.scale = Vector2(2.0, 2.0)
-		var bt := _show_burst.create_tween().set_parallel(true)
-		bt.tween_property(_show_burst, "modulate:a", 1.0, 0.08)
-		bt.tween_property(_show_burst, "scale", Vector2(7.0, 7.0) + Vector2.ONE * 2.0 * (rarity - 1), 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		bt.chain().tween_property(_show_burst, "modulate:a", 0.0, 0.35)
+	_show_burst.scale = Vector2(2.0, 2.0)
+	var bt := _show_burst.create_tween().set_parallel(true)
+	bt.tween_property(_show_burst, "modulate:a", 1.0, 0.08)
+	bt.tween_property(_show_burst, "scale", Vector2(7.0, 7.0) + Vector2.ONE * 2.0 * (rarity - 1), 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	bt.chain().tween_property(_show_burst, "modulate:a", 0.0, 0.35)
 
-	# The card with the soldier, big
 	var card := LaneTierCard.new(tier, SHOW_CARD)
 	card.position = Vector2(360, 540) - SHOW_CARD * 0.5
 	card.pivot_offset = SHOW_CARD * 0.5
@@ -391,8 +651,7 @@ func _reveal(res: Dictionary, i: int, n: int) -> void:
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.size = Vector2(art.texture.get_width(), art.texture.get_height())
-	# Whole-number scale, x5 for a soldier; big ones (the dragon rider) get less and may reach past
-	# the frame a little
+	# Whole-number scale, x5 for a soldier; big ones (the dragon rider) get less
 	var k: float = clampf(roundf(minf(330.0 / art.size.x, 230.0 / art.size.y)), 2.0, 5.0)
 	art.scale = Vector2(k, k)
 	art.position = Vector2((SHOW_CARD.x - art.size.x * k) * 0.5, 40 + (230 - art.size.y * k) * 0.5)
@@ -413,45 +672,32 @@ func _reveal(res: Dictionary, i: int, n: int) -> void:
 	desc.position = Vector2(60, 736)
 	desc.size = Vector2(600, 30)
 	_show_box.add_child(desc)
-	# NEW!, or the copies toward the next merge
 	var tag: Control
 	if res["new"]:
 		tag = LaneUI.ribbon("NEW!", 220, 30)
 		tag.position = Vector2(250, 790)
 	else:
-		var text := "+%d 보석" % res["refund"] if res["refund"] > 0 else _copies_text(kind, int(res["copies"]), tier)
-		var ready: bool = LaneUnits.merge_need(tier) > 0 and int(res["copies"]) >= LaneUnits.merge_need(tier)
-		tag = LaneUI.label(text, 26, LaneUI.GOLD if ready else Color(0.75, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+		tag = LaneUI.label("+%d 보석" % res["refund"] if res["refund"] > 0 else _copies_text(int(res["copies"]), tier), 26, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 		tag.position = Vector2(0, 796)
 		tag.size = Vector2(720, 40)
-	tag.pivot_offset = tag.size * 0.5 if tag.size != Vector2.ZERO else Vector2(110, 30)
+	tag.pivot_offset = tag.size * 0.5
 	tag.modulate.a = 0.0
 	_show_box.add_child(tag)
 
-	# Entrance: the card spins in like a flipped coin, bigger for rarer soldiers
 	card.scale = Vector2(0.05, 1.0)
-	name_l.modulate.a = 0.0
-	tier_l.modulate.a = 0.0
 	var ct := card.create_tween()
 	ct.tween_property(card, "scale", Vector2(1.12, 1.12), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	ct.tween_property(card, "scale", Vector2.ONE, 0.1)
-	var lt := create_tween().set_parallel(true)
-	lt.tween_property(name_l, "modulate:a", 1.0, 0.25).set_delay(0.15)
-	lt.tween_property(tier_l, "modulate:a", 1.0, 0.25).set_delay(0.25)
-	SoundManager.play_battle("g_reveal_%d" % mini(rarity, 2), -2.0 if rarity >= 2 else -4.0)
-	if rarity >= 1:
-		_flash_screen(minf(0.95, 0.5 + 0.3 * rarity), 0.35 + 0.15 * maxi(0, rarity - 2), col)
-	if rarity >= 2:
-		_shake(_show_box, 12.0 + 8.0 * (rarity - 2), 0.35 + 0.25 * (rarity - 2))
-		card.burst()
+	SoundManager.play_battle("g_reveal_2", -2.0)
+	_flash_screen(0.9, 0.4 + 0.15 * (rarity - 2), col)
+	_shake(_show_box, 12.0 + 8.0 * (rarity - 2), 0.35 + 0.25 * (rarity - 2))
+	card.burst()
+	_burst_sparkles(col, 6 + 8 * rarity)
 	if rarity >= 3:
-		# 레전더리: a second boom and a long shower of sparks
 		get_tree().create_timer(0.35).timeout.connect(func():
 			SoundManager.play_battle("g_reveal_2", -4.0)
 			_flash_screen(0.7, 0.4, Color(1, 0.95, 0.7))
 			_burst_sparkles(col, 24))
-	_burst_sparkles(col, 6 + 8 * rarity)
-	# The tag slams in a moment later
 	var tt := tag.create_tween()
 	tt.tween_interval(0.35)
 	tt.tween_callback(func():
@@ -460,15 +706,17 @@ func _reveal(res: Dictionary, i: int, n: int) -> void:
 			SoundManager.play_battle("g_new", -4.0))
 	tag.scale = Vector2(2.2, 2.2)
 	tt.tween_property(tag, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# Stays until a tap (after a moment), or closes by itself
+	await get_tree().create_timer(0.5).timeout
+	_advance = false
+	var t := 0.0
+	while t < 4.0 and not _advance and visible and _show.visible:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+	_show.visible = false
+	_check_done()
 
-	# How long it stays: quick for plain repeats in a 10-pull, longer for rare or new ones
-	var stay: float = 1.0 if n > 1 else 1.8
-	if rarity >= 1 or res["new"]:
-		stay += 0.8 + 0.6 * rarity
-	await get_tree().create_timer(0.3).timeout
-	await _hold(stay)
-
-func _copies_text(kind: String, copies: int, tier: int) -> String:
+func _copies_text(copies: int, tier: int) -> String:
 	var need: int = LaneUnits.merge_need(tier)
 	if need <= 0:
 		return "+1 복제"
@@ -487,117 +735,16 @@ func _burst_sparkles(col: Color, count: int) -> void:
 		tw.chain().tween_property(s, "modulate:a", 0.0, 0.3)
 		tw.chain().tween_callback(s.queue_free)
 
-# ---------------------------------------------------------------------------
-# Summary: every card of the pull, what is new and what can merge now
+func _flash_screen(a: float, dur: float, col: Color = Color.WHITE) -> void:
+	_flash.color = Color(col, a)
+	var tw := _flash.create_tween()
+	tw.tween_property(_flash, "color:a", 0.0, dur)
 
-func _build_summary() -> void:
-	_summary = Control.new()
-	_summary.visible = false
-	_summary.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_summary.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_summary)
-	var shade := ColorRect.new()
-	shade.color = Color(0.03, 0.02, 0.06, 0.78)
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_summary.add_child(shade)
-	var board := Panel.new()
-	LaneUI.dress(board, "panel_wood")
-	board.position = Vector2(20, 230)
-	board.size = Vector2(680, 560)
-	_summary.add_child(board)
-	var title := LaneUI.ribbon("뽑기 결과", 400, 32)
-	title.position = Vector2(160, 186)
-	_summary.add_child(title)
-	_sum_grid = GridContainer.new()
-	_sum_grid.columns = 5
-	_sum_grid.add_theme_constant_override("h_separation", 10)
-	_sum_grid.add_theme_constant_override("v_separation", 14)
-	_sum_grid.position = Vector2((680 - (CARD_SIZE.x * 5 + 40)) * 0.5, 66)
-	board.add_child(_sum_grid)
-	_sum_line = LaneUI.label("", 22, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	_sum_line.position = Vector2(0, 410)
-	_sum_line.size = Vector2(680, 32)
-	board.add_child(_sum_line)
-	_sum_merge = LaneUI.label("", 21, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	_sum_merge.position = Vector2(20, 448)
-	_sum_merge.size = Vector2(640, 64)
-	_sum_merge.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	board.add_child(_sum_merge)
-	_sum_ok = Button.new()
-	_sum_ok.text = "확인"
-	LaneUI.button(_sum_ok, "blue", 24)
-	_sum_ok.size = Vector2(300, 84)
-	_sum_ok.pressed.connect(func():
-		SoundManager.play_click()
-		_summary.visible = false
-		_busy = false
-		_refresh())
-	_summary.add_child(_sum_ok)
-	_sum_deck = Button.new()
-	_sum_deck.text = "합성하러 가기"
-	LaneUI.button(_sum_deck, "green", 24)
-	_sum_deck.position = Vector2(370, 820)
-	_sum_deck.size = Vector2(310, 84)
-	_sum_deck.pressed.connect(func():
-		SoundManager.play_click()
-		_summary.visible = false
-		_busy = false
-		visible = false
-		deck_requested.emit())
-	_summary.add_child(_sum_deck)
-
-func _show_summary(results: Array) -> void:
-	for c in _sum_grid.get_children():
-		c.queue_free()
-	var fresh := 0
-	var merge: Array = []
-	for i in range(results.size()):
-		var r: Dictionary = results[i]
-		var c := _card(r)
-		_sum_grid.add_child(c)
-		c.pivot_offset = CARD_SIZE * 0.5
-		c.scale = Vector2(0.0, 1.0)
-		var tw := c.create_tween()
-		tw.tween_interval(0.05 * i)
-		tw.tween_property(c, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		if r["new"]:
-			fresh += 1
-		var nm: String = LaneUnits.UNITS[r["kind"]]["name"]
-		if LaneUnits.can_merge(r["kind"]) and not merge.has(nm):
-			merge.append(nm)
-	_sum_line.text = "새 병사 %d명 · 복제 %d개" % [fresh, results.size() - fresh]
-	_sum_merge.text = ("합성할 수 있어요: " + ", ".join(merge)) if not merge.is_empty() else ""
-	_sum_deck.visible = not merge.is_empty()
-	_sum_ok.position = Vector2(40, 820) if _sum_deck.visible else Vector2(210, 820)
-	_summary.visible = true
-	_refresh()
-
-func _card(res: Dictionary) -> LaneTierCard:
-	var kind: String = res["kind"]
-	var u: Dictionary = LaneUnits.UNITS[kind]
-	var t: int = int(res["tier"])
-	var c := LaneTierCard.new(t, CARD_SIZE)
-	var art := TextureRect.new()
-	art.texture = load("res://assets/art/lane/%s.png" % kind)
-	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	art.position = Vector2(14, 14)
-	art.size = Vector2(82, 70)
-	c.add_child(art)
-	var n := LaneUI.label(u["name"], 18, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	n.position = Vector2(0, 84)
-	n.size = Vector2(CARD_SIZE.x, 24)
-	c.add_child(n)
-	var tn := LaneUI.label(LaneUnits.TIER_NAME[t], 14, LaneUnits.tier_color(t).lightened(0.4), HORIZONTAL_ALIGNMENT_CENTER)
-	tn.position = Vector2(0, 104)
-	tn.size = Vector2(CARD_SIZE.x, 20)
-	c.add_child(tn)
-	var tag_text: String = "NEW!" if res["new"] else ("+%d 보석" % res["refund"] if res["refund"] > 0 else "+1 복제")
-	var tag := LaneUI.label(tag_text, 15, LaneUI.GOLD if res["new"] else Color(0.7, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-	tag.position = Vector2(0, 122)
-	tag.size = Vector2(CARD_SIZE.x, 22)
-	c.add_child(tag)
-	return c
+func _shake(node: CanvasItem, power: float, dur: float) -> void:
+	var base: Vector2 = node.position
+	var tw := node.create_tween()
+	var steps := int(dur / 0.04)
+	for i in range(steps):
+		var k: float = power * (1.0 - float(i) / steps)
+		tw.tween_property(node, "position", base + Vector2(rng.randf_range(-k, k), rng.randf_range(-k, k)), 0.04)
+	tw.tween_property(node, "position", base, 0.04)

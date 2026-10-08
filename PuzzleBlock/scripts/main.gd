@@ -322,7 +322,7 @@ func _on_back_pressed() -> void:
 	elif lane_gacha.visible:
 		lane_gacha.close()
 	elif lane_deck.visible:
-		lane_deck.close()
+		lane_deck.back_pressed()
 	elif lane_select.visible:
 		lane_select.close()
 	elif start_screen.visible and not profile_setup_modal.visible:

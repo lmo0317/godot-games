@@ -1,28 +1,40 @@
 class_name LaneDeck
 extends Control
-# 블록 기사단 soldiers & deck screen (docs/LANE_UNITS.md), in the pixel-art UI (LaneUI): the gem bar,
-# the 4 deck slots (tap one to take it out), the 8 soldiers as tier cards (LaneTierCard; missing ones
-# dark "?"), and for the chosen soldier its stats on parchment, a deck in/out button and the merge
-# button that spends duplicate copies to raise its star tier (노멀 → … → 전설) with a burst.
+# 블록 기사단 soldiers & deck screen (docs/LANE_UNITS.md "병사·덱 화면"), in the pixel-art UI
+# (LaneUI), laid out like a card collection (Clash Royale):
+#   the gem bar; the 4 deck slots (tap one to take it out); "보유 n / 16" and the 16 soldiers as big
+#   tier cards (LaneTierCard) with the soldier, its name and a copies bar toward the next merge
+#   (green and "합성!" when ready; missing soldiers dark "?"); tapping a card opens its detail: the
+#   soldier big, tier, role, stats, the copies bar, what the next tier gives, the description, and
+#   [덱에 넣기/빼기] [합성 · 성급 올리기] (spends copies, burst and banner).
 
 signal closed
 
 const SLOT_SIZE: Vector2 = Vector2(140, 150)
-const CARD_SIZE: Vector2 = Vector2(102, 116)   # 16 soldiers: 6 per row
+const CARD_SIZE: Vector2 = Vector2(150, 150)   # 16 soldiers: 4 x 4
+const DETAIL_CARD: Vector2 = Vector2(250, 290)
 
 var gem_bar: Panel
 var slots_box: HBoxContainer
 var grid: GridContainer
+var count_label: Label
+var power_label: Label
+var note: Label
+var selected: String = "knight"
+var _cards: Dictionary = {}           # kind -> LaneTierCard in the collection
+
+# Detail popup
+var detail: Control
+var _detail_card_holder: Control
 var info_name: Label
+var info_role: Label
 var info_stats: Label
-var info_desc: Label
 var info_copies: Label
+var info_next: Label
+var info_desc: Label
+var _detail_bar: Panel
 var action_btn: Button
 var merge_btn: Button
-var note: Label
-var power_label: Label
-var selected: String = "knight"
-var _cards: Dictionary = {}           # kind -> LaneTierCard in the soldier grid
 
 func _ready() -> void:
 	visible = false
@@ -41,101 +53,82 @@ func _ready() -> void:
 
 	var deck_board := Panel.new()
 	LaneUI.dress(deck_board, "panel_wood")
-	deck_board.position = Vector2(20, 166)
-	deck_board.size = Vector2(680, 226)
+	deck_board.position = Vector2(20, 160)
+	deck_board.size = Vector2(680, 250)
 	add_child(deck_board)
-	var dh := LaneUI.label("덱 · 전투에서는 이 4명만 소환해요", 20, LaneUI.GOLD)
-	dh.position = Vector2(26, 14)
+	var dh := LaneUI.label("덱 · 전투에서는 이 4명만 나가요", 20, LaneUI.GOLD)
+	dh.position = Vector2(26, 12)
 	dh.size = Vector2(400, 28)
 	deck_board.add_child(dh)
 	power_label = LaneUI.label("", 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
-	power_label.position = Vector2(420, 14)
+	power_label.position = Vector2(420, 12)
 	power_label.size = Vector2(234, 28)
 	deck_board.add_child(power_label)
 	slots_box = HBoxContainer.new()
 	slots_box.add_theme_constant_override("separation", 12)
-	slots_box.position = Vector2((680 - (SLOT_SIZE.x * 4 + 36)) * 0.5, 50)
+	slots_box.position = Vector2((680 - (SLOT_SIZE.x * 4 + 36)) * 0.5, 46)
 	deck_board.add_child(slots_box)
+	note = LaneUI.label("", 16, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	note.position = Vector2(0, 202)
+	note.size = Vector2(680, 24)
+	deck_board.add_child(note)
 
 	var unit_board := Panel.new()
 	LaneUI.dress(unit_board, "panel_wood")
-	unit_board.position = Vector2(20, 400)
-	unit_board.size = Vector2(680, 420)
+	unit_board.position = Vector2(20, 418)
+	unit_board.size = Vector2(680, 676)
 	add_child(unit_board)
-	var uh := LaneUI.label("보유 병사 · 같은 병사를 모아 합성하면 성급이 올라요", 20, LaneUI.GOLD)
-	uh.position = Vector2(26, 14)
-	uh.size = Vector2(640, 28)
+	count_label = LaneUI.label("", 22, LaneUI.GOLD)
+	count_label.position = Vector2(26, 12)
+	count_label.size = Vector2(300, 30)
+	unit_board.add_child(count_label)
+	var uh := LaneUI.label("카드를 누르면 자세히 · 같은 병사를 모아 합성", 16, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
+	uh.position = Vector2(300, 16)
+	uh.size = Vector2(354, 24)
 	unit_board.add_child(uh)
 	grid = GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
-	grid.position = Vector2((680 - (CARD_SIZE.x * 6 + 40)) * 0.5, 48)
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
+	grid.position = Vector2((680 - (CARD_SIZE.x * 4 + 30)) * 0.5, 48)
 	unit_board.add_child(grid)
-
-	var info := Panel.new()
-	LaneUI.dress(info, "panel_paper")
-	info.position = Vector2(20, 828)
-	info.size = Vector2(680, 154)
-	add_child(info)
-	info_name = LaneUI.label("", 26, LaneUI.INK, HORIZONTAL_ALIGNMENT_LEFT, false)
-	info_name.position = Vector2(26, 8)
-	info_name.size = Vector2(630, 34)
-	info.add_child(info_name)
-	info_stats = LaneUI.label("", 18, Color(0.24, 0.18, 0.12), HORIZONTAL_ALIGNMENT_LEFT, false)
-	info_stats.position = Vector2(26, 42)
-	info_stats.size = Vector2(630, 28)
-	info.add_child(info_stats)
-	info_copies = LaneUI.label("", 18, Color(0.45, 0.2, 0.55), HORIZONTAL_ALIGNMENT_LEFT, false)
-	info_copies.position = Vector2(26, 68)
-	info_copies.size = Vector2(630, 28)
-	info.add_child(info_copies)
-	info_desc = LaneUI.label("", 18, Color(0.36, 0.25, 0.15), HORIZONTAL_ALIGNMENT_LEFT, false)
-	info_desc.position = Vector2(26, 94)
-	info_desc.size = Vector2(630, 54)
-	info_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.add_child(info_desc)
-
-	action_btn = Button.new()
-	LaneUI.button(action_btn, "blue", 22)
-	action_btn.position = Vector2(20, 990)
-	action_btn.size = Vector2(334, 70)
-	action_btn.pressed.connect(_on_action)
-	add_child(action_btn)
-	merge_btn = Button.new()
-	LaneUI.button(merge_btn, "red", 22)
-	merge_btn.position = Vector2(366, 990)
-	merge_btn.size = Vector2(334, 70)
-	merge_btn.pressed.connect(_on_merge)
-	add_child(merge_btn)
-	note = LaneUI.label("", 18, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	note.position = Vector2(0, 1064)
-	note.size = Vector2(720, 34)
-	add_child(note)
 
 	var back := Button.new()
 	back.text = "본부로"
 	LaneUI.button(back, "green", 22)
-	back.position = Vector2(220, 1100)
+	back.position = Vector2(220, 1104)
 	back.size = Vector2(280, 64)
 	back.pressed.connect(close)
 	add_child(back)
 
+	_build_detail()
+
 func open() -> void:
 	SoundManager.play_click()
 	note.text = ""
+	detail.visible = false
 	refresh()
 	visible = true
 
 func close() -> void:
 	SoundManager.play_click()
+	detail.visible = false
 	visible = false
 	closed.emit()
+
+# Back (Android / browser): the detail first, then the screen
+func back_pressed() -> void:
+	if detail.visible:
+		SoundManager.play_click()
+		detail.visible = false
+	else:
+		close()
 
 func refresh() -> void:
 	LaneUI.set_gem_bar(gem_bar)
 	var army: Dictionary = LaneUnits.load_army()
 	power_label.text = "전투력 %d" % LaneUnits.deck_power(army)
+	count_label.text = "보유 병사 %d / %d" % [army["owned"].size(), LaneUnits.ORDER.size()]
 	for c in slots_box.get_children():
 		c.queue_free()
 	for c in grid.get_children():
@@ -165,6 +158,60 @@ func _card_button(sz: Vector2, tier: int, dark: bool = false) -> Button:
 	b.button_up.connect(func(): b.scale = Vector2.ONE)
 	return b
 
+# The soldier at a whole-number scale that fits the area, centred at the top of a card
+func _art(card: Control, kind: String, area: Vector2, top: float, dark: bool) -> TextureRect:
+	var tex: Texture2D = load("res://assets/art/lane/%s.png" % kind)
+	var art := TextureRect.new()
+	art.texture = tex
+	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_SCALE
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Rounded, so a tall soldier still gets the bigger scale and stands a little over the frame top
+	var k: float = maxf(1.0, roundf(minf(area.x / tex.get_width(), area.y / tex.get_height())))
+	art.size = Vector2(tex.get_width(), tex.get_height()) * k
+	art.position = Vector2((card.size.x - art.size.x) * 0.5, top + area.y - art.size.y)
+	if dark:
+		art.modulate = Color(0.05, 0.05, 0.08)
+	card.add_child(art)
+	return art
+
+# Copies toward the next merge: a bar with "n / m", green and "합성!" when ready
+func _copies_bar(parent: Control, pos: Vector2, sz: Vector2, kind: String, army: Dictionary, font: int) -> Panel:
+	var bar := Panel.new()
+	bar.position = pos
+	bar.size = sz
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_theme_stylebox_override("panel", UIKit.box(Color(0.05, 0.04, 0.08, 0.85), Color(0.0, 0.0, 0.0, 0.6), 6, 2))
+	parent.add_child(bar)
+	var text: String = "미보유"
+	var ratio: float = 0.0
+	var col := Color(0.35, 0.6, 1.0)
+	if army["owned"].has(kind):
+		var o: Dictionary = army["owned"][kind]
+		var need: int = LaneUnits.merge_need(int(o["tier"]))
+		if need <= 0:
+			text = "MAX"
+			ratio = 1.0
+			col = LaneUI.GOLD
+		else:
+			ratio = clampf(float(o["copies"]) / need, 0.0, 1.0)
+			text = "합성!" if o["copies"] >= need else "%d / %d" % [o["copies"], need]
+			if o["copies"] >= need:
+				col = Color(0.35, 0.85, 0.35)
+	var fill := Panel.new()
+	fill.position = Vector2(3, 3)
+	fill.size = Vector2((sz.x - 6) * ratio, sz.y - 6)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill.add_theme_stylebox_override("panel", UIKit.box(col, Color.TRANSPARENT, 4))
+	fill.visible = ratio > 0.0
+	bar.add_child(fill)
+	var l := LaneUI.label(text, font, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	l.size = sz
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bar.add_child(l)
+	return bar
+
 func _slot(i: int, kind: String, army: Dictionary) -> Button:
 	if kind == "":
 		var e := _card_button(SLOT_SIZE, 0, true)
@@ -178,7 +225,19 @@ func _slot(i: int, kind: String, army: Dictionary) -> Button:
 	var tier: int = int(army["owned"][kind]["tier"])
 	var b := _card_button(SLOT_SIZE, tier)
 	b.name = "Slot%d" % i
-	_fill(b, kind, LaneUnits.TIER_NAME[tier], SLOT_SIZE, tier, false, u["cost"])
+	var card: Control = b.get_node("Card")
+	_art(card, kind, Vector2(SLOT_SIZE.x - 20, 90), 12, false)
+	var n := LaneUI.label(u["name"], 18, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	n.position = Vector2(0, SLOT_SIZE.y - 50)
+	n.size = Vector2(SLOT_SIZE.x, 24)
+	card.add_child(n)
+	var coin := LaneUI.icon("icon_coin", Vector2(16, 16))
+	coin.position = Vector2(SLOT_SIZE.x * 0.5 - 26, SLOT_SIZE.y - 26)
+	card.add_child(coin)
+	var c := LaneUI.label(str(u["cost"]), 15, LaneUI.GOLD)
+	c.position = Vector2(SLOT_SIZE.x * 0.5 - 6, SLOT_SIZE.y - 30)
+	c.size = Vector2(50, 22)
+	card.add_child(c)
 	b.pressed.connect(func():
 		selected = kind
 		if army["deck"].filter(func(k): return k != "").size() <= 1:
@@ -192,88 +251,156 @@ func _slot(i: int, kind: String, army: Dictionary) -> Button:
 
 func _unit_card(kind: String, army: Dictionary) -> Button:
 	var owned: bool = army["owned"].has(kind)
-	var tier: int = int(army["owned"][kind]["tier"]) if owned else int(LaneUnits.UNITS[kind]["tier"])
+	var u: Dictionary = LaneUnits.UNITS[kind]
+	var tier: int = int(army["owned"][kind]["tier"]) if owned else int(u["tier"])
 	var b := _card_button(CARD_SIZE, tier, not owned)
 	b.name = "Unit_%s" % kind
-	_cards[kind] = b.get_node("Card")
-	var line: String = LaneUnits.TIER_NAME[tier] + ("  · 덱" if owned and army["deck"].has(kind) else "") if owned else "미보유"
-	_fill(b, kind, line, CARD_SIZE, tier, not owned)
-	if kind == selected:
-		# Selected: a gold outline that breathes
-		var mark := Panel.new()
-		var sb := StyleBoxFlat.new()
-		sb.draw_center = false
-		sb.set_border_width_all(4)
-		sb.border_color = LaneUI.GOLD
-		sb.set_corner_radius_all(8)
-		mark.add_theme_stylebox_override("panel", sb)
-		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		mark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		b.add_child(mark)
-		var mt := mark.create_tween().set_loops()
-		mt.tween_property(mark, "modulate:a", 0.4, 0.6)
-		mt.tween_property(mark, "modulate:a", 1.0, 0.6)
+	var card: Control = b.get_node("Card")
+	_cards[kind] = card
+	_art(card, kind, Vector2(CARD_SIZE.x - 20, 92), 6, not owned)
+	var n := LaneUI.label(u["name"] if owned else "?", 16, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	n.position = Vector2(0, 98)
+	n.size = Vector2(CARD_SIZE.x, 22)
+	card.add_child(n)
+	_copies_bar(card, Vector2(14, 122), Vector2(CARD_SIZE.x - 28, 20), kind, army, 13)
+	if owned and army["deck"].has(kind):
+		var d := LaneUI.label("덱", 15, Color(0.6, 1.0, 0.6))
+		d.position = Vector2(30, 6)
+		d.size = Vector2(30, 20)
+		card.add_child(d)
 	if owned and LaneUnits.can_merge(kind):
-		var badge := LaneUI.label("합성!", 15, Color(0.6, 1.0, 0.6), HORIZONTAL_ALIGNMENT_RIGHT)
-		badge.position = Vector2(0, 8)
-		badge.size = Vector2(CARD_SIZE.x - 12, 20)
-		b.add_child(badge)
-		var tw := badge.create_tween().set_loops()
-		tw.tween_property(badge, "modulate:a", 0.35, 0.5)
-		tw.tween_property(badge, "modulate:a", 1.0, 0.5)
+		var tw := b.create_tween().set_loops()
+		tw.tween_property(card, "modulate", Color(1.25, 1.25, 1.1), 0.5)
+		tw.tween_property(card, "modulate", Color.WHITE, 0.5)
 	b.pressed.connect(func():
 		selected = kind
 		note.text = ""
 		SoundManager.play_click()
-		refresh())
+		_show_info(LaneUnits.load_army())
+		_open_detail())
 	return b
 
-func _fill(b: Button, kind: String, line: String, sz: Vector2, tier: int, dark: bool = false, cost: int = -1) -> void:
-	var u: Dictionary = LaneUnits.UNITS[kind]
-	var card: LaneTierCard = b.get_node("Card")
-	var art := TextureRect.new()
-	art.texture = load("res://assets/art/lane/%s.png" % kind)
-	art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	art.position = Vector2(16, 14)
-	art.size = Vector2(sz.x - 32, sz.y - 70)
-	if dark:
-		art.modulate = Color(0.05, 0.05, 0.08)
-	card.add_child(art)
-	var n := LaneUI.label("?" if dark else u["name"], 18 if sz.x >= 130 else 15, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	n.position = Vector2(0, sz.y - 58)
-	n.size = Vector2(sz.x, 24)
-	card.add_child(n)
-	var l := LaneUI.label(line, 15 if sz.x >= 130 else 13, Color(0.75, 0.75, 0.8) if dark else LaneUnits.tier_color(tier).lightened(0.4), HORIZONTAL_ALIGNMENT_CENTER)
-	l.position = Vector2(0, sz.y - 34)
-	l.size = Vector2(sz.x, 22)
-	card.add_child(l)
-	if cost >= 0:
-		var coin := LaneUI.icon("icon_coin", Vector2(18, 18))
-		coin.position = Vector2(sz.x - 66, 12)
-		card.add_child(coin)
-		var c := LaneUI.label(str(cost), 16, LaneUI.GOLD)
-		c.position = Vector2(sz.x - 46, 8)
-		c.size = Vector2(40, 24)
-		card.add_child(c)
+# ---------------------------------------------------------------------------
+# Detail popup
+
+func _build_detail() -> void:
+	detail = Control.new()
+	detail.visible = false
+	detail.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	detail.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(detail)
+	var shade := ColorRect.new()
+	shade.color = Color(0.03, 0.02, 0.06, 0.75)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.gui_input.connect(func(ev: InputEvent):
+		if (ev is InputEventMouseButton or ev is InputEventScreenTouch) and ev.pressed:
+			back_pressed())
+	detail.add_child(shade)
+	var board := Panel.new()
+	board.name = "Board"
+	LaneUI.dress(board, "panel_wood")
+	board.position = Vector2(30, 240)
+	board.size = Vector2(660, 760)
+	detail.add_child(board)
+	_detail_card_holder = Control.new()
+	_detail_card_holder.position = Vector2(24, 26)
+	_detail_card_holder.size = DETAIL_CARD
+	board.add_child(_detail_card_holder)
+	info_name = LaneUI.label("", 32, LaneUI.TEXT)
+	info_name.position = Vector2(292, 26)
+	info_name.size = Vector2(350, 42)
+	board.add_child(info_name)
+	info_role = LaneUI.label("", 20, LaneUI.GOLD)
+	info_role.position = Vector2(292, 72)
+	info_role.size = Vector2(350, 28)
+	board.add_child(info_role)
+	info_stats = LaneUI.label("", 19, LaneUI.TEXT)
+	info_stats.position = Vector2(292, 108)
+	info_stats.size = Vector2(350, 130)
+	board.add_child(info_stats)
+	info_copies = LaneUI.label("", 18, LaneUI.TEXT)
+	info_copies.position = Vector2(292, 238)
+	info_copies.size = Vector2(350, 26)
+	board.add_child(info_copies)
+	_detail_bar = Panel.new()
+	_detail_bar.position = Vector2(292, 268)
+	_detail_bar.size = Vector2(340, 30)
+	_detail_bar.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	board.add_child(_detail_bar)
+	var paper := Panel.new()
+	LaneUI.dress(paper, "panel_paper")
+	paper.position = Vector2(24, 334)
+	paper.size = Vector2(612, 200)
+	board.add_child(paper)
+	info_next = LaneUI.label("", 19, Color(0.45, 0.2, 0.55), HORIZONTAL_ALIGNMENT_LEFT, false)
+	info_next.position = Vector2(20, 16)
+	info_next.size = Vector2(572, 28)
+	paper.add_child(info_next)
+	info_desc = LaneUI.label("", 20, LaneUI.INK, HORIZONTAL_ALIGNMENT_LEFT, false)
+	info_desc.position = Vector2(20, 54)
+	info_desc.size = Vector2(572, 130)
+	info_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	paper.add_child(info_desc)
+	action_btn = Button.new()
+	LaneUI.button(action_btn, "blue", 22)
+	action_btn.position = Vector2(24, 556)
+	action_btn.size = Vector2(300, 80)
+	action_btn.pressed.connect(_on_action)
+	board.add_child(action_btn)
+	merge_btn = Button.new()
+	LaneUI.button(merge_btn, "red", 22)
+	merge_btn.position = Vector2(336, 556)
+	merge_btn.size = Vector2(300, 80)
+	merge_btn.pressed.connect(_on_merge)
+	board.add_child(merge_btn)
+	var shut := Button.new()
+	shut.text = "닫기"
+	LaneUI.button(shut, "grey", 20)
+	shut.position = Vector2(210, 660)
+	shut.size = Vector2(240, 64)
+	shut.pressed.connect(back_pressed)
+	board.add_child(shut)
+
+func _open_detail() -> void:
+	detail.visible = true
+	var board: Control = detail.get_node("Board")
+	board.pivot_offset = board.size * 0.5
+	board.scale = Vector2(0.9, 0.9)
+	board.create_tween().tween_property(board, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 func _show_info(army: Dictionary) -> void:
 	var u: Dictionary = LaneUnits.UNITS[selected]
 	var owned: bool = army["owned"].has(selected)
 	var tier: int = int(army["owned"][selected]["tier"]) if owned else int(u["tier"])
-	var copies: int = int(army["owned"][selected]["copies"]) if owned else 0
 	var st: Dictionary = LaneUnits.stats(selected, tier)
-	info_name.text = "%s  ·  %s  ·  %s" % [u["name"], u["role"], LaneUnits.TIER_NAME[tier]]
-	info_name.add_theme_color_override("font_color", LaneUnits.tier_color(tier).darkened(0.45) if tier > 0 else LaneUI.INK)
-	info_stats.text = "체력 %d   공격 %d   사거리 %d   금화 %d   대기 %d초" % [roundi(st["hp"]), roundi(st["atk"]), int(u["range"]), u["cost"], int(u["cool"])]
+	for c in _detail_card_holder.get_children():
+		_detail_card_holder.remove_child(c)
+		c.queue_free()
+	var card := LaneTierCard.new(tier, DETAIL_CARD)
+	card.name = "Card"
+	_detail_card_holder.add_child(card)
+	_art(card, selected, Vector2(DETAIL_CARD.x - 30, 200), 24, not owned)
+	var tl := LaneUI.label(LaneUnits.TIER_NAME[tier], 22, LaneUnits.tier_color(tier).lightened(0.4), HORIZONTAL_ALIGNMENT_CENTER)
+	tl.position = Vector2(0, DETAIL_CARD.y - 56)
+	tl.size = Vector2(DETAIL_CARD.x, 30)
+	card.add_child(tl)
+	info_name.text = u["name"] if owned else "%s (미보유)" % u["name"]
+	info_name.add_theme_color_override("font_color", LaneUnits.tier_color(tier).lightened(0.45))
+	var reach: String = "원거리" if u.has("shot") else "근거리"
+	info_role.text = u["role"] if u["role"] == reach else "%s  ·  %s" % [u["role"], reach]
+	info_stats.text = "체력  %d\n공격  %d\n사거리  %d\n금화 %d  ·  대기 %d초" % [roundi(st["hp"]), roundi(st["atk"]), int(u["range"]), u["cost"], int(u["cool"])]
+	for c in _detail_bar.get_children():
+		c.queue_free()
+	_copies_bar(_detail_bar, Vector2.ZERO, _detail_bar.size, selected, army, 18)
 	if not owned:
 		info_copies.text = "뽑기로 얻을 수 있어요"
+		info_next.text = ""
 	elif tier >= LaneUnits.MAX_TIER:
-		info_copies.text = "최고 성급(전설)이에요"
+		info_copies.text = "복제"
+		info_next.text = "최고 성급(전설)이에요"
 	else:
-		info_copies.text = "복제 %d / %d  →  %s (체력·공격 +%d%%)" % [copies, LaneUnits.merge_need(tier), LaneUnits.TIER_NAME[tier + 1], roundi(LaneUnits.TIER_BONUS * 100.0)]
+		info_copies.text = "복제 (합성까지)"
+		info_next.text = "다음 성급: %s  ·  체력·공격 +%d%%" % [LaneUnits.TIER_NAME[tier + 1], roundi(LaneUnits.TIER_BONUS * 100.0)]
 	info_desc.text = u["desc"]
 	if not owned:
 		action_btn.text = "아직 없는 병사"
@@ -301,12 +428,13 @@ func _on_action() -> void:
 	else:
 		var empty: int = army["deck"].find("")
 		if empty < 0:
-			note.text = "덱이 가득 찼어요. 위의 칸을 눌러 한 명을 빼 주세요"
+			note.text = "덱이 가득 찼어요. 위의 덱 칸을 눌러 한 명을 빼 주세요"
 		else:
 			LaneUnits.set_deck_slot(empty, selected)
 			note.text = "덱에 넣었어요"
 	SoundManager.play_click()
 	refresh()
+	detail.visible = false
 
 # Merge: spend copies, go up a tier, then a burst on the card and a banner with the new tier
 func _on_merge() -> void:
@@ -315,7 +443,7 @@ func _on_merge() -> void:
 		note.text = "복제가 모자라요"
 		return
 	refresh()
-	var card: LaneTierCard = _cards.get(selected)
+	var card: LaneTierCard = _detail_card_holder.get_node_or_null("Card") if detail.visible else _cards.get(selected)
 	if card == null:
 		return
 	card.burst()
@@ -334,7 +462,7 @@ func _on_merge() -> void:
 		tw.tween_property(s, "modulate:a", 0.0, 0.3).set_delay(0.3)
 		tw.chain().tween_callback(s.queue_free)
 	var banner := LaneUI.label("%s 달성!" % LaneUnits.TIER_NAME[t], 44, col.lightened(0.25), HORIZONTAL_ALIGNMENT_CENTER)
-	banner.position = Vector2(0, 560)
+	banner.position = Vector2(0, 180)
 	banner.size = Vector2(720, 60)
 	banner.pivot_offset = banner.size * 0.5
 	banner.scale = Vector2(0.3, 0.3)

@@ -11,7 +11,8 @@ overlap without clipping.
   b_*                블록 기사단 battle sounds (played quietly, see LaneBattle._sfx):
                      b_hit, b_arrow, b_magic, b_death, b_cannon, b_horn, b_roar, b_summon, b_castle
   g_*                블록 기사단 gacha: g_charge (altar charging), g_shift (the light changes to a
-                     higher tier), g_reveal_0..2 (a soldier appears, by base tier), g_new (first copy)
+                     higher tier), g_reveal_0..2 (a soldier appears, by base tier), g_new (first copy),
+                     g_tear (a card pack ripped open), g_flip (a card turned over)
 
 Usage: python tools/generate_sfx.py
 """
@@ -299,6 +300,21 @@ def gacha_sounds():
     x = bell(note("A5"), 0.5)
     mix(x, bell(note("E6"), 0.6), at=0.09, gain=0.9)
     write("g_new", reverb(x, 0.25))
+    # Tear: a crackly rip, bright noise in short bursts that speeds up, then a soft pop
+    x = []
+    t = 0.0
+    k = 0
+    while t < 0.32:
+        burst = noise_lp(0.018, 0.9, 0.5, 60)
+        mix(x, burst, at=t, gain=0.5 + 0.5 * (t / 0.32))
+        t += 0.03 - 0.018 * (t / 0.32)
+        k += 1
+    mix(x, pop(0.1), at=0.33, gain=0.7)
+    write("g_tear", x)
+    # Flip: a quick paper whoosh with a tick
+    x = noise_lp(0.09, 0.15, 0.6, 25)
+    mix(x, sweep(1800, 2600, 0.02, 90), at=0.07, gain=0.4)
+    write("g_flip", x)
 
 
 if __name__ == "__main__":
