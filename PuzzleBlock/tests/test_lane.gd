@@ -303,6 +303,20 @@ func _run() -> void:
 	await _wait_until(func(): return main.lane_result.visible, 5.0)
 	_expect(main.lane_result.title.get_child(0).text == "STAGE 2 실패", "a fallen castle fails the stage (%s)" % main.lane_result.title.get_child(0).text)
 	_expect(LaneStages.load_progress()["unlocked"] == 2, "a failed stage opens nothing")
+	_expect(main.lane_result.tip.text != "", "a lost stage gives advice (%s)" % main.lane_result.tip.text)
+
+	# Sawtooth stages, recommended power and the advice after a loss (docs/LANE_STAGES.md 2장)
+	for s in LaneStages.STAGES:
+		_expect(LaneStages.ROLE_PACE.has(s.get("role", "")), "stage %d has a role" % s["id"])
+		_expect((s["boss"] != "") == (s["role"] == "boss"), "stage %d: bosses and boss roles match" % s["id"])
+	_expect(LaneStages.recommended_power(1) == 200 and LaneStages.recommended_power(6) > LaneStages.recommended_power(7), "the recommended power drops after a boss (sawtooth)")
+	var adv: Array = LaneStages.fail_advice(4, ["knight", "shield"], 200)
+	_expect(adv.size() == 2 and adv[0].contains("박쥐") and adv[1].contains("권장 전투력"), "bats without ranged soldiers, and a weak deck, are explained (%s)" % [adv])
+	_expect(LaneStages.fail_advice(10, ["knight", "archer"], 999)[0].contains("창병"), "armour without breakers is explained")
+	var army_p := LaneUnits.default_army()
+	_expect(LaneUnits.deck_power(army_p) == 200, "the two starters make 200 power")
+	army_p["owned"]["knight"]["tier"] = 2
+	_expect(LaneUnits.deck_power(army_p) == 250, "two tiers add 50 power")
 
 	# The house button in the lane leads back to the stage select
 	main.lane_result.visible = false
@@ -327,6 +341,8 @@ func _run() -> void:
 	_expect(res.any(func(r): return LaneUnits.UNITS[r["kind"]]["tier"] >= 1), "ten pulls give a 레어 or better")
 	_expect(LaneUnits.pull(10, rng2).is_empty(), "no pull without gems")
 	main.lane_select.open()
+	_expect(main.lane_select.power_label.text.begins_with("내 덱 전투력 %d" % LaneUnits.deck_power()), "the base shows the deck power (%s)" % main.lane_select.power_label.text)
+	_expect(main.lane_select.find_child("Rec", true, false) != null, "open stages show their recommended power")
 	main.lane_select.gacha_pressed.emit()
 	await get_tree().process_frame
 	_expect(main.lane_gacha.visible, "the base opens the gacha")

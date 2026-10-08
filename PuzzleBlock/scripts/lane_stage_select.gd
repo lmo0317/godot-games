@@ -1,9 +1,10 @@
 class_name LaneStageSelect
 extends Control
 # 블록 기사단 base (docs/LANE_STAGES.md, docs/LANE_UNITS.md), in the pixel-art UI (LaneUI): the gem
-# bar on top, the title ribbon, a wooden board per chapter with 6 stage medallions (number, stars;
-# boss stages get the horned medallion, locked ones are dark with a lock), then the gacha, deck and
-# home buttons. Every stage ends back here.
+# bar on top, the title ribbon, the deck power against the next stage's recommended power, a wooden
+# board per chapter with 6 stage medallions (number, stars, recommended power in red when the deck is
+# under it; boss stages get the horned medallion, locked ones are dark with a lock), then the gacha,
+# deck and home buttons. Every stage ends back here.
 
 signal stage_selected(stage_id: int)
 signal gacha_pressed
@@ -14,6 +15,10 @@ const MEDAL: Vector2 = Vector2(80, 80)
 
 var rows: VBoxContainer
 var gem_bar: Panel
+var power_label: Label
+
+const POWER_OK: Color = Color(0.62, 0.95, 0.55)
+const POWER_LOW: Color = Color(1.0, 0.5, 0.42)
 
 func _ready() -> void:
 	visible = false
@@ -30,9 +35,14 @@ func _ready() -> void:
 	title.position = Vector2(140, 92)
 	add_child(title)
 
+	power_label = LaneUI.label("", 22, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	power_label.position = Vector2(20, 154)
+	power_label.size = Vector2(680, 32)
+	add_child(power_label)
+
 	rows = VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 8)
-	rows.position = Vector2(20, 166)
+	rows.position = Vector2(20, 192)
 	rows.size = Vector2(680, 0)
 	add_child(rows)
 
@@ -82,11 +92,16 @@ func refresh() -> void:
 	for child in rows.get_children():
 		child.queue_free()
 	var progress: Dictionary = LaneStages.load_progress()
+	var power: int = LaneUnits.deck_power()
+	var next_id: int = int(progress["unlocked"])
+	var next_rec: int = LaneStages.recommended_power(next_id)
+	power_label.text = "내 덱 전투력 %d  ·  STAGE %d 권장 %d" % [power, next_id, next_rec]
+	power_label.add_theme_color_override("font_color", POWER_OK if power >= next_rec else POWER_LOW)
 	var per: int = LaneStages.PER_CHAPTER
 	for c in range(LaneStages.CHAPTERS.size()):
 		var board := Panel.new()
 		LaneUI.dress(board, "panel_wood")
-		board.custom_minimum_size = Vector2(680, 196)
+		board.custom_minimum_size = Vector2(680, 186)
 		rows.add_child(board)
 		var head := LaneUI.label(LaneStages.CHAPTERS[c]["name"], 22, LaneUI.GOLD)
 		head.position = Vector2(26, 14)
@@ -98,10 +113,10 @@ func refresh() -> void:
 		board.add_child(line)
 		for s in LaneStages.STAGES.slice(c * per, c * per + per):
 			var sid: int = s["id"]
-			line.add_child(_stage_node(s, int(progress["stars"].get(str(sid), 0)), sid > int(progress["unlocked"])))
+			line.add_child(_stage_node(s, int(progress["stars"].get(str(sid), 0)), sid > int(progress["unlocked"]), power))
 
 # A stage medallion with its number, stars underneath and the name on hover
-func _stage_node(s: Dictionary, stars: int, locked: bool) -> Control:
+func _stage_node(s: Dictionary, stars: int, locked: bool, power: int) -> Control:
 	var sid: int = s["id"]
 	var boss: bool = s["boss"] != ""
 	var box := VBoxContainer.new()
@@ -138,4 +153,10 @@ func _stage_node(s: Dictionary, stars: int, locked: bool) -> Control:
 	var st := LaneUI.stars(stars, 20)
 	st.modulate = Color(1, 1, 1, 0.35) if locked else Color.WHITE
 	box.add_child(st)
+	if not locked:
+		var rec: int = LaneStages.recommended_power(sid)
+		var rl := LaneUI.label("권장 %d" % rec, 15, POWER_OK if power >= rec else POWER_LOW, HORIZONTAL_ALIGNMENT_CENTER)
+		rl.name = "Rec"
+		rl.custom_minimum_size = Vector2(MEDAL.x, 18)
+		box.add_child(rl)
 	return box

@@ -20,6 +20,7 @@ var info_copies: Label
 var action_btn: Button
 var merge_btn: Button
 var note: Label
+var power_label: Label
 var selected: String = "knight"
 var _cards: Dictionary = {}           # kind -> LaneTierCard in the soldier grid
 
@@ -45,8 +46,12 @@ func _ready() -> void:
 	add_child(deck_board)
 	var dh := LaneUI.label("덱 · 전투에서는 이 4명만 소환해요", 20, LaneUI.GOLD)
 	dh.position = Vector2(26, 14)
-	dh.size = Vector2(620, 28)
+	dh.size = Vector2(400, 28)
 	deck_board.add_child(dh)
+	power_label = LaneUI.label("", 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
+	power_label.position = Vector2(420, 14)
+	power_label.size = Vector2(234, 28)
+	deck_board.add_child(power_label)
 	slots_box = HBoxContainer.new()
 	slots_box.add_theme_constant_override("separation", 12)
 	slots_box.position = Vector2((680 - (SLOT_SIZE.x * 4 + 36)) * 0.5, 50)
@@ -130,6 +135,7 @@ func close() -> void:
 func refresh() -> void:
 	LaneUI.set_gem_bar(gem_bar)
 	var army: Dictionary = LaneUnits.load_army()
+	power_label.text = "전투력 %d" % LaneUnits.deck_power(army)
 	for c in slots_box.get_children():
 		c.queue_free()
 	for c in grid.get_children():

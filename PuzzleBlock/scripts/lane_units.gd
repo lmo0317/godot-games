@@ -55,8 +55,8 @@ const ORDER: Array[String] = ["knight", "shield", "spearman", "archer", "crossbo
 const GEMS_FIRST: int = 150
 const GEMS_FIRST_BOSS: int = 300
 const GEMS_PER_STAR: int = 30
-const GEMS_REPLAY: int = 30
-const GEMS_FAIL_MAX: int = 40          # a lost stage still pays, by how much of the fortress fell
+const GEMS_REPLAY: int = 50
+const GEMS_FAIL_MAX: int = 60          # a lost stage still pays, by how much of the fortress fell
 
 static func melee(kind: String) -> bool:
 	return not UNITS[kind].has("shot")
@@ -208,6 +208,20 @@ static func pull(count: int, rng: RandomNumberGenerator) -> Array:
 
 # ---------------------------------------------------------------------------
 # Deck
+
+# Deck power shown against each stage's recommended power: 100 per soldier plus 25 per tier (the
+# stat bonus per tier), counted from 노멀, so a higher-base soldier counts for more
+static func unit_power(kind: String, tier: int) -> int:
+	return 100 + 25 * tier
+
+static func deck_power(army: Dictionary = {}) -> int:
+	if army.is_empty():
+		army = load_army()
+	var total := 0
+	for k in army["deck"]:
+		if k != "" and army["owned"].has(k):
+			total += unit_power(k, int(army["owned"][k]["tier"]))
+	return total
 
 static func set_deck_slot(slot: int, kind: String) -> void:
 	var army := load_army()

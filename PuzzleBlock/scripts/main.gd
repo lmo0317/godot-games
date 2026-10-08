@@ -1461,7 +1461,9 @@ func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 		SoundManager.play_gameover()
 		SettingsManager.vibrate(120)
 	await get_tree().create_timer(0.5).timeout
-	lane_result.show_result(battle_stage, won, stars, int(reward.get("gems", 0)), float(battle.castle_hp) / LaneBattle.CASTLE_HP, reason)
+	# A loss says what to change: the missing counter, or the deck power under the recommended one
+	var advice: Array = [] if won else LaneStages.fail_advice(battle_stage, battle.deck, LaneUnits.deck_power())
+	lane_result.show_result(battle_stage, won, stars, int(reward.get("gems", 0)), float(battle.castle_hp) / LaneBattle.CASTLE_HP, reason, advice)
 
 # =========================================================
 # Adventure mode

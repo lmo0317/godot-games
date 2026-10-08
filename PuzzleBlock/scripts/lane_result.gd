@@ -1,8 +1,8 @@
 class_name LaneResult
 extends Control
 # 블록 기사단 stage result, in the pixel-art UI (LaneUI): a ribbon with "STAGE n 클리어!" or "실패",
-# the stars popping in one by one, the gems earned, and one way on: back to the base to spend gems
-# and fix the deck before the next stage.
+# the stars popping in one by one, the gems earned (a loss pays by the fortress damage and says what
+# to change), and one way on: back to the base to spend gems and fix the deck before the next stage.
 
 signal back_pressed
 
@@ -83,7 +83,7 @@ func _ready() -> void:
 	board.add_child(back)
 
 # Shows the result of a stage
-func show_result(stage_id: int, won: bool, stars: int, gems: int, castle_ratio: float, reason: String) -> void:
+func show_result(stage_id: int, won: bool, stars: int, gems: int, castle_ratio: float, reason: String, advice: Array = []) -> void:
 	title.get_child(0).text = ("STAGE %d 클리어!" if won else "STAGE %d 실패") % stage_id
 	for c in stars_box.get_children():
 		c.queue_free()
@@ -103,8 +103,8 @@ func show_result(stage_id: int, won: bool, stars: int, gems: int, castle_ratio: 
 		info.text = "남은 성 체력 %d%%" % roundi(castle_ratio * 100.0)
 		tip.text = "본부에서 보석으로 병사를 뽑고\n덱을 정비한 뒤 다음 스테이지로!"
 	else:
-		info.text = "놓을 수 있는 블록이 없어요" if reason == "stuck" else "성이 무너졌어요"
-		tip.text = "요새를 깎은 만큼 보석을 받았어요\n병사를 뽑고 합성해서 다시 도전!"
+		info.text = ("놓을 수 있는 블록이 없어요" if reason == "stuck" else "성이 무너졌어요") + " · 요새를 깎은 만큼 보석"
+		tip.text = "\n".join(advice) if not advice.is_empty() else "병사를 뽑고 합성해서 다시 도전!"
 	visible = true
 	board.scale = Vector2(0.85, 0.85)
 	modulate.a = 0.0
