@@ -402,6 +402,10 @@ func _run() -> void:
 	var gems_before: int = LaneUnits.load_army()["gems"]
 	main.start_screen.gem_add.pressed.emit()
 	_expect(LaneUnits.load_army()["gems"] == gems_before + HomeScreen.DEV_GEMS and main.start_screen.gem_label.text == str(gems_before + HomeScreen.DEV_GEMS), "the test + button adds gems")
+	main.start_screen.reset_btn.pressed.emit()
+	_expect(LaneUnits.load_army()["gems"] > LaneUnits.START_GEMS, "one tap on reset only arms it")
+	main.start_screen.reset_btn.pressed.emit()
+	_expect(LaneUnits.load_army()["gems"] == LaneUnits.START_GEMS and LaneStages.load_progress()["unlocked"] == 1 and main.start_screen.gem_label.text == str(LaneUnits.START_GEMS), "two taps reset 블록 기사단")
 	main.start_screen.gacha_pressed.emit()
 	await get_tree().process_frame
 	_expect(main.lane_gacha.visible, "the home gacha tab opens the gacha")

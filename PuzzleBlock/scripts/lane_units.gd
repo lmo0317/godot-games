@@ -236,6 +236,11 @@ static func set_deck_slot(slot: int, kind: String) -> void:
 		return # the deck is never empty
 	save_army(army)
 
+# Test reset (the home's "리셋", dev builds only): back to the two starters and the starting gems
+static func reset_army() -> void:
+	if FileAccess.file_exists(ARMY_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(ARMY_PATH))
+
 # Test gems (the home's "+" next to the gem count, dev builds only)
 static func add_gems(n: int) -> int:
 	var army := load_army()

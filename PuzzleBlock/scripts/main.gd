@@ -250,6 +250,11 @@ func _ready() -> void:
 	start_screen.deck_pressed.connect(func(): lane_deck.open())
 	# Back from the gacha or the soldiers screen to whichever screen opened it, refreshed
 	lane_gacha.closed.connect(_after_lane_screen)
+	# Test reset on the home (dev): 블록 기사단 from the start
+	start_screen.lane_reset_pressed.connect(func():
+		LaneUnits.reset_army()
+		LaneStages.reset_progress()
+		_update_home_profile_ui())
 	# "합성하러 가기" after a pull opens the soldiers screen
 	lane_gacha.deck_requested.connect(func(): lane_deck.open())
 	# Stage results sit over the battle and lead back to the base

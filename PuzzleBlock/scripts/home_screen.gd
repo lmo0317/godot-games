@@ -15,12 +15,16 @@ signal ranking_pressed
 signal settings_pressed
 signal profile_pressed
 signal sound_pressed
+signal lane_reset_pressed
 
 const W: float = 720.0
 const GROUND: float = 820.0
 const NAV_Y: float = 1100.0
 
-# Gems added by the test "+" button on the gem count (0 hides it; see _build_top_bar)
+# Test tools for the dev build (user requests 2026-10-08): the "+" on the gem count adds DEV_GEMS,
+# and "리셋" on the left starts 블록 기사단 over. DEV_TOOLS = false hides both before dev goes to
+# master for the stores
+const DEV_TOOLS: bool = true
 const DEV_GEMS: int = 1000
 
 var sound_on_tex: Texture2D = preload("res://assets/sprites/sound_on.png")
@@ -34,6 +38,8 @@ var settings_btn: Button
 var top_chip: Button
 var gem_label: Label
 var gem_add: Button
+var reset_btn: Button
+var _reset_armed: bool = false
 var gem_box: Panel
 var battle_status: Label
 var next_label: Label
@@ -80,6 +86,8 @@ func _ready() -> void:
 	_squad = Node2D.new()
 	add_child(_squad)
 	_build_top_bar()
+	if DEV_TOOLS:
+		_build_reset()
 	_build_title()
 	_build_nav()
 
@@ -174,7 +182,7 @@ func _build_top_bar() -> void:
 	gem_box.add_child(gem_label)
 	# Test button (user request 2026-10-08): "+" tops up gems for trying the gacha. dev branch only;
 	# take it out (DEV_GEMS = 0) before dev goes to master for the stores
-	if DEV_GEMS > 0:
+	if DEV_TOOLS:
 		_place(gem_label, 50, 16, 76, 40)
 		gem_label.add_theme_font_size_override("font_size", 22)
 		gem_add = Button.new()
@@ -201,6 +209,32 @@ func _build_top_bar() -> void:
 	_place(settings_btn, 590, 14, 74, 74)
 	settings_btn.pressed.connect(func(): settings_pressed.emit())
 	add_child(settings_btn)
+
+# Test reset on the left of the field (mirrors the mode tiles on the right): tap twice
+func _build_reset() -> void:
+	reset_btn = Button.new()
+	reset_btn.text = "리셋"
+	LaneUI.button(reset_btn, "red", 22)
+	_place(reset_btn, 16, 300, 96, 56)
+	reset_btn.tooltip_text = "블록 기사단 처음부터 (테스트)"
+	reset_btn.pressed.connect(_on_reset)
+	add_child(reset_btn)
+	var cap := LaneUI.label("테스트", 15, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	_place(cap, 16, 358, 96, 22)
+	add_child(cap)
+
+func _on_reset() -> void:
+	SoundManager.play_click()
+	if not _reset_armed:
+		_reset_armed = true
+		reset_btn.text = "한 번 더"
+		get_tree().create_timer(3.0).timeout.connect(func():
+			_reset_armed = false
+			reset_btn.text = "리셋")
+		return
+	_reset_armed = false
+	reset_btn.text = "리셋"
+	lane_reset_pressed.emit()
 
 func _on_gem_add() -> void:
 	SoundManager.play_battle("g_new", -6.0)

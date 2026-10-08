@@ -168,6 +168,11 @@ static func load_progress() -> Dictionary:
 			progress["stars"] = data["stars"]
 	return progress
 
+# Test reset (the home's "리셋"): stage 1 again, no stars
+static func reset_progress() -> void:
+	if FileAccess.file_exists(PROGRESS_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(PROGRESS_PATH))
+
 static func total_stars() -> int:
 	var total := 0
 	for v in load_progress()["stars"].values():
