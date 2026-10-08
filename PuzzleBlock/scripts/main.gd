@@ -512,6 +512,17 @@ func _clear_tray() -> void:
 		tray_pieces[i] = null
 	dragging_piece = null
 
+# 블록 기사단 deals what the board needs (user request, docs/LANE_STAGES.md "퍼즐"): a set that
+# empties the board when one exists, otherwise the opening's "fun" set (pieces that clear lines one
+# after another, the piece that fills a two-line hole, sets that keep the combo), and always one
+# that can clear a line right away when any can. The puzzle should feel easy; the monsters and the
+# army's growth carry the challenge
+static func battle_trio(b, combo: int, sc: int, grace: int, first: bool) -> Array[Dictionary]:
+	var shapes: Array[Dictionary] = BlockData.get_needed_trio(b)
+	if shapes.is_empty():
+		shapes = BlockData.get_adaptive_trio(b, combo, sc, grace, null, 0.0, first)
+	return shapes
+
 func _spawn_new_tray() -> void:
 	SoundManager.play_deal()
 	var shapes: Array[Dictionary] = []
@@ -522,7 +533,9 @@ func _spawn_new_tray() -> void:
 		# The difficulty curve applies to classic only; adventure stages keep their tuned balance
 		# The battle deals with a fixed, helpful pressure; the monsters supply the challenge
 		var pressure: float = BlockData.pressure_for_score(score) if game_mode == "classic" else (BATTLE_PRESSURE if game_mode == "battle" else 0.0)
-		if game_mode == "classic" and deal_index < BlockData.FUN_DEALS and score < BlockData.FUN_SCORE_MAX:
+		if game_mode == "battle":
+			shapes = battle_trio(board, combo_count, score, combo_grace_moves, guarantee_first_clear)
+		elif game_mode == "classic" and deal_index < BlockData.FUN_DEALS and score < BlockData.FUN_SCORE_MAX:
 			# Opening sets are chosen for fun moments: snug fits, multi-line clears, a combo that keeps
 			# going, and a set that empties the board whenever one exists
 			shapes = BlockData.get_fun_trio(board, combo_count, score, combo_grace_moves, null, guarantee_first_clear)

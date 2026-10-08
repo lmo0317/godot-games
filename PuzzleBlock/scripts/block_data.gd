@@ -626,6 +626,93 @@ static func get_fun_trio(board, combo_count: int, score: int, combo_grace_moves:
 	last_generation_note = "fun"
 	return chosen
 
+# 블록 기사단: the pieces the board needs, in order (docs/LANE_STAGES.md "퍼즐"). Each step picks,
+# on the board the previous pieces left, a shape that clears a line (more lines weigh more); when
+# nothing can clear, a "builder" that sits snugly and brings rows/columns close to full, and smaller
+# pieces when the board is crowded. A set that empties the board is dealt whenever one exists.
+# The three are placeable one after another, so the board does not lock up.
+const NEED_TOP: int = 3            # pick among the best few for variety
+const NEED_CROWDED: float = 0.45   # board fill above which bigger builders are avoided
+const NEED_PERFECT_CELLS: int = 10 # look for a set that empties the board at or below this many cells
+
+static func get_needed_trio(board, rng: RandomNumberGenerator = null) -> Array[Dictionary]:
+	if rng == null:
+		rng = get_default_rng()
+	var grid: PackedByteArray = board.get_occupancy_snapshot()
+	var cells := 0
+	for v in grid:
+		cells += v
+	# The search for an emptying set is the slow part, so only on nearly empty boards
+	var perfect: Array[Dictionary] = []
+	if cells <= NEED_PERFECT_CELLS:
+		perfect = _perfect_candidate(grid, rng)
+	if not perfect.is_empty():
+		_shuffle(perfect, rng)
+		last_generation_note = "perfect"
+		return perfect
+	var trio: Array[Dictionary] = []
+	var g := grid
+	for step in range(3):
+		var pick := _needed_piece(g, trio, rng)
+		if pick.is_empty():
+			break
+		trio.append(pick["shape"])
+		g = place_and_clear(g, get_offsets(pick["shape"]), pick["spot"].x, pick["spot"].y)
+	if trio.size() < 3 or not can_place_all(grid, trio):
+		return []
+	_shuffle(trio, rng)
+	last_generation_note = "needed"
+	return trio
+
+static func _needed_piece(g: PackedByteArray, taken: Array, rng: RandomNumberGenerator) -> Dictionary:
+	var counts := _line_counts(g)
+	# First the shapes that clear a line somewhere (cheap: line counts only)
+	var pool: Array = []
+	for s in SHAPES:
+		if s["id"] == "dot_1x1":
+			continue
+		var offsets := get_offsets(s)
+		var b := get_bounds(s["cells"])
+		var best_lines := 0
+		var spot := Vector2i(-1, -1)
+		for y in range(GRID_N - b.size.y + 1):
+			for x in range(GRID_N - b.size.x + 1):
+				var lines := _lines_with_counts(counts, s, x, y)
+				if lines > best_lines and _fits_at(g, offsets, x, y):
+					best_lines = lines
+					spot = Vector2i(x, y)
+		if best_lines > 0:
+			var repeat: float = 0.35 if taken.has(s) else 1.0
+			pool.append({"shape": s, "spot": spot, "w": float(SHAPE_BASE_WEIGHTS.get(s["id"], 1.0)) * (1.0 + 1.5 * best_lines) * repeat})
+	# Nothing clears: a builder that sits snugly and leaves rows/columns close to full
+	if pool.is_empty():
+		var cells := 0
+		for v in g:
+			cells += v
+		var crowded: bool = float(cells) / (GRID_N * GRID_N) > NEED_CROWDED
+		for s in SHAPES:
+			if s["id"] == "dot_1x1":
+				continue
+			var offsets := get_offsets(s)
+			var b := get_bounds(s["cells"])
+			var best := -INF
+			var spot := Vector2i(-1, -1)
+			for y in range(GRID_N - b.size.y + 1):
+				for x in range(GRID_N - b.size.x + 1):
+					if not _fits_at(g, offsets, x, y):
+						continue
+					var v: float = _snugness(g, offsets, x, y) * 2.0 - _deficit_after(counts, s, x, y) * 0.05
+					if v > best:
+						best = v
+						spot = Vector2i(x, y)
+			if spot.x >= 0:
+				var size_pen: float = 0.12 * offsets.size() if crowded else 0.0
+				pool.append({"shape": s, "spot": spot, "w": (best - size_pen) * (0.35 if taken.has(s) else 1.0)})
+	if pool.is_empty():
+		return {}
+	pool.sort_custom(func(a, b): return a["w"] > b["w"])
+	return pool[rng.randi() % mini(NEED_TOP, pool.size())]
+
 static func _multi_clear_shapes(grid: PackedByteArray) -> Array[Dictionary]:
 	var counts := _line_counts(grid)
 	var found: Array[Dictionary] = []
