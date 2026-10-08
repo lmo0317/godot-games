@@ -346,6 +346,20 @@ func _run() -> void:
 	main.lane_select.gacha_pressed.emit()
 	await get_tree().process_frame
 	_expect(main.lane_gacha.visible, "the base opens the gacha")
+	# The pull show: charge, one by one reveal (skippable), then a summary of all ten
+	var ag := LaneUnits.load_army()
+	ag["gems"] = 1000
+	LaneUnits.save_army(ag)
+	main.lane_gacha._refresh()
+	var got: Array = main.lane_gacha.pull(10)
+	_expect(got.size() == 10 and main.lane_gacha.pull1.disabled and main.lane_gacha.back.disabled, "a pull locks the buttons during the show")
+	await _wait_until(func(): return main.lane_gacha._show.visible, 5.0)
+	_expect(main.lane_gacha._show.visible and main.lane_gacha._show_count.text == "1 / 10", "soldiers are revealed one by one")
+	main.lane_gacha._skip = true
+	await _wait_until(func(): return main.lane_gacha._summary.visible, 5.0)
+	_expect(main.lane_gacha._summary.visible and main.lane_gacha._sum_grid.get_child_count() == 10, "the summary shows all ten")
+	main.lane_gacha._sum_ok.pressed.emit()
+	_expect(not main.lane_gacha._busy and not main.lane_gacha._summary.visible and not main.lane_gacha.back.disabled, "확인 goes back to the altar")
 	main.lane_gacha.close()
 	main.lane_select.deck_pressed.emit()
 	await get_tree().process_frame

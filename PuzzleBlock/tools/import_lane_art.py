@@ -10,6 +10,8 @@ Raw files (prompts in docs/ART_GUIDE.md, "블록 기사단 픽셀 아트"):
   allies2.png (optional) 8 more soldiers, same reference (shield, crossbow, cleric, cannoneer kept)
   foes2.png  (optional) wolf, goblin archer, dark priest, golem, demon lord
   fx2.png    (optional) hit spark, slash, arrow, bolt, fireball, holy orb, heal plus, dust, (coin), ring
+  summon.png (optional) gacha pieces, same reference: summoning altar, swirling portal, pillar of
+             light, starburst, ray sunburst, sparkle (light pieces are pale so the game tints them)
   fx.png     (optional) castle cannon pieces, same reference: cannon, cannonball, muzzle flash,
              small explosion, big explosion, smoke
 
@@ -36,6 +38,8 @@ FX = ["cannon", "cannonball", "flash", "boom_s", "boom_l", "smoke"]
 ALLIES2 = ["shield", "crossbow", "cleric", None, None, "cannoneer", None, None]
 FOES2 = ["wolf", "gob_archer", "priest", "golem", "demon"]
 FX2 = ["spark", "slash", "arrow", "bolt", "fireball", "holy", "heal", "dust", None, "ring"]
+# summon.png pieces are full of loose light specks, so they are cut by empty columns instead
+SUMMON = ["summon_altar", "summon_portal", "summon_pillar", "summon_burst", "summon_rays", "summon_sparkle"]
 
 
 def block_size(img):
@@ -121,6 +125,37 @@ def split(img):
     return out
 
 
+def split_columns(img):
+    """Pieces separated by fully empty columns, left to right, each trimmed to its pixels."""
+    a = img.getchannel("A")
+    w, h = img.size
+    used = [any(a.getpixel((x, y)) for y in range(h)) for x in range(w)]
+    out, x = [], 0
+    while x < w:
+        if not used[x]:
+            x += 1
+            continue
+        x0 = x
+        while x < w and used[x]:
+            x += 1
+        piece = img.crop((x0, 0, x, h))
+        out.append(piece.crop(piece.getchannel("A").getbbox()))
+    return out
+
+
+def whiten(img):
+    """Light pieces turned into white light (brightness kept) so the game can tint them by tier."""
+    out = img.copy()
+    px = out.load()
+    for y in range(out.height):
+        for x in range(out.width):
+            r, g, b, a = px[x, y]
+            if a:
+                v = int(110 + 145 * (0.3 * r + 0.59 * g + 0.11 * b) / 255)
+                px[x, y] = (v, v, v, a)
+    return out
+
+
 def save(img, name):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name + ".png")
@@ -157,6 +192,13 @@ def main():
         for name, sp in zip(names, sprites):
             if name:
                 save(sp, name)
+    summon_path = os.path.join(src, "summon.png")
+    if os.path.exists(summon_path):
+        pieces = split_columns(to_grid(Image.open(summon_path)))
+        if len(pieces) != len(SUMMON):
+            sys.exit(f"expected {len(SUMMON)} pieces in summon.png, found {len(pieces)}")
+        for name, sp in zip(SUMMON, pieces):
+            save(sp if name == "summon_altar" else whiten(sp), name)
     fx_path = os.path.join(src, "fx.png")
     if os.path.exists(fx_path):
         fx = split(to_grid(Image.open(fx_path)))

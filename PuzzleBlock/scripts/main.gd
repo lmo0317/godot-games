@@ -250,6 +250,8 @@ func _ready() -> void:
 	start_screen.deck_pressed.connect(func(): lane_deck.open())
 	# Back from the gacha or the soldiers screen to whichever screen opened it, refreshed
 	lane_gacha.closed.connect(_after_lane_screen)
+	# "합성하러 가기" after a pull opens the soldiers screen
+	lane_gacha.deck_requested.connect(func(): lane_deck.open())
 	# Stage results sit over the battle and lead back to the base
 	lane_result = LaneResult.new()
 	$UI.add_child(lane_result)

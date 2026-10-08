@@ -107,6 +107,14 @@ Subject: a SPRITE SHEET of 6 ornate CARD FRAMES for game character cards, laid o
 Subject: a character CONCEPT ART SKETCH sheet for a game unit - <병사 설명>. Same character design as the attached pixel-art reference (same armor colors, gear and silhouette), redrawn as an artist's original concept drawing: loose pencil and graphite sketch lines with a light flat watercolor color wash, on plain OFF-WHITE PAPER (fully opaque light paper background, NOT transparent, NOT dark, NOT pixel art, no glow). Show the character three times: full body front view, full body side view facing right, and a small close-up of the weapon or gear. Stylized proportions about 3 heads tall (NOT big-eyed chibi), friendly fantasy look. No background scenery. No text, no letters, no labels, no watermark, no logo. Landscape canvas.
 ```
 
+### 뽑기 연출 (2026-10-08)
+
+"뽑기가 너무 부실하다, 뽑을 때마다 효과가 있어야" → 게임 기획자·아트 디렉터 상의: 소환 제단 위 포털이 충전되며 빛 색으로 최고 등급을 예고하고(가끔 낮은 색에서 바뀜), 한 명씩 크게 공개하고, 끝에 모아 보여 줌. 그림 6개를 한 장(`summon.png`)에 Codex로 2장 그려 B 선택(소용돌이 포털, 또렷한 광선). 빛 조각들은 반짝이 점이 많아 붙은 덩어리 대신 **빈 열로 잘라냄**(`split_columns`), 제단 말고는 **흰 빛으로 바꿔 저장**(`whiten`) — 게임에서 등급 색(흰·파랑·보라)을 입힘. 도트 크기 6, 원래 크기로 저장하고 게임에서 정수 배(제단 ×4, 포털 ×3, 공개 광선 ×6~8).
+
+```text
+Subject: Subject: a SPRITE SHEET of 6 separate pixel-art pieces for a fantasy game's hero SUMMONING scene, laid out in ONE horizontal row, each piece clearly separated from the others by wide empty transparent gaps, drawn in EXACTLY the same retro 16-bit pixel style, pixel size, outline and palette as the attached character reference sheet. 1 a round stone SUMMONING ALTAR seen slightly from above: a low grey stone pedestal with a flat top carved with a glowing pale-cyan magic rune circle, small gold trim, about 56x28 art pixels; 2 a front-view swirling MAGIC PORTAL ring of pale white-gold light with small runes around it, empty dark-transparent middle, about 44x44 art pixels; 3 a tall vertical PILLAR OF LIGHT beam, nearly white with a pale gold edge, brightest in the middle, about 18x72 art pixels; 4 a big round STARBURST of light with 8 sharp rays, nearly white with pale gold, about 44x44 art pixels; 5 a radial SUNBURST of long thin light rays fanning out in a full circle, very pale cream color, about 64x64 art pixels; 6 a small four-pointed SPARKLE star, white with a pale gold core, about 9x9 art pixels. Light pieces are pale white/cream so the game can tint them blue, purple or gold. + 스타일 문구
+```
+
 ### 크기 (2026-10-07)
 
 "성과 유닛이 너무 커서 많아지면 재미가 없다" → 냥코 대전쟁식으로 줄임: 병사·몬스터는 **원래 도트 크기(×1, 약 45px = 띠 높이의 1/7)**, 보스만 약 2배, 성·요새도 ×1로 **반쯤 화면 밖**에 두어 싸울 공간을 330 → 580px로 넓힘. 효과도 ×1.
@@ -160,6 +168,7 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 병사 원화 스케치 8종 | `art/concept/units/*.jpg` | Codex (도트 그림을 참고로 연필·수채 원화) | 아래 "병사 원화" | 기획 참고용 (게임에 안 들어감) | 완료 |
 | 블록 기사단 UI 키트 15종 | `assets/art/ui/panel_wood.png`, `panel_paper.png`, `btn_green/blue/red/grey.png`, `icon_gem/coin/star/star_empty/lock.png`, `ribbon.png`, `medal.png`, `medal_boss.png`, `card_frame.png` | Codex 시트 | 위 "블록 기사단 UI" | 본부·뽑기·덱·전투 소환 줄·결과 창 (`LaneUI`) | 완료 |
 | 성급 카드 테두리 6종 | `assets/art/ui/frame_0.png` ~ `frame_5.png` | Codex 시트(2장 중 B, 도트 크기 5) | 아래 "성급 테두리" | 성급 카드(`LaneTierCard`): 노멀 철·레어 사파이어·유니크 자수정·레전더리 토파즈·신화 루비 가시·전설 다이아 날개 | 완료 |
+| 뽑기 연출 6종 | `assets/art/lane/summon_altar/portal/pillar/burst/rays/sparkle.png` | Codex 시트(2장 중 B, 도트 크기 6, 빛은 흰색으로) | 위 "뽑기 연출" | 뽑기 화면(`LaneGacha`): 제단·포털·빛 기둥·폭발·광선·반짝이 | 완료 |
 | 날개·방패 표시 | `LaneBattle._pixel_icon()` (7px) | 코드 | 문자열 도트 | 박쥐·갑옷 해골 머리 위 | 완료 |
 | 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
 | 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |

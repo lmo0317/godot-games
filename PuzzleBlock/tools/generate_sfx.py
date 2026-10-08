@@ -10,6 +10,8 @@ overlap without clipping.
   perfect            sparkling arpeggio over a low boom (board emptied)
   b_*                블록 기사단 battle sounds (played quietly, see LaneBattle._sfx):
                      b_hit, b_arrow, b_magic, b_death, b_cannon, b_horn, b_roar, b_summon, b_castle
+  g_*                블록 기사단 gacha: g_charge (altar charging), g_shift (the light changes to a
+                     higher tier), g_reveal_0..2 (a soldier appears, by base tier), g_new (first copy)
 
 Usage: python tools/generate_sfx.py
 """
@@ -184,6 +186,7 @@ def main():
         mix(x, bell(note(name), 0.9), at=0.05 + 0.07 * k, gain=0.35)
     write("perfect", reverb(x, 0.32), PEAK_DB + 1.0)
     battle_sounds()
+    gacha_sounds()
 
 
 def noise_lp(dur, cutoff_start, cutoff_end, decay):
@@ -258,6 +261,44 @@ def battle_sounds():
     x = sweep(110, 45, 0.3, 14)
     mix(x, noise_lp(0.2, 0.25, 0.05, 20), gain=0.7)
     write("b_castle", x)
+
+
+def gacha_sounds():
+    random.seed(23)
+    # Charging: a long whoosh up with a trill of soft bells on top
+    x = riser(1.3)
+    for k in range(10):
+        mix(x, bell(note(["C5", "E5", "G5", "C6"][k % 4]), 0.35), at=0.25 + 0.1 * k, gain=0.12 + 0.02 * k)
+    write("g_charge", reverb(x, 0.3))
+    # Shift: the light turns into a higher tier (quick whoosh + bright bell)
+    x = riser(0.35)
+    mix(x, bell(note("E6"), 0.7), at=0.32, gain=0.5)
+    mix(x, bell(note("B5"), 0.7), at=0.34, gain=0.35)
+    write("g_shift", reverb(x, 0.3))
+    # Reveals by tier: soft chime / bright arpeggio / boom + fanfare
+    x = mallet(note("C5"), 0.5, 0.25)
+    mix(x, mallet(note("G5"), 0.5, 0.25), at=0.07, gain=0.8)
+    write("g_reveal_0", reverb(x, 0.25))
+    x = []
+    for k, name in enumerate(["E5", "G5", "B5", "E6"]):
+        mix(x, bell(note(name), 0.8), at=0.06 * k, gain=0.45)
+    mix(x, mallet(note("E4"), 0.6, 0.2), gain=0.5)
+    write("g_reveal_1", reverb(x, 0.3))
+    x = []
+    boom = [math.sin(2 * math.pi * (75 - 25 * (i / RATE)) * (i / RATE)) * math.exp(-(i / RATE) * 6) for i in range(int(RATE * 0.7))]
+    mix(x, boom, gain=0.9)
+    for name in ("C4", "G4", "C5"):
+        brass = sweep(note(name), note(name), 0.9, 1.6, "saw")
+        for i in range(len(brass)):
+            brass[i] *= min(1.0, i / (RATE * 0.04))
+        mix(x, brass, at=0.05, gain=0.18)
+    for k, name in enumerate(["C5", "E5", "G5", "C6", "E6", "G6"]):
+        mix(x, bell(note(name), 0.9), at=0.1 + 0.06 * k, gain=0.32)
+    write("g_reveal_2", reverb(x, 0.32), PEAK_DB + 1.0)
+    # New soldier: two quick rising bells
+    x = bell(note("A5"), 0.5)
+    mix(x, bell(note("E6"), 0.6), at=0.09, gain=0.9)
+    write("g_new", reverb(x, 0.25))
 
 
 if __name__ == "__main__":
