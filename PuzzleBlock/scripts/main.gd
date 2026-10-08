@@ -78,8 +78,8 @@ var battle: LaneBattle
 # The header is hidden in the battle (its buttons move into the summon bar) so the lane starts at the top
 const COMPACT_SCALE: float = 0.95      # board in the battle
 const TRAY_COMPACT_SCALE: float = 0.85 # tray in the battle
-const COMPACT_BOARD_TOP: float = 442.0
-const COMPACT_TRAY_TOP: float = 1062.0
+const COMPACT_BOARD_TOP: float = 478.0
+const COMPACT_TRAY_TOP: float = 1092.0
 var tray_slots: Array[Vector2] = []
 var _layout_home: Dictionary = {}   # node -> [position, scale] of the normal layout
 

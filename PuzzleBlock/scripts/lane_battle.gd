@@ -26,13 +26,15 @@ signal home_pressed
 signal settings_pressed
 signal sound_pressed
 
-const LANE_H: float = 330.0
-const BAR_H: float = 100.0
-const UNIT_PX: float = 1.0            # soldiers and monsters at their pixel size
+# 2026-10-08: auto plays the deck, so the summon bar is gone (hidden, BAR_H 0) and the lane takes
+# its space; soldiers and monsters drawn 1.4x
+const LANE_H: float = 470.0
+const BAR_H: float = 0.0
+const UNIT_PX: float = 1.4            # soldiers and monsters, a little over their pixel size
 const BASE_PX: float = 1.0            # castle and fortress
 const FX_PX: float = 1.0              # effects
-const GROUND: float = 272.0           # feet line in the lane (on the dirt road)
-const FLY_H: float = 40.0             # bats hover this high
+const GROUND: float = 412.0           # feet line in the lane (on the dirt road)
+const FLY_H: float = 56.0             # bats hover this high
 const CASTLE_LEFT: float = -20.0      # the castle sticks out of the left edge
 const FORT_RIGHT: float = 740.0       # and the fortress out of the right one
 const ALLY_START: float = 70.0        # just in front of the castle
@@ -986,6 +988,13 @@ func _build() -> void:
 	bg.size = Vector2(lane_tex.get_width(), lane_tex.get_height()) * k
 	bg.position = Vector2((720.0 - bg.size.x) * 0.5, LANE_H - bg.size.y + 4.0)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The lane is taller than the picture: the sky colour fills the strip above it
+	var sky := ColorRect.new()
+	sky.color = lane_tex.get_image().get_pixel(lane_tex.get_width() / 2, 0)
+	sky.position = Vector2(-40, -40)
+	sky.size = Vector2(800, bg.position.y + 44.0)
+	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shake.add_child(sky)
 	_shake.add_child(bg)
 	for side in [1, -1]:
 		var t: Texture2D = tex["castle" if side == 1 else "fortress"]
@@ -1059,26 +1068,35 @@ func _build() -> void:
 	_march_btn.focus_mode = Control.FOCUS_NONE
 	_march_btn.pressed.connect(toggle_march)
 	_view.add_child(_march_btn)
+	# Auto always plays (user request 2026-10-08): the toggle stays for tests but is not shown
 	_auto_btn = Button.new()
-	_auto_btn.position = Vector2(256, 8)
-	_auto_btn.size = Vector2(92, 44)
-	_auto_btn.focus_mode = Control.FOCUS_NONE
+	_auto_btn.visible = false
 	_auto_btn.pressed.connect(toggle_auto)
 	_view.add_child(_auto_btn)
-	# Summon bar right under the lane: gold and income on the left, the deck, then the cannon
+	# Gold from the puzzle, next to the menu, so clears still show where the soldiers come from
+	var gold_pill := Panel.new()
+	LaneUI.dress(gold_pill, "panel_wood")
+	gold_pill.position = Vector2(256, 6)
+	gold_pill.size = Vector2(90, 48)
+	gold_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_view.add_child(gold_pill)
+	var coin := LaneUI.icon("icon_coin", Vector2(22, 22))
+	coin.position = Vector2(10, 13)
+	gold_pill.add_child(coin)
+	_gold_label = _outlined("0", 22, UIKit.GOLD)
+	_gold_label.position = Vector2(36, 6)
+	_gold_label.size = Vector2(52, 36)
+	_gold_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	gold_pill.add_child(_gold_label)
+	# The old summon bar (deck buttons, income, cannon) is kept hidden: auto summons, buys income
+	# and fires the cannon, and the tests still drive it by hand
 	var bar := Panel.new()
+	bar.visible = false
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.position = Vector2(0, LANE_H)
-	bar.size = Vector2(720, BAR_H)
+	bar.size = Vector2(720, 100)
 	LaneUI.dress(bar, "panel_wood")
 	add_child(bar)
-	var coin := LaneUI.icon("icon_coin", Vector2(24, 24))
-	coin.position = Vector2(14, 14)
-	bar.add_child(coin)
-	_gold_label = _outlined("0", 26, UIKit.GOLD)
-	_gold_label.position = Vector2(40, 6)
-	_gold_label.size = Vector2(70, 36)
-	bar.add_child(_gold_label)
 	_wallet_label = _outlined("", 15, UIKit.MUTED)
 	_wallet_label.position = Vector2(104, 14)
 	_wallet_label.size = Vector2(70, 24)
