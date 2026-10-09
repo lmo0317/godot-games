@@ -1080,27 +1080,48 @@ func _build() -> void:
 	_shake.add_child(_fx_layer)
 	_bars_layer = Node2D.new()
 	_shake.add_child(_bars_layer)
-	var rib := LaneUI.ribbon("", 190, 22)
-	rib.position = Vector2(352, 2)
+	# One ribbon on the right, "STAGE N" big with the stage name as a parchment subline just below
+	var rib := LaneUI.ribbon("", 200, 22)
+	rib.position = Vector2(356, 2)
 	_view.add_child(rib)
 	_stage_label = rib.get_child(0)
-	_stage_name = _outlined("", 16, UIKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	_stage_name.position = Vector2(352, 54)
-	_stage_name.size = Vector2(190, 22)
+	var sub := Panel.new()
+	LaneUI.dress(sub, "panel_paper")
+	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sub.position = Vector2(386, 46)
+	sub.size = Vector2(140, 22)
+	_view.add_child(sub)
+	_stage_name = LaneUI.label("", 13, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
+	_stage_name.position = Vector2(386, 46)
+	_stage_name.size = Vector2(140, 22)
+	_stage_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_view.add_child(_stage_name)
-	# HP bars on the ground in front of each building (the top-right corner is Toss's button area)
-	var cb := _bar(_view, Vector2(4, LANE_H - 24), Vector2(BASE_BAR_W, 18))
+	# HP bars on the ground in front of each building: wider, stone frame, big outlined number
+	var cb := _bar(_view, Vector2(4, LANE_H - 32), Vector2(BASE_BAR_W + 36, 26))
 	_castle_fill = cb.get_child(0)
-	_castle_label = _outlined("", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_castle_label = _outlined("", 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	_castle_label.size = cb.size
 	_castle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	cb.add_child(_castle_label)
-	var fb := _bar(_view, Vector2(720 - 4 - BASE_BAR_W, LANE_H - 24), Vector2(BASE_BAR_W, 18))
+	var fb := _bar(_view, Vector2(720 - 4 - (BASE_BAR_W + 36), LANE_H - 32), Vector2(BASE_BAR_W + 36, 26))
 	_fort_fill = fb.get_child(0)
-	_fort_label = _outlined("", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_fort_label = _outlined("", 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	_fort_label.size = fb.size
 	_fort_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	fb.add_child(_fort_label)
+	# Boss badge above the fortress HP bar, shown while the boss is on the lane
+	var boss_badge := Panel.new()
+	boss_badge.name = "BossBadge"
+	boss_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	boss_badge.position = fb.position + Vector2(fb.size.x - 54, -22)
+	boss_badge.size = Vector2(52, 20)
+	boss_badge.add_theme_stylebox_override("panel", UIKit.box(Color(0.9, 0.2, 0.22), Color(1.0, 0.95, 0.6), 7, 2))
+	boss_badge.visible = false
+	_view.add_child(boss_badge)
+	var bl := _outlined("BOSS", 13, Color(1.0, 0.95, 0.6), HORIZONTAL_ALIGNMENT_CENTER)
+	bl.size = boss_badge.size
+	bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	boss_badge.add_child(bl)
 	# Top-left of the lane: home / settings / sound on a dark pill, then charge/hold and auto
 	var pill := Panel.new()
 	LaneUI.dress(pill, "panel_wood")
@@ -1289,7 +1310,8 @@ func _bar(parent: Control, pos: Vector2, sz: Vector2) -> Panel:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.position = pos
 	bg.size = sz
-	bg.add_theme_stylebox_override("panel", UIKit.box(Color(0, 0, 0, 0.6), Color.TRANSPARENT, int(sz.y / 2)))
+	# Stone trough: dark fill with a lighter outline so it reads as a frame on the lane
+	bg.add_theme_stylebox_override("panel", UIKit.box(Color(0.05, 0.04, 0.08, 0.82), Color(0.75, 0.65, 0.4, 0.9), int(sz.y / 2), 2))
 	parent.add_child(bg)
 	var fill := Panel.new()
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1304,15 +1326,31 @@ func _outlined(text: String, size_px: int, col: Color, align: HorizontalAlignmen
 	l.add_theme_color_override("font_outline_color", Color(0.08, 0.05, 0.12))
 	return l
 
+# HP bar colour: green when safe, yellow when hurt, red when about to fall. Enemy side stays red-ish
+func _hp_color(r: float, enemy: bool = false) -> Color:
+	if enemy:
+		if r > 0.6:
+			return Color(0.92, 0.32, 0.28)
+		return Color(0.72, 0.14, 0.14) if r > 0.3 else Color(0.5, 0.08, 0.1)
+	if r > 0.6:
+		return Color(0.35, 0.86, 0.43)
+	if r > 0.3:
+		return Color(0.98, 0.78, 0.28)
+	return Color(1.0, 0.4, 0.35)
+
 func _refresh() -> void:
+	var full_w: float = (BASE_BAR_W + 36) - 4.0
 	var cr: float = float(castle_hp) / CASTLE_HP
-	_castle_fill.size.x = (BASE_BAR_W - 4.0) * cr
-	_castle_fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.35, 0.86, 0.43) if cr > 0.3 else Color(1.0, 0.4, 0.35), Color.TRANSPARENT, 7))
-	_castle_label.text = str(castle_hp)
+	_castle_fill.size.x = full_w * cr
+	_castle_fill.add_theme_stylebox_override("panel", UIKit.box(_hp_color(cr), Color.TRANSPARENT, 9))
+	_castle_label.text = "%d / %d" % [castle_hp, CASTLE_HP]
 	var fr: float = clampf(fortress_hp / fortress_max, 0.0, 1.0)
-	_fort_fill.size.x = (BASE_BAR_W - 4.0) * fr
-	_fort_fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.92, 0.32, 0.28), Color.TRANSPARENT, 7))
-	_fort_label.text = str(ceili(fortress_hp))
+	_fort_fill.size.x = full_w * fr
+	_fort_fill.add_theme_stylebox_override("panel", UIKit.box(_hp_color(fr, true), Color.TRANSPARENT, 9))
+	_fort_label.text = "%d / %d" % [ceili(fortress_hp), ceili(fortress_max)]
+	var badge: Panel = _view.get_node_or_null("BossBadge")
+	if badge != null:
+		badge.visible = boss_out and stage_data.get("boss", "") != "" and not finished
 	_gold_label.text = str(gold)
 	_wallet_label.text = "/%d" % wallet_max()
 	if wallet < WALLET_COST.size():
