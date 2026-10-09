@@ -51,8 +51,18 @@ const CHAPTER_TINTS: Array[Color] = [
 	Color(0.42, 0.36, 0.56),
 	Color(0.55, 0.22, 0.24),
 ]
-# 1~3장은 전용 배경 있음; 나머지는 챕터 틴트로 대체
+# 1~3장은 전용 배경 있음; 나머지는 챕터별로 재활용 (3·4장은 틴트로 분위기 바꿈)
 const CHAPTER_ICON: Array[String] = ["slime", "goblin", "skeleton", "orc"]
+const CHAPTER_BG: Array[String] = ["bg_grassland", "bg_goblin_camp", "bg_bat_cave", "bg_bat_cave"]
+const CHAPTER_BG_TINT: Array[Color] = [
+	Color(1.0, 1.0, 1.0, 1.0),
+	Color(1.0, 1.0, 1.0, 1.0),
+	Color(0.72, 0.74, 1.05, 1.0),   # 3장 묘지: 푸른빛
+	Color(1.1, 0.72, 0.72, 1.0),    # 4장 마왕성: 붉은빛
+]
+# 배경 창 (쇼케이스 안 상단) 과 보스 배치
+const BG_RECT: Rect2 = Rect2(14, 100, 652, 340)
+const BOSS_SCALE: int = 4   # 정수배 스케일 — 원본 ~70px → 280px
 
 func _ready() -> void:
 	visible = false
@@ -253,26 +263,38 @@ func _build_showcase_card(stage_id: int) -> Control:
 	root.custom_minimum_size = SHOWCASE_SIZE
 	LaneUI.dress(root, "panel_wood")
 
-	# 배경 — 1~3은 전용 배경, 그 외는 챕터 틴트
+	# 배경 — 쇼케이스 상단에 큰 창으로 선명하게 (1~3은 전용, 4~24는 챕터 재활용 + 틴트)
 	var bg_name: String = s.get("bg", "")
-	if bg_name != "" and _load_tex("res://assets/art/lane/%s.png" % bg_name) != null:
+	var bg_tint: Color = Color(1, 1, 1, 1)
+	if bg_name == "" or _load_tex("res://assets/art/lane/%s.png" % bg_name) == null:
+		bg_name = CHAPTER_BG[chapter_idx]
+		bg_tint = CHAPTER_BG_TINT[chapter_idx]
+	var bg_tex: Texture2D = _load_tex("res://assets/art/lane/%s.png" % bg_name)
+	if bg_tex != null:
 		var bg := TextureRect.new()
-		bg.texture = _load_tex("res://assets/art/lane/%s.png" % bg_name)
+		bg.texture = bg_tex
 		bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		bg.position = Vector2(14, 14)
-		bg.size = SHOWCASE_SIZE - Vector2(28, 28)
-		bg.modulate = Color(1, 1, 1, 0.35)
+		bg.position = BG_RECT.position
+		bg.size = BG_RECT.size
+		bg.modulate = bg_tint
 		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(bg)
 	else:
 		var tinted := Panel.new()
-		tinted.position = Vector2(14, 14)
-		tinted.size = SHOWCASE_SIZE - Vector2(28, 28)
+		tinted.position = BG_RECT.position
+		tinted.size = BG_RECT.size
 		tinted.add_theme_stylebox_override("panel", UIKit.box(tint.darkened(0.35), tint.darkened(0.1), 10, 2))
 		tinted.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(tinted)
+	# 하단 그라데이션(어두워지는 띠) — 배경과 아래 UI 영역을 자연스럽게 연결
+	var fade := Panel.new()
+	fade.position = Vector2(BG_RECT.position.x, BG_RECT.position.y + BG_RECT.size.y - 40)
+	fade.size = Vector2(BG_RECT.size.x, 40)
+	fade.add_theme_stylebox_override("panel", UIKit.box(Color(0, 0, 0, 0.45), Color(0, 0, 0, 0), 0, 0))
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fade)
 
 	# 상단 챕터·번호·이름
 	var chap_name: String = LaneStages.CHAPTERS[chapter_idx]["name"]
@@ -305,20 +327,32 @@ func _build_showcase_card(stage_id: int) -> Control:
 		icon_kind = CHAPTER_ICON[chapter_idx]
 	var mon_tex: Texture2D = _load_tex("res://assets/art/lane/%s.png" % icon_kind)
 	if mon_tex != null:
+		# 정수배 스케일 — nearest에서 깔끔하게. 원본이 커서 BG 창을 넘기면 x3로 낮춤.
+		var src: Vector2 = mon_tex.get_size()
+		var scale_i: int = BOSS_SCALE
+		var max_h: float = BG_RECT.size.y - 20.0   # 배경 창 안에서만
+		var max_w: float = BG_RECT.size.x - 60.0
+		while scale_i > 2 and (src.y * scale_i > max_h or src.x * scale_i > max_w):
+			scale_i -= 1
+		var draw_size: Vector2 = src * scale_i
 		var mon := TextureRect.new()
 		mon.texture = mon_tex
 		mon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		mon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		mon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		mon.stretch_mode = TextureRect.STRETCH_SCALE
 		mon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		mon.position = Vector2(90, 110)
-		mon.size = Vector2(500, 300)
+		# 배경 창 하단 중앙에 "지면에 선 듯" 배치 (하단에서 12px 띄움)
+		mon.size = draw_size
+		mon.position = Vector2(
+			BG_RECT.position.x + (BG_RECT.size.x - draw_size.x) * 0.5,
+			BG_RECT.position.y + BG_RECT.size.y - draw_size.y - 12.0,
+		)
 		if locked:
 			mon.modulate = Color(0.4, 0.4, 0.4, 1.0)
 		root.add_child(mon)
 
-	# 이름 + 특기
-	var y: float = 420.0
+	# 이름 + 특기 (배경 창 아래로 시작)
+	var y: float = BG_RECT.position.y + BG_RECT.size.y + 8.0  # 448
 	if is_boss:
 		var tag := LaneUI.label("☠ BOSS", 20, Color(1.0, 0.7, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
 		tag.position = Vector2(0, y)
@@ -359,12 +393,12 @@ func _build_showcase_card(stage_id: int) -> Control:
 			y += 30.0
 
 	# 별 + 권장
-	y = 540.0
-	var st := LaneUI.stars(stars, 32)
+	y = 548.0
+	var st := LaneUI.stars(stars, 28)
 	st.position = Vector2(0, y)
-	st.size = Vector2(SHOWCASE_SIZE.x, 36)
+	st.size = Vector2(SHOWCASE_SIZE.x, 32)
 	root.add_child(st)
-	y += 42.0
+	y += 36.0
 	var rec_col: Color = POWER_OK if power >= rec else POWER_LOW
 	var rl := LaneUI.label("권장 전투력 %d" % rec, 22, rec_col, HORIZONTAL_ALIGNMENT_CENTER)
 	rl.position = Vector2(0, y)
@@ -406,17 +440,13 @@ func _build_showcase_card(stage_id: int) -> Control:
 	_next_btn.pressed.connect(func(): _go_to(_current + 1, true))
 	root.add_child(_next_btn)
 
-	# 잠긴 경우: 큰 자물쇠 + 안내
+	# 잠긴 경우: 큰 자물쇠 + 안내 (배경 창 위에 겹쳐)
 	if locked:
 		var lock := LaneUI.icon("icon_lock", Vector2(96, 112))
-		lock.position = Vector2((SHOWCASE_SIZE.x - lock.size.x) * 0.5, 220)
+		lock.position = Vector2((SHOWCASE_SIZE.x - lock.size.x) * 0.5,
+			BG_RECT.position.y + (BG_RECT.size.y - 112) * 0.5)
 		lock.modulate = Color(2.4, 2.4, 2.4)
 		root.add_child(lock)
-		var note := LaneUI.label("앞 스테이지를 깨면 열려요", 22, Color(0.9, 0.9, 0.9), HORIZONTAL_ALIGNMENT_CENTER)
-		note.position = Vector2(0, 490)
-		note.size = Vector2(SHOWCASE_SIZE.x, 28)
-		note.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		root.add_child(note)
 
 	return root
 
