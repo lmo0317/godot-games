@@ -1,47 +1,57 @@
 class_name LaneStageSelect
 extends Control
-# 블록 기사단 base (docs/LANE_STAGES.md, docs/LANE_UNITS.md). 가로 스크롤 챕터 탭 구조:
-#   row 1 (18~82)    gem bar on the left + home button on the right
-#   row 2 (96~160)   title ribbon "블록 기사단" (centred)
-#   row 3 (170~202)  deck power vs the next stage's recommended power
-#   row 4 (210~274)  chapter tabs (4 of them, horizontal); each shows "n장 이름 ★x/18",
-#                    gold border + ★ when all stars collected
-#   row 5 (284~892)  the picked chapter's board, 652x608: themed inner panel, 6 big stage cards
-#                    in 2x3 (card ~204x268); boss has a red stone frame and a BOSS label.
-#                    Swipe left/right to switch chapters (DragScroll on the carousel).
-#   row 6 (908~998)  [병사 뽑기] [덱 편성] buttons
+# 블록 기사단 base — 전면 쇼케이스 (한 화면 = 한 스테이지, 좌우 쓸기로 다음/이전).
+# 2026-10-09 재설계: 카드 그리드 버리고 쇼케이스 패턴으로 (사용자 요청).
+#   row 1 (18~82)    gem bar + 홈으로
+#   row 2 (92~156)   리본 "블록 기사단"
+#   row 3 (170~204)  내 덱 전투력 / 현재 쇼케이스 스테이지 권장
+#   row 4 (220~920)  풀 너비 쇼케이스 카드 (680x700): 스테이지 배경 + 보스 큰 아트 +
+#                    이름/특기/별/권장/시작버튼. 좌우 쓸기 or ◀/▶로 이전/다음 스테이지.
+#   row 5 (930~972)  "N / 24 · ★x/72" + 24개 점 인디케이터
+#   row 6 (980~1072) [병사 뽑기] [덱 편성]
+#
+# test_lane.gd 호환:
+# - `rows`에 Stage1..Stage24 노드가 전부 있어야 함 (잠긴 건 disabled, 열린 건 Rec 자식 라벨 포함).
+#   화면에는 안 보이지만 find_child로 접근 가능해야 함.
 
 signal stage_selected(stage_id: int)
 signal gacha_pressed
 signal deck_pressed
 signal closed
 
-const CARD: Vector2 = Vector2(204, 268)
-const CARD_GAP: Vector2 = Vector2(16, 16)
-const TAB_W: float = 164.0
-const TAB_H: float = 64.0
-const TAB_GAP: float = 4.0
+const SHOWCASE_POS: Vector2 = Vector2(20, 220)
+const SHOWCASE_SIZE: Vector2 = Vector2(680, 700)
+const SWIPE_THRESHOLD: float = 60.0   # 쓸기로 인정하는 최소 가로 이동
+const DRAG_THRESHOLD: float = 10.0    # 드래그로 인식 시작
 
-var rows: Control                       # kept for test_lane: find_child("Stage*")/find_child("Rec")
+var rows: Control                       # 테스트가 Stage*/Rec를 찾는 숨은 컨테이너
 var gem_bar: Panel
 var power_label: Label
 
-var _carousel: ScrollContainer
-var _carousel_row: HBoxContainer
-var _tab_row: HBoxContainer
-var _tab_buttons: Array[Button] = []
-var _chapter: int = 0
+var _showcase: Control                  # 현재 보이는 큰 쇼케이스 패널 (교체됨)
+var _showcase_slot: Control             # 쇼케이스가 들어가는 자리 (clip)
+var _dot_row: HBoxContainer
+var _dots: Array[Control] = []
+var _page_label: Label
+var _prev_btn: Button
+var _next_btn: Button
+var _start_btn: Button
+
+var _current: int = 1                   # 현재 쇼케이스 스테이지 id (1~24)
+var _progress: Dictionary = {"unlocked": 1, "stars": {}}
+var _animating: bool = false
+var _drag_from_x: float = 0.0
+var _drag_active: bool = false
 
 const POWER_OK: Color = Color(0.62, 0.95, 0.55)
 const POWER_LOW: Color = Color(1.0, 0.5, 0.42)
-# Chapter inner backgrounds: 초원 연녹, 숲 짙은 녹, 묘지 보라/안개, 마왕성 어두운 빨강
 const CHAPTER_TINTS: Array[Color] = [
 	Color(0.55, 0.78, 0.42),
 	Color(0.26, 0.46, 0.28),
 	Color(0.42, 0.36, 0.56),
 	Color(0.55, 0.22, 0.24),
 ]
-# Each chapter's representative monster (fallback for card icons); boss stage uses its boss kind
+# 1~3장은 전용 배경 있음; 나머지는 챕터 틴트로 대체
 const CHAPTER_ICON: Array[String] = ["slime", "goblin", "skeleton", "orc"]
 
 func _ready() -> void:
@@ -52,7 +62,7 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	LaneUI.backdrop(self)
 
-	# Row 1: gem bar + a small home button on the right (gem bar is wide, home is small)
+	# Row 1: gem bar + 홈
 	gem_bar = LaneUI.gem_bar(540)
 	gem_bar.position = Vector2(20, 18)
 	add_child(gem_bar)
@@ -64,56 +74,62 @@ func _ready() -> void:
 	back.pressed.connect(close)
 	add_child(back)
 
-	# Row 2: title ribbon
+	# Row 2: 리본
 	var title := LaneUI.ribbon("블록 기사단", 440, 32)
 	title.position = Vector2(140, 92)
 	add_child(title)
 
-	# Row 3: deck power / recommended
+	# Row 3: 전투력 안내
 	power_label = LaneUI.label("", 24, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	power_label.position = Vector2(20, 170)
 	power_label.size = Vector2(680, 34)
 	add_child(power_label)
 
-	# Row 4: chapter tabs (4 across). Each tab is a Button; selecting one scrolls the carousel.
-	_tab_row = HBoxContainer.new()
-	_tab_row.add_theme_constant_override("separation", int(TAB_GAP))
-	_tab_row.position = Vector2(20, 210)
-	_tab_row.size = Vector2(680, TAB_H)
-	_tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	add_child(_tab_row)
-	for c in range(LaneStages.CHAPTERS.size()):
-		var tab := Button.new()
-		tab.toggle_mode = false
-		tab.custom_minimum_size = Vector2(TAB_W, TAB_H)
-		tab.focus_mode = Control.FOCUS_NONE
-		LaneUI.button(tab, "grey", 20)
-		var idx: int = c
-		tab.pressed.connect(func(): _select_chapter(idx, true))
-		_tab_row.add_child(tab)
-		_tab_buttons.append(tab)
+	# Row 4: 쇼케이스 자리 (clip + 이벤트 수신)
+	_showcase_slot = Control.new()
+	_showcase_slot.position = SHOWCASE_POS
+	_showcase_slot.size = SHOWCASE_SIZE
+	_showcase_slot.clip_contents = true
+	_showcase_slot.mouse_filter = Control.MOUSE_FILTER_STOP
+	_showcase_slot.gui_input.connect(_on_showcase_input)
+	add_child(_showcase_slot)
 
-	# Row 5: carousel of 4 chapter boards, one per screen width. Horizontal drag/swipe switches.
-	_carousel = ScrollContainer.new()
-	_carousel.position = Vector2(20, 284)
-	_carousel.size = Vector2(680, 608)
-	_carousel.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	_carousel.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_carousel.clip_contents = true
-	add_child(_carousel)
-	DragScroll.attach(_carousel)
-	_carousel_row = HBoxContainer.new()
-	_carousel_row.add_theme_constant_override("separation", 0)
-	_carousel.add_child(_carousel_row)
+	# Row 5: 페이지 인디케이터 (텍스트 + 점)
+	_page_label = LaneUI.label("", 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	_page_label.position = Vector2(20, 930)
+	_page_label.size = Vector2(680, 24)
+	add_child(_page_label)
+	_dot_row = HBoxContainer.new()
+	_dot_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_dot_row.add_theme_constant_override("separation", 4)
+	_dot_row.position = Vector2(20, 956)
+	_dot_row.size = Vector2(680, 20)
+	add_child(_dot_row)
+	for i in range(LaneStages.count()):
+		var d := Button.new()
+		d.focus_mode = Control.FOCUS_NONE
+		d.custom_minimum_size = Vector2(16, 16)
+		d.add_theme_stylebox_override("normal", UIKit.box(Color(0.35, 0.3, 0.35), Color(0.55, 0.5, 0.55), 8, 2))
+		d.add_theme_stylebox_override("hover", UIKit.box(Color(0.55, 0.5, 0.55), Color(0.75, 0.7, 0.75), 8, 2))
+		d.add_theme_stylebox_override("pressed", UIKit.box(Color(0.65, 0.6, 0.65), Color(0.85, 0.8, 0.85), 8, 2))
+		d.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		var sid: int = i + 1
+		d.pressed.connect(func(): _go_to(sid, true))
+		_dot_row.add_child(d)
+		_dots.append(d)
 
-	# `rows` is kept as a container that holds every stage card node (recursive find_child in test)
-	rows = _carousel_row
+	# `rows`: 테스트가 Stage1..Stage24를 찾아보는 숨은 컨테이너.
+	# 화면에는 안 그려지지만 노드는 모두 존재한다.
+	rows = Control.new()
+	rows.visible = false
+	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(rows)
 
-	# Row 6: bottom buttons
+	# Row 6: 하단 2버튼
 	var gacha := Button.new()
 	gacha.text = "병사 뽑기"
 	LaneUI.button(gacha, "red", 26)
-	gacha.position = Vector2(20, 908)
+	gacha.position = Vector2(20, 980)
 	gacha.size = Vector2(334, 92)
 	gacha.pressed.connect(func(): gacha_pressed.emit())
 	add_child(gacha)
@@ -123,7 +139,7 @@ func _ready() -> void:
 	var deck := Button.new()
 	deck.text = "덱 편성"
 	LaneUI.button(deck, "blue", 26)
-	deck.position = Vector2(366, 908)
+	deck.position = Vector2(366, 980)
 	deck.size = Vector2(334, 92)
 	deck.pressed.connect(func(): deck_pressed.emit())
 	add_child(deck)
@@ -146,138 +162,147 @@ func gem_bar_text() -> String:
 
 func refresh() -> void:
 	LaneUI.set_gem_bar(gem_bar)
-	for child in _carousel_row.get_children():
+	_progress = LaneStages.load_progress()
+	# `rows` 재구성: 24개 Stage{N} 노드를 숨은 컨테이너에 담아둔다 (테스트용).
+	for child in rows.get_children():
 		child.queue_free()
-	var progress: Dictionary = LaneStages.load_progress()
-	var power: int = LaneUnits.deck_power()
-	var next_id: int = int(progress["unlocked"])
-	var next_rec: int = LaneStages.recommended_power(next_id)
-	power_label.text = "내 덱 전투력 %d  ·  STAGE %d 권장 %d" % [power, next_id, next_rec]
-	power_label.add_theme_color_override("font_color", POWER_OK if power >= next_rec else POWER_LOW)
-	var per: int = LaneStages.PER_CHAPTER
-	for c in range(LaneStages.CHAPTERS.size()):
-		_carousel_row.add_child(_chapter_board(c, progress, power, per))
-		_update_tab(c, progress, per)
-	# Jump to the chapter that holds the next unlocked stage, no animation on refresh
-	var start_c: int = clampi((next_id - 1) / per, 0, LaneStages.CHAPTERS.size() - 1)
-	call_deferred("_select_chapter", start_c, false)
+	for s in LaneStages.STAGES:
+		rows.add_child(_hidden_stage_stub(s))
+	# 처음 열 때는 "마지막 깬 다음" 스테이지를 보여줌 (= 잠금 해제된 최신)
+	_current = clampi(int(_progress["unlocked"]), 1, LaneStages.count())
+	_render_showcase(_current, 0)   # 0 = cut, 애니메이션 없이
 
-func _update_tab(c: int, progress: Dictionary, per: int) -> void:
-	var tab: Button = _tab_buttons[c]
-	var stars_got := 0
-	for i in range(per):
-		var sid := c * per + i + 1
-		stars_got += int(progress["stars"].get(str(sid), 0))
-	var done: bool = stars_got >= per * 3
-	# Short label: "1장" plus a star counter; done chapters prepend ★
-	var head: String = LaneStages.CHAPTERS[c]["name"].split(" ")[0]
-	tab.text = "%s\n★ %d/%d" % [head, stars_got, per * 3] if not done else "%s ★\n완료 %d/%d" % [head, stars_got, per * 3]
-	# Highlight the picked tab (green) and dim the others (grey)
-	LaneUI.button(tab, "green" if c == _chapter else "grey", 20)
-	if done and c != _chapter:
-		LaneUI.button(tab, "red", 20)  # done but not picked: red stays visible
-
-func _select_chapter(c: int, animate: bool) -> void:
-	_chapter = clampi(c, 0, LaneStages.CHAPTERS.size() - 1)
-	# Refresh tabs' colours
-	var progress: Dictionary = LaneStages.load_progress()
-	var per: int = LaneStages.PER_CHAPTER
-	for i in range(_tab_buttons.size()):
-		_update_tab(i, progress, per)
-	var tx: float = _chapter * _carousel.size.x
-	if animate:
-		var tw := create_tween()
-		tw.tween_method(func(x): _carousel.scroll_horizontal = int(x), float(_carousel.scroll_horizontal), tx, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	else:
-		_carousel.scroll_horizontal = int(tx)
-
-# One chapter board: themed inner panel + 2x3 grid of big stage cards (boss gets a red frame)
-func _chapter_board(c: int, progress: Dictionary, power: int, per: int) -> Panel:
-	var board := Panel.new()
-	board.custom_minimum_size = Vector2(_carousel.size.x, _carousel.size.y)
-	LaneUI.dress(board, "panel_wood")
-	# Tinted inner panel: each chapter reads at a glance
-	var inner := Panel.new()
-	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	inner.position = Vector2(14, 14)
-	inner.size = Vector2(_carousel.size.x - 28, _carousel.size.y - 28)
-	inner.add_theme_stylebox_override("panel", UIKit.box(CHAPTER_TINTS[c].darkened(0.25), CHAPTER_TINTS[c].lightened(0.15), 10, 2))
-	board.add_child(inner)
-	# Chapter name banner across the top of the inner panel
-	var head := LaneUI.label(LaneStages.CHAPTERS[c]["name"], 28, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	head.position = Vector2(0, 10)
-	head.size = Vector2(inner.size.x, 36)
-	inner.add_child(head)
-	# 6 stage cards in a 2x3 grid, centred (3 columns x 2 rows). Boss (last) gets a red frame.
-	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", int(CARD_GAP.x))
-	grid.add_theme_constant_override("v_separation", int(CARD_GAP.y))
-	var grid_w: float = CARD.x * 3 + CARD_GAP.x * 2
-	var grid_h: float = CARD.y * 2 + CARD_GAP.y
-	grid.position = Vector2((inner.size.x - grid_w) * 0.5, 56)
-	grid.size = Vector2(grid_w, grid_h)
-	inner.add_child(grid)
-	var slice: Array = LaneStages.STAGES.slice(c * per, c * per + per)
-	for s in slice:
-		var sid: int = s["id"]
-		grid.add_child(_stage_card(s, int(progress["stars"].get(str(sid), 0)), sid > int(progress["unlocked"]), power))
-	return board
-
-# One stage: a stone-framed card with the number on top, the monster portrait in the middle,
-# three stars + recommended power at the bottom. Boss stages (6/12/18/24) show a red frame and
-# a BOSS label. Locked stages are dim with a lock + a note.
-func _stage_card(s: Dictionary, stars: int, locked: bool, power: int) -> Control:
+func _hidden_stage_stub(s: Dictionary) -> Control:
+	# 테스트가 요구하는 최소 구조: TextureButton "Stage{id}" + locked면 disabled,
+	# 열렸으면 "Rec" 라벨 자식 포함.
 	var sid: int = s["id"]
-	var boss: bool = s["boss"] != ""
+	var locked: bool = sid > int(_progress["unlocked"])
 	var btn := TextureButton.new()
 	btn.name = "Stage%d" % sid
-	btn.ignore_texture_size = true
-	btn.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-	btn.custom_minimum_size = CARD
-	btn.size = CARD
-	btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.tooltip_text = s["name"]
-	# Stone frame; boss gets a red tint. Also a solid dark backdrop so the pixel art reads clearly.
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.09, 0.07, 0.14, 0.55) if not boss else Color(0.22, 0.05, 0.08, 0.72)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	backdrop.position = Vector2(10, 10)
-	backdrop.size = CARD - Vector2(20, 20)
-	btn.add_child(backdrop)
-	var frame := Panel.new()
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	frame.size = CARD
-	frame.add_theme_stylebox_override("panel", LaneUI.box("card_frame", 4, Color(1.5, 0.5, 0.42) if boss else Color.WHITE))
-	btn.add_child(frame)
-	# Stage number up top (40 bold with outline)
-	var num := LaneUI.label(str(sid), 40, LaneUI.GOLD if boss else LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	num.position = Vector2(0, 14)
-	num.size = Vector2(CARD.x, 50)
-	num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	num.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(num)
-	# Boss label (right under the number)
-	if boss:
-		var tag := LaneUI.label("☠ BOSS", 20, Color(1.0, 0.7, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
-		tag.position = Vector2(0, 60)
-		tag.size = Vector2(CARD.x, 26)
-		tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		btn.add_child(tag)
-	# Monster portrait, big (centred in the middle band)
+	btn.disabled = locked
+	if not locked:
+		var rec: int = LaneStages.recommended_power(sid)
+		var rl := Label.new()
+		rl.name = "Rec"
+		rl.text = "권장 %d" % rec
+		btn.add_child(rl)
+	return btn
+
+# --------- 쇼케이스 렌더링 ---------
+
+func _render_showcase(stage_id: int, direction: int) -> void:
+	# direction: -1 왼쪽에서 들어옴(이전으로 이동), +1 오른쪽에서 들어옴(다음으로 이동), 0 cut
+	var card := _build_showcase_card(stage_id)
+	_showcase_slot.add_child(card)
+	# 이전 쇼케이스가 있으면 애니메이션으로 교체
+	var old := _showcase
+	_showcase = card
+	if old != null and direction != 0:
+		_animating = true
+		card.position = Vector2(direction * SHOWCASE_SIZE.x, 0)
+		var tw := create_tween().set_parallel(true)
+		tw.tween_property(card, "position:x", 0.0, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(old, "position:x", -direction * SHOWCASE_SIZE.x, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.chain().tween_callback(func():
+			if is_instance_valid(old):
+				old.queue_free()
+			_animating = false
+		)
+	else:
+		if old != null:
+			old.queue_free()
+		card.position = Vector2.ZERO
+
+	# 전투력 안내 + 하단 인디케이터 갱신
+	var power: int = LaneUnits.deck_power()
+	var rec: int = LaneStages.recommended_power(stage_id)
+	power_label.text = "내 덱 전투력 %d  ·  STAGE %d 권장 %d" % [power, stage_id, rec]
+	power_label.add_theme_color_override("font_color", POWER_OK if power >= rec else POWER_LOW)
+	_update_dots(stage_id)
+
+func _update_dots(stage_id: int) -> void:
+	for i in range(_dots.size()):
+		var d: Control = _dots[i]
+		var sid := i + 1
+		var size := Vector2(26, 26) if sid == stage_id else Vector2(14, 14)
+		d.custom_minimum_size = size
+		var fill: Color
+		if sid == stage_id:
+			fill = Color(1.0, 0.84, 0.32)      # 현재: 금
+		elif sid > int(_progress["unlocked"]):
+			fill = Color(0.3, 0.28, 0.32)      # 잠김: 어두움
+		elif int(_progress["stars"].get(str(sid), 0)) >= 3:
+			fill = Color(0.55, 0.95, 0.55)     # 다 깬 것: 녹
+		else:
+			fill = Color(0.75, 0.72, 0.78)     # 열린 것: 밝은 회색
+		d.add_theme_stylebox_override("normal", UIKit.box(fill.darkened(0.3), fill, 8, 2))
+	_page_label.text = "스테이지 %d / %d  ·  ★ %d / %d" % [
+		stage_id, LaneStages.count(), LaneStages.total_stars(), LaneStages.count() * 3]
+
+func _build_showcase_card(stage_id: int) -> Control:
+	var s: Dictionary = LaneStages.get_stage(stage_id)
+	var locked: bool = stage_id > int(_progress["unlocked"])
+	var stars: int = int(_progress["stars"].get(str(stage_id), 0))
+	var power: int = LaneUnits.deck_power()
+	var rec: int = LaneStages.recommended_power(stage_id)
+	var chapter_idx: int = clampi((stage_id - 1) / LaneStages.PER_CHAPTER, 0, 3)
+	var tint: Color = CHAPTER_TINTS[chapter_idx]
+
+	var root := Panel.new()
+	root.size = SHOWCASE_SIZE
+	root.custom_minimum_size = SHOWCASE_SIZE
+	LaneUI.dress(root, "panel_wood")
+
+	# 배경 — 1~3은 전용 배경, 그 외는 챕터 틴트
+	var bg_name: String = s.get("bg", "")
+	if bg_name != "" and _load_tex("res://assets/art/lane/%s.png" % bg_name) != null:
+		var bg := TextureRect.new()
+		bg.texture = _load_tex("res://assets/art/lane/%s.png" % bg_name)
+		bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		bg.position = Vector2(14, 14)
+		bg.size = SHOWCASE_SIZE - Vector2(28, 28)
+		bg.modulate = Color(1, 1, 1, 0.35)
+		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(bg)
+	else:
+		var tinted := Panel.new()
+		tinted.position = Vector2(14, 14)
+		tinted.size = SHOWCASE_SIZE - Vector2(28, 28)
+		tinted.add_theme_stylebox_override("panel", UIKit.box(tint.darkened(0.35), tint.darkened(0.1), 10, 2))
+		tinted.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(tinted)
+
+	# 상단 챕터·번호·이름
+	var chap_name: String = LaneStages.CHAPTERS[chapter_idx]["name"]
+	var head := LaneUI.label("%s  ·  STAGE %d" % [chap_name, stage_id], 22, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	head.position = Vector2(0, 24)
+	head.size = Vector2(SHOWCASE_SIZE.x, 28)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(head)
+	var nm := LaneUI.label(s.get("name", ""), 34, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	nm.position = Vector2(0, 56)
+	nm.size = Vector2(SHOWCASE_SIZE.x, 44)
+	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(nm)
+
+	# 보스/대표 몹 아트: 보스 있으면 전용 tex, 없으면 챕터 쫄몹 크게
 	var icon_kind: String = ""
-	if boss:
-		# Prefer the dedicated boss sprite (boss_king_slime, boss_goblin_chief, boss_night_eye)
-		# then fall back to the base kind so older bosses still show
+	var boss_name: String = ""
+	var boss_hint: String = ""
+	var is_boss: bool = s.get("boss", "") != ""
+	if is_boss:
 		var bd: Dictionary = LaneStages.BOSSES[s["boss"]]
+		boss_name = bd["name"]
+		boss_hint = bd.get("hint", "")
 		icon_kind = bd.get("tex", "")
 		if icon_kind == "" or _load_tex("res://assets/art/lane/%s.png" % icon_kind) == null:
 			icon_kind = bd["kind"]
 	elif s.has("pool") and not s["pool"].is_empty():
 		icon_kind = s["pool"][0]
 	if icon_kind == "":
-		icon_kind = CHAPTER_ICON[(sid - 1) / LaneStages.PER_CHAPTER]
+		icon_kind = CHAPTER_ICON[chapter_idx]
 	var mon_tex: Texture2D = _load_tex("res://assets/art/lane/%s.png" % icon_kind)
 	if mon_tex != null:
 		var mon := TextureRect.new()
@@ -286,47 +311,155 @@ func _stage_card(s: Dictionary, stars: int, locked: bool, power: int) -> Control
 		mon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		mon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		mon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		mon.position = Vector2(16, 86 if boss else 70)
-		mon.size = Vector2(CARD.x - 32, 110)
-		btn.add_child(mon)
-	# Boss name just under the portrait
-	if boss:
-		var bn := LaneUI.label(LaneStages.BOSSES[s["boss"]]["name"], 18, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-		bn.position = Vector2(0, 200)
-		bn.size = Vector2(CARD.x, 24)
+		mon.position = Vector2(90, 110)
+		mon.size = Vector2(500, 300)
+		if locked:
+			mon.modulate = Color(0.4, 0.4, 0.4, 1.0)
+		root.add_child(mon)
+
+	# 이름 + 특기
+	var y: float = 420.0
+	if is_boss:
+		var tag := LaneUI.label("☠ BOSS", 20, Color(1.0, 0.7, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+		tag.position = Vector2(0, y)
+		tag.size = Vector2(SHOWCASE_SIZE.x, 24)
+		tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(tag)
+		y += 26.0
+		var bn := LaneUI.label(boss_name, 32, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		bn.position = Vector2(0, y)
+		bn.size = Vector2(SHOWCASE_SIZE.x, 40)
 		bn.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		btn.add_child(bn)
-	# Stars + recommended power at the bottom
-	var st := LaneUI.stars(stars, 24)
-	st.position = Vector2(0, CARD.y - 56)
-	st.size = Vector2(CARD.x, 26)
-	btn.add_child(st)
-	if locked:
-		btn.disabled = true
-		btn.modulate = Color(0.42, 0.42, 0.5)
-		num.visible = false
-		var lock := LaneUI.icon("icon_lock", Vector2(56, 68))
-		lock.position = Vector2((CARD.x - lock.size.x) * 0.5, (CARD.y - lock.size.y) * 0.5 - 10)
-		lock.modulate = Color(2.4, 2.4, 2.4)
-		btn.add_child(lock)
-		var note := LaneUI.label("앞 스테이지를 깨면 열려요", 16, Color(0.9, 0.9, 0.9), HORIZONTAL_ALIGNMENT_CENTER)
-		note.position = Vector2(0, CARD.y - 32)
-		note.size = Vector2(CARD.x, 24)
-		note.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		btn.add_child(note)
+		root.add_child(bn)
+		y += 42.0
+		if boss_hint != "":
+			var hl := LaneUI.label(boss_hint, 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+			hl.position = Vector2(20, y)
+			hl.size = Vector2(SHOWCASE_SIZE.x - 40, 26)
+			hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			hl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			root.add_child(hl)
+			y += 30.0
 	else:
-		btn.pressed.connect(func(): stage_selected.emit(sid))
-		btn.mouse_entered.connect(func(): btn.modulate = Color(1.15, 1.15, 1.15))
-		btn.mouse_exited.connect(func(): btn.modulate = Color.WHITE)
-		var rec: int = LaneStages.recommended_power(sid)
-		var rl := LaneUI.label("권장 %d" % rec, 20, POWER_OK if power >= rec else POWER_LOW, HORIZONTAL_ALIGNMENT_CENTER)
-		rl.name = "Rec"
-		rl.position = Vector2(0, CARD.y - 30)
-		rl.size = Vector2(CARD.x, 24)
-		rl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		btn.add_child(rl)
-	st.modulate = Color(1, 1, 1, 0.35) if locked else Color.WHITE
-	return btn
+		var role_nm: String = LaneStages.ROLE_NAME.get(s.get("role", "test"), "")
+		var sub := LaneUI.label(role_nm, 22, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+		sub.position = Vector2(0, y)
+		sub.size = Vector2(SHOWCASE_SIZE.x, 28)
+		sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(sub)
+		y += 32.0
+		var newtxt: String = s.get("new", "")
+		if newtxt != "":
+			var hl := LaneUI.label(newtxt, 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+			hl.position = Vector2(20, y)
+			hl.size = Vector2(SHOWCASE_SIZE.x - 40, 26)
+			hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			hl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			root.add_child(hl)
+			y += 30.0
+
+	# 별 + 권장
+	y = 540.0
+	var st := LaneUI.stars(stars, 32)
+	st.position = Vector2(0, y)
+	st.size = Vector2(SHOWCASE_SIZE.x, 36)
+	root.add_child(st)
+	y += 42.0
+	var rec_col: Color = POWER_OK if power >= rec else POWER_LOW
+	var rl := LaneUI.label("권장 전투력 %d" % rec, 22, rec_col, HORIZONTAL_ALIGNMENT_CENTER)
+	rl.position = Vector2(0, y)
+	rl.size = Vector2(SHOWCASE_SIZE.x, 26)
+	rl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(rl)
+
+	# 하단 버튼들: ◀ 이전 · 시작! · 다음 ▶
+	var btn_y: float = SHOWCASE_SIZE.y - 90.0
+	_prev_btn = Button.new()
+	_prev_btn.text = "◀"
+	LaneUI.button(_prev_btn, "grey", 28)
+	_prev_btn.position = Vector2(26, btn_y)
+	_prev_btn.size = Vector2(90, 72)
+	_prev_btn.disabled = stage_id <= 1
+	_prev_btn.pressed.connect(func(): _go_to(_current - 1, true))
+	root.add_child(_prev_btn)
+
+	_start_btn = Button.new()
+	_start_btn.position = Vector2(140, btn_y)
+	_start_btn.size = Vector2(400, 72)
+	if locked:
+		_start_btn.text = "🔒 잠김"
+		LaneUI.button(_start_btn, "grey", 28)
+		_start_btn.disabled = true
+	else:
+		_start_btn.text = "시작!"
+		LaneUI.button(_start_btn, "green", 32)
+		var sid: int = stage_id
+		_start_btn.pressed.connect(func(): stage_selected.emit(sid))
+	root.add_child(_start_btn)
+
+	_next_btn = Button.new()
+	_next_btn.text = "▶"
+	LaneUI.button(_next_btn, "grey", 28)
+	_next_btn.position = Vector2(564, btn_y)
+	_next_btn.size = Vector2(90, 72)
+	_next_btn.disabled = stage_id >= LaneStages.count()
+	_next_btn.pressed.connect(func(): _go_to(_current + 1, true))
+	root.add_child(_next_btn)
+
+	# 잠긴 경우: 큰 자물쇠 + 안내
+	if locked:
+		var lock := LaneUI.icon("icon_lock", Vector2(96, 112))
+		lock.position = Vector2((SHOWCASE_SIZE.x - lock.size.x) * 0.5, 220)
+		lock.modulate = Color(2.4, 2.4, 2.4)
+		root.add_child(lock)
+		var note := LaneUI.label("앞 스테이지를 깨면 열려요", 22, Color(0.9, 0.9, 0.9), HORIZONTAL_ALIGNMENT_CENTER)
+		note.position = Vector2(0, 490)
+		note.size = Vector2(SHOWCASE_SIZE.x, 28)
+		note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(note)
+
+	return root
+
+# --------- 네비게이션 (쓸기 · 버튼 · 키보드) ---------
+
+func _go_to(stage_id: int, animate: bool) -> void:
+	var target: int = clampi(stage_id, 1, LaneStages.count())
+	if target == _current or _animating:
+		return
+	var dir: int = 1 if target > _current else -1
+	_current = target
+	_render_showcase(_current, dir if animate else 0)
+
+func _on_showcase_input(ev: InputEvent) -> void:
+	if _animating:
+		return
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed:
+			_drag_from_x = ev.position.x
+			_drag_active = false
+		else:
+			if _drag_active:
+				var dx: float = ev.position.x - _drag_from_x
+				if absf(dx) >= SWIPE_THRESHOLD:
+					# 오른쪽으로 쓸면 이전으로, 왼쪽으로 쓸면 다음으로
+					_go_to(_current + (-1 if dx > 0 else 1), true)
+				_drag_active = false
+				get_viewport().set_input_as_handled()
+	elif ev is InputEventMouseMotion:
+		if (ev.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+			if absf(ev.position.x - _drag_from_x) > DRAG_THRESHOLD:
+				_drag_active = true
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible or _animating:
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_LEFT:
+			_go_to(_current - 1, true)
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_RIGHT:
+			_go_to(_current + 1, true)
+			get_viewport().set_input_as_handled()
 
 func _load_tex(path: String) -> Texture2D:
 	if ResourceLoader.exists(path):
