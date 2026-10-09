@@ -86,20 +86,23 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	LaneUI.backdrop(self)
 
-	# Row 1: small [본부로] on the left, "병사 뽑기" ribbon centred, gems on the right
+	# Row 1 (18~82):   [◀ 뒤로]            [gem bar — gems/stars]
+	# Row 2 (92~156):          [ribbon  "병사 뽑기"  centred]
+	# Row 3 (166~222): [pity bar: 유니크 보장 / 레전더리 보장]
+	# Nothing overlaps; the ribbon and the gem bar sit on their own rows.
 	var top_back := Button.new()
-	top_back.text = "◀"
-	LaneUI.button(top_back, "grey", 20)
+	top_back.text = "◀ 뒤로"
+	LaneUI.button(top_back, "grey", 22)
 	top_back.position = Vector2(18, 18)
-	top_back.size = Vector2(74, 54)
+	top_back.size = Vector2(130, 64)
 	top_back.pressed.connect(close)
 	add_child(top_back)
-	var title := LaneUI.ribbon("병사 뽑기", 360, 30)
-	title.position = Vector2(180, 22)
-	add_child(title)
-	gem_bar = LaneUI.gem_bar(160)
-	gem_bar.position = Vector2(542, 18)
+	gem_bar = LaneUI.gem_bar(540)
+	gem_bar.position = Vector2(162, 18)
 	add_child(gem_bar)
+	var title := LaneUI.ribbon("병사 뽑기", 440, 32)
+	title.position = Vector2(140, 92)
+	add_child(title)
 	_build_pity_bar()
 
 	_stage = Node2D.new()
@@ -110,19 +113,18 @@ func _ready() -> void:
 	_aura.modulate = Color(1, 1, 1, 0)
 	_build_pack()
 
-	# Rates, always visible, as a 2x2 grid of tier cards (레전더리/유니크/레어/노멀).
-	# Each cell reuses LaneTierCard so the frame colour matches the tier (iron/sapphire/amethyst/gold)
-	# — same visual language as the collection screen.
+	# Rates: 2x2 grid of tier cards (레전더리/유니크/레어/노멀), bigger cells, bigger text.
+	# Big % on the left (44px bold with outline, tier color), tier name + 종수 stacked on the right.
 	rates = Panel.new()
 	LaneUI.dress(rates, "panel_wood", Color(0.78, 0.78, 0.82))
-	rates.position = Vector2(20, 664)
-	rates.size = Vector2(680, 176)
+	rates.position = Vector2(20, 606)
+	rates.size = Vector2(680, 236)
 	add_child(rates)
-	var cell_w: float = 316.0
-	var cell_h: float = 66.0
-	var gap: float = 10.0
+	var cell_w: float = 318.0
+	var cell_h: float = 96.0
+	var gap: float = 12.0
 	var ox: float = (rates.size.x - cell_w * 2 - gap) * 0.5
-	var oy: float = 14.0
+	var oy: float = 18.0
 	# Order: 레전더리, 유니크, 레어, 노멀 (top-left to bottom-right, rarest first)
 	var tiers: Array = [3, 2, 1, 0]
 	for i in range(tiers.size()):
@@ -134,26 +136,23 @@ func _ready() -> void:
 		rates.add_child(cell)
 		var pct: String = ("%.1f%%" % (LaneUnits.BASE_RATE[t] * 100.0)).replace(".0%", "%")
 		var kinds_n: int = LaneUnits.ORDER.filter(func(k): return LaneUnits.UNITS[k]["tier"] == t).size()
-		var tier_col: Color = LaneUnits.tier_color(t).lightened(0.35)
-		# Big percent on the left
-		var pct_l := LaneUI.label(pct, 28, tier_col, HORIZONTAL_ALIGNMENT_CENTER)
-		pct_l.position = Vector2(10, 14)
-		pct_l.size = Vector2(110, 40)
+		var tier_col: Color = LaneUnits.tier_color(t).lightened(0.4)
+		# Big % on the left (44 bold with outline)
+		var pct_l := LaneUI.label(pct, 44, tier_col, HORIZONTAL_ALIGNMENT_CENTER)
+		pct_l.position = Vector2(8, 0)
+		pct_l.size = Vector2(130, cell_h)
 		pct_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		cell.add_child(pct_l)
-		# Tier name + "n종" on the right
-		var name_l := LaneUI.label(LaneUnits.TIER_NAME[t], 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_LEFT)
-		name_l.position = Vector2(126, 8)
-		name_l.size = Vector2(cell_w - 136, 28)
+		# Right: tier name (28, tier color) on top, 종수 (22, cream) below
+		var name_l := LaneUI.label(LaneUnits.TIER_NAME[t], 28, tier_col, HORIZONTAL_ALIGNMENT_LEFT)
+		name_l.position = Vector2(146, 12)
+		name_l.size = Vector2(cell_w - 156, 36)
 		cell.add_child(name_l)
-		var count_l := LaneUI.label("%d종" % kinds_n, 16, Color(0.9, 0.88, 0.78), HORIZONTAL_ALIGNMENT_LEFT)
-		count_l.position = Vector2(126, 36)
-		count_l.size = Vector2(cell_w - 136, 24)
+		var count_l := LaneUI.label("%d종 등장" % kinds_n, 22, Color(1.0, 0.95, 0.82), HORIZONTAL_ALIGNMENT_LEFT)
+		count_l.position = Vector2(146, 50)
+		count_l.size = Vector2(cell_w - 156, 30)
 		cell.add_child(count_l)
-	var promise := LaneUI.label("같은 병사는 복제 → 합성(성급 올리기)에 써요", 14, Color(1.0, 0.9, 0.6), HORIZONTAL_ALIGNMENT_CENTER, true)
-	promise.position = Vector2(0, 150)
-	promise.size = Vector2(680, 22)
-	rates.add_child(promise)
+	# Note: the collection screen explains merging in depth — keep the gacha footer clean.
 
 	pull1 = Button.new()
 	LaneUI.button(pull1, "green", 24)
@@ -190,16 +189,16 @@ func _ready() -> void:
 func _build_pity_bar() -> void:
 	pity_bar = Panel.new()
 	LaneUI.dress(pity_bar, "panel_wood")
-	pity_bar.position = Vector2(20, 92)
-	pity_bar.size = Vector2(680, 56)
+	pity_bar.position = Vector2(20, 166)
+	pity_bar.size = Vector2(680, 60)
 	add_child(pity_bar)
-	pity_u_label = LaneUI.label("", 18, LaneUnits.tier_color(2).lightened(0.45), HORIZONTAL_ALIGNMENT_CENTER, true)
-	pity_u_label.position = Vector2(10, 15)
-	pity_u_label.size = Vector2(330, 26)
+	pity_u_label = LaneUI.label("", 20, LaneUnits.tier_color(2).lightened(0.45), HORIZONTAL_ALIGNMENT_CENTER, true)
+	pity_u_label.position = Vector2(10, 16)
+	pity_u_label.size = Vector2(330, 28)
 	pity_bar.add_child(pity_u_label)
-	pity_l_label = LaneUI.label("", 18, LaneUnits.tier_color(3).lightened(0.3), HORIZONTAL_ALIGNMENT_CENTER, true)
-	pity_l_label.position = Vector2(340, 15)
-	pity_l_label.size = Vector2(330, 26)
+	pity_l_label = LaneUI.label("", 20, LaneUnits.tier_color(3).lightened(0.3), HORIZONTAL_ALIGNMENT_CENTER, true)
+	pity_l_label.position = Vector2(340, 16)
+	pity_l_label.size = Vector2(330, 28)
 	pity_bar.add_child(pity_l_label)
 
 func _refresh_pity() -> void:
