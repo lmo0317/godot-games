@@ -64,12 +64,20 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	LaneUI.backdrop(self)
 
-	gem_bar = LaneUI.gem_bar(680)
-	gem_bar.position = Vector2(20, 18)
-	add_child(gem_bar)
-	var title := LaneUI.ribbon("병사 · 덱", 400, 32)
-	title.position = Vector2(160, 92)
+	# Row 1: small [본부로] left, ribbon centre, gems+shards right
+	var top_back := Button.new()
+	top_back.text = "◀"
+	LaneUI.button(top_back, "grey", 20)
+	top_back.position = Vector2(18, 18)
+	top_back.size = Vector2(74, 54)
+	top_back.pressed.connect(close)
+	add_child(top_back)
+	var title := LaneUI.ribbon("병사 · 덱", 320, 28)
+	title.position = Vector2(200, 22)
 	add_child(title)
+	gem_bar = LaneUI.gem_bar(160)
+	gem_bar.position = Vector2(542, 18)
+	add_child(gem_bar)
 
 	var deck_board := Panel.new()
 	LaneUI.dress(deck_board, "panel_wood")
@@ -98,29 +106,34 @@ func _ready() -> void:
 	unit_board.position = Vector2(20, 418)
 	unit_board.size = Vector2(680, 676)
 	add_child(unit_board)
-	count_label = LaneUI.label("", 22, LaneUI.GOLD)
-	count_label.position = Vector2(26, 12)
-	count_label.size = Vector2(240, 30)
+	# Row 1 inside unit_board: 보유 n/16  💎 n  🔷 m (shards)
+	count_label = LaneUI.label("", 20, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_LEFT)
+	count_label.position = Vector2(20, 10)
+	count_label.size = Vector2(640, 30)
 	unit_board.add_child(count_label)
-	sort_btn = Button.new()
-	LaneUI.button(sort_btn, "blue", 16)
-	sort_btn.position = Vector2(430, 10)
-	sort_btn.size = Vector2(224, 34)
-	sort_btn.pressed.connect(_cycle_sort)
-	unit_board.add_child(sort_btn)
-	# Role filter chips: 전체 / 근접 / 원거리 / 마법 / 힐 / 공중 / 탱커
+	# Row 2 inside unit_board: role filter chips (left, scrollable) + sort dropdown (right)
+	var chip_scroll := ScrollContainer.new()
+	chip_scroll.position = Vector2(10, 46)
+	chip_scroll.size = Vector2(460, 38)
+	chip_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	chip_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	unit_board.add_child(chip_scroll)
 	filter_chips = HBoxContainer.new()
-	filter_chips.add_theme_constant_override("separation", 6)
-	filter_chips.position = Vector2(14, 50)
-	filter_chips.size = Vector2(652, 30)
-	unit_board.add_child(filter_chips)
+	filter_chips.add_theme_constant_override("separation", 4)
+	chip_scroll.add_child(filter_chips)
 	for role in ["전체", "근접", "원거리", "마법", "힐", "공중", "탱커"]:
 		var chip := Button.new()
-		LaneUI.button(chip, "grey", 15)
+		LaneUI.button(chip, "grey", 13)
 		chip.text = role
-		chip.custom_minimum_size = Vector2(84, 30)
+		chip.custom_minimum_size = Vector2(66, 32)
 		chip.pressed.connect(_toggle_filter.bind(role))
 		filter_chips.add_child(chip)
+	sort_btn = Button.new()
+	LaneUI.button(sort_btn, "blue", 14)
+	sort_btn.position = Vector2(478, 48)
+	sort_btn.size = Vector2(188, 34)
+	sort_btn.pressed.connect(_cycle_sort)
+	unit_board.add_child(sort_btn)
 	grid = GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 10)
@@ -172,7 +185,7 @@ func refresh() -> void:
 	LaneUI.set_gem_bar(gem_bar)
 	var army: Dictionary = LaneUnits.load_army()
 	_update_power(LaneUnits.deck_power(army))
-	count_label.text = "보유 %d / %d  💎 %d" % [army["owned"].size(), LaneUnits.ORDER.size(), int(army.get("universal_shards", 0))]
+	count_label.text = "보유 %d / %d   ·   파편 %d" % [army["owned"].size(), LaneUnits.ORDER.size(), int(army.get("universal_shards", 0))]
 	for c in slots_box.get_children():
 		c.queue_free()
 	for c in grid.get_children():

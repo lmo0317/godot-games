@@ -392,9 +392,11 @@ func _run() -> void:
 		g._advance = true
 		await get_tree().create_timer(0.1).timeout
 		waited += 0.1
-	_expect(g._sum_ok.visible and g._cards.all(func(c): return c["open"]) and g._table_line.text.begins_with("새 병사"), "all flipped: the result stays with 확인")
-	g._sum_ok.pressed.emit()
-	_expect(not g._busy and not g._table.visible and not g.back.disabled and g._pack.visible, "확인 goes back to the pack")
+	_expect(g._sum_ok.visible and g._cards.all(func(c): return c["open"]) and g._table_line.text.begins_with("새 병사"), "all flipped: the result stays with the 3 action buttons")
+	# [본부로] (now _sum_deck) closes the gacha back to the home base
+	g._sum_deck.pressed.emit()
+	_expect(not g._busy and not g._table.visible and not g.visible, "본부로 closes the gacha")
+	main.lane_gacha.open()
 	main.lane_gacha.close()
 	main.lane_select.deck_pressed.emit()
 	await get_tree().process_frame

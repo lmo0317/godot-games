@@ -33,7 +33,6 @@ var gem_bar: Panel
 var pity_bar: Panel
 var pity_u_label: Label
 var pity_l_label: Label
-var auto_flip_btn: Button
 var note: Label
 var pull1: Button
 var pull10: Button
@@ -87,12 +86,20 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	LaneUI.backdrop(self)
 
-	gem_bar = LaneUI.gem_bar(680)
-	gem_bar.position = Vector2(20, 18)
-	add_child(gem_bar)
-	var title := LaneUI.ribbon("병사 뽑기", 400, 32)
-	title.position = Vector2(160, 92)
+	# Row 1: small [본부로] on the left, "병사 뽑기" ribbon centred, gems on the right
+	var top_back := Button.new()
+	top_back.text = "◀"
+	LaneUI.button(top_back, "grey", 20)
+	top_back.position = Vector2(18, 18)
+	top_back.size = Vector2(74, 54)
+	top_back.pressed.connect(close)
+	add_child(top_back)
+	var title := LaneUI.ribbon("병사 뽑기", 360, 30)
+	title.position = Vector2(180, 22)
 	add_child(title)
+	gem_bar = LaneUI.gem_bar(160)
+	gem_bar.position = Vector2(542, 18)
+	add_child(gem_bar)
 	_build_pity_bar()
 
 	_stage = Node2D.new()
@@ -144,13 +151,8 @@ func _ready() -> void:
 	note.position = Vector2(0, 964)
 	note.size = Vector2(720, 34)
 	add_child(note)
-	back = Button.new()
-	back.text = "본부로"
-	LaneUI.button(back, "blue", 22)
-	back.position = Vector2(220, 1100)
-	back.size = Vector2(280, 64)
-	back.pressed.connect(close)
-	add_child(back)
+	# Back is up in row 1 now; keep a hidden handle so _refresh() still works
+	back = top_back
 
 	_build_table()
 	_build_show()
@@ -160,34 +162,21 @@ func _ready() -> void:
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_flash)
 
-# Pity bar + auto-flip toggle, between the title and the pack
+# Pity bar: one slim strip with both pities side by side (유니크 보장 / 레전더리 보장)
 func _build_pity_bar() -> void:
 	pity_bar = Panel.new()
-	LaneUI.dress(pity_bar, "panel_wood")
-	pity_bar.position = Vector2(20, 164)
-	pity_bar.size = Vector2(680, 72)
+	LaneUI.dress(pity_bar, "panel_paper")
+	pity_bar.position = Vector2(20, 92)
+	pity_bar.size = Vector2(680, 50)
 	add_child(pity_bar)
-	pity_u_label = LaneUI.label("", 17, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	pity_u_label.position = Vector2(12, 10)
-	pity_u_label.size = Vector2(320, 24)
+	pity_u_label = LaneUI.label("", 18, Color(0.4, 0.2, 0.55), HORIZONTAL_ALIGNMENT_CENTER, false)
+	pity_u_label.position = Vector2(10, 12)
+	pity_u_label.size = Vector2(330, 26)
 	pity_bar.add_child(pity_u_label)
-	pity_l_label = LaneUI.label("", 17, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	pity_l_label.position = Vector2(12, 38)
-	pity_l_label.size = Vector2(320, 24)
+	pity_l_label = LaneUI.label("", 18, Color(0.65, 0.42, 0.08), HORIZONTAL_ALIGNMENT_CENTER, false)
+	pity_l_label.position = Vector2(340, 12)
+	pity_l_label.size = Vector2(330, 26)
 	pity_bar.add_child(pity_l_label)
-	auto_flip_btn = Button.new()
-	LaneUI.button(auto_flip_btn, "blue", 17)
-	auto_flip_btn.position = Vector2(354, 10)
-	auto_flip_btn.size = Vector2(312, 52)
-	auto_flip_btn.pressed.connect(_toggle_auto_flip)
-	pity_bar.add_child(auto_flip_btn)
-
-func _toggle_auto_flip() -> void:
-	SoundManager.play_click()
-	var army := LaneUnits.load_army()
-	var on: bool = not bool(army.get("auto_flip", false))
-	LaneUnits.set_auto_flip(on)
-	_refresh_pity()
 
 func _refresh_pity() -> void:
 	var army := LaneUnits.load_army()
@@ -196,19 +185,13 @@ func _refresh_pity() -> void:
 	var left_u: int = maxi(0, LaneUnits.PITY_UNIQUE - since_u)
 	var left_l: int = maxi(0, LaneUnits.PITY_LEGENDARY - since_l)
 	if left_u == 0:
-		pity_u_label.text = "유니크 이상 10연 보장!"
-		pity_u_label.add_theme_color_override("font_color", LaneUI.GOLD)
+		pity_u_label.text = "유니크 10연 보장!"
 	else:
 		pity_u_label.text = "유니크 보장까지 %d뽑" % left_u
-		pity_u_label.add_theme_color_override("font_color", LaneUI.TEXT)
 	if left_l == 0:
 		pity_l_label.text = "레전더리 10연 보장!"
-		pity_l_label.add_theme_color_override("font_color", Color(1.0, 0.56, 0.1))
 	else:
 		pity_l_label.text = "레전더리 보장까지 %d뽑" % left_l
-		pity_l_label.add_theme_color_override("font_color", LaneUI.GOLD)
-	var on: bool = bool(army.get("auto_flip", false))
-	auto_flip_btn.text = ("빠르게 열기  켬" if on else "빠르게 열기  끔") + "\n(10장 한 번에 뒤집기)"
 
 func _sprite(name: String, at: Vector2, k: float, parent: Node = null) -> Sprite2D:
 	var s := Sprite2D.new()
@@ -243,7 +226,7 @@ func _build_pack() -> void:
 	_pack.add_child(_pack_body)
 	_pack.add_child(_pack_top)
 	_pack_top.pivot_offset = _pack_top.size * 0.5
-	_pack.gui_input.connect(_on_pack_input)
+	_pack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pack_hint = LaneUI.label("", 22, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	_pack_hint.position = Vector2(0, PACK_AT.y + _pack.size.y * 0.5 + 18)
 	_pack_hint.size = Vector2(720, 32)
@@ -338,15 +321,19 @@ func pull(count: int) -> Array:
 	_reset_pack()
 	note.text = ""
 	_refresh()
-	_charge_pack()
+	var ladder_time: float = _charge_pack()
+	# Auto flow: once the lucky-roll ladder settles, the pack bursts and the cards deal + auto-flip
+	get_tree().create_timer(ladder_time + 0.15).timeout.connect(func():
+		if _busy and not _pack_open and visible:
+			open_pack(1.0))
 	return results
 
 # Lucky-roll "ladder": the aura climbs white → blue → purple → gold and stops at the best tier
 # inside, with a 50% fakeout where it hesitates one step below first (docs/GACHA_RESEARCH.md 럭키 롤)
-func _charge_pack() -> void:
+func _charge_pack() -> float:
 	var best := _best_rarity()
 	SoundManager.play_battle("g_charge", -6.0)
-	_pack_hint.text = "팩을 옆으로 쓸어서 열어요"
+	_pack_hint.text = ""
 	_aura.modulate = Color(LIGHT[0], 0.0)
 	_rays.modulate = Color(LIGHT[0], 0.4)
 	var fakeout: bool = best >= 1 and rng.randf() < 0.5
@@ -378,21 +365,9 @@ func _charge_pack() -> void:
 			var t2 := create_tween().set_parallel(true)
 			t2.tween_property(_aura, "modulate", Color(LIGHT[best], 0.95), 0.12)
 			t2.tween_property(_rays, "modulate", Color(LIGHT[best], 0.5), 0.12))
+	return at + (0.4 if best >= 1 else 0.0)
 
-func _on_pack_input(ev: InputEvent) -> void:
-	if not _busy or _pack_open:
-		return
-	if (ev is InputEventMouseButton or ev is InputEventScreenTouch) and ev.pressed:
-		_press_x = ev.position.x
-	elif ev is InputEventMouseMotion or ev is InputEventScreenDrag:
-		if _press_x >= 0.0 and absf(ev.position.x - _press_x) > 90.0:
-			open_pack(signf(ev.position.x - _press_x))
-	elif (ev is InputEventMouseButton or ev is InputEventScreenTouch) and not ev.pressed:
-		if _press_x >= 0.0:
-			open_pack(1.0)
-		_press_x = -1.0
-
-# Rips the top off and deals the cards face down
+# Rips the top off and deals the cards face down (called automatically after lucky roll)
 func open_pack(dir: float = 1.0) -> void:
 	if not _busy or _pack_open:
 		return
@@ -456,31 +431,31 @@ func _build_table() -> void:
 	_flip_all.size = Vector2(340, 84)
 	_flip_all.pressed.connect(flip_all)
 	_table.add_child(_flip_all)
+	# Result buttons: [다시 10회] [1회 뽑기] [본부로]
+	_again = Button.new()
+	LaneUI.button(_again, "red", 20)
+	_again.size = Vector2(216, 84)
+	_again.pressed.connect(func():
+		SoundManager.play_click()
+		_finish_table()
+		pull(10))
+	_table.add_child(_again)
 	_sum_ok = Button.new()
-	_sum_ok.text = "확인"
-	LaneUI.button(_sum_ok, "blue", 24)
-	_sum_ok.size = Vector2(210, 84)
+	LaneUI.button(_sum_ok, "green", 20)
+	_sum_ok.size = Vector2(216, 84)
 	_sum_ok.pressed.connect(func():
 		SoundManager.play_click()
-		_finish_table())
-	_table.add_child(_sum_ok)
-	_again = Button.new()
-	LaneUI.button(_again, "red", 22)
-	_again.size = Vector2(210, 84)
-	_again.pressed.connect(func():
-		var n: int = _results.size()
 		_finish_table()
-		pull(n))
-	_table.add_child(_again)
+		pull(1))
+	_table.add_child(_sum_ok)
 	_sum_deck = Button.new()
-	_sum_deck.text = "합성하러 가기"
-	LaneUI.button(_sum_deck, "green", 22)
-	_sum_deck.size = Vector2(210, 84)
+	_sum_deck.text = "본부로"
+	LaneUI.button(_sum_deck, "blue", 22)
+	_sum_deck.size = Vector2(216, 84)
 	_sum_deck.pressed.connect(func():
 		SoundManager.play_click()
 		_finish_table()
-		visible = false
-		deck_requested.emit())
+		close())
 	_table.add_child(_sum_deck)
 
 func _build_sum_bar() -> void:
@@ -603,9 +578,8 @@ func _deal_cards() -> void:
 		tw.tween_property(card, "position", at, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		tw.tween_property(card, "scale", Vector2.ONE, 0.3)
 		tw.tween_property(card, "modulate:a", 1.0, 0.15)
-	# Auto flip: hands the player the result quickly, with the big show only for the best tier
-	if bool(LaneUnits.load_army().get("auto_flip", false)) and n > 1:
-		get_tree().create_timer(0.3 + 0.06 * n).timeout.connect(flip_all)
+	# Auto flow: always auto-flip after the deal animation. 유니크/레전더리는 flip() 안에서 큰 등장을 띄움
+	get_tree().create_timer(0.3 + 0.06 * n).timeout.connect(flip_all)
 
 # A face-down card that glows in its rarity's colour; tap to flip
 func _card_back(res: Dictionary, sz: Vector2) -> Control:
@@ -712,15 +686,20 @@ func _check_done() -> void:
 	_table_merge.text = ("합성할 수 있어요: " + ", ".join(mnames)) if not mnames.is_empty() else ""
 	LaneUI.set_gem_bar(_table.get_node("Gems"))
 	_flip_all.visible = false
-	_sum_ok.visible = true
+	var gems_now: int = int(LaneUnits.load_army()["gems"])
 	_again.visible = true
-	_again.text = "다시 %d회" % _results.size()
-	_sum_deck.visible = not merge_kinds.is_empty()
-	_sum_deck.text = "합성하러 가기"
-	var buttons: Array = [_sum_ok, _again] + ([_sum_deck] if _sum_deck.visible else [])
-	var w: float = 210.0 * buttons.size() + 16.0 * (buttons.size() - 1)
+	_again.text = "다시 10회\n💎 %d" % LaneUnits.PULL10_COST
+	_again.disabled = gems_now < LaneUnits.PULL10_COST
+	_sum_ok.visible = true
+	_sum_ok.text = "1회 뽑기\n💎 %d" % LaneUnits.PULL_COST
+	_sum_ok.disabled = gems_now < LaneUnits.PULL_COST
+	_sum_deck.visible = true
+	_sum_deck.text = "본부로"
+	var buttons: Array = [_again, _sum_ok, _sum_deck]
+	var bw: float = 216.0
+	var total: float = bw * buttons.size() + 12.0 * (buttons.size() - 1)
 	for i in range(buttons.size()):
-		buttons[i].position = Vector2((720.0 - w) * 0.5 + i * 226.0, 860)
+		buttons[i].position = Vector2((720.0 - total) * 0.5 + i * (bw + 12.0), 860)
 	_refresh()
 
 # The front of a card: tier card, the soldier, its name and NEW! / the copies toward a merge
