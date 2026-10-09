@@ -92,45 +92,78 @@ var b_cards := {}
 
 
 class RoundButton:
-	## Round action button under a selected building: a white disc with a dark rim, an icon and a
-	## label with a thick outline; an optional price line below.
+	## Round action button under a selected building: a shaded cream disc with a dark rim and a gold
+	## ring, a big icon, the caption below the disc and an optional price tag on top.
 	extends Button
+	const INK := Color(0.106, 0.094, 0.149)
 	var pic: Texture2D
 	var caption := ""
 	var price := ""
 	var price_icon: Texture2D
-	var tint := Color(0.96, 0.96, 0.93)
+	var info := false
+	var tint := Color(0.99, 0.96, 0.88)
 
 	func _init() -> void:
 		flat = true
-		custom_minimum_size = Vector2(104, 128)
+		custom_minimum_size = Vector2(112, 136)
 		focus_mode = Control.FOCUS_NONE
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		button_down.connect(queue_redraw)
+		button_up.connect(queue_redraw)
+
+	func _disc(c: Vector2, r: float, top: Color, bottom: Color) -> void:
+		var pts := PackedVector2Array()
+		var cols := PackedColorArray()
+		for i in 40:
+			var p := c + Vector2.from_angle(TAU * i / 40.0) * r
+			pts.append(p)
+			cols.append(top.lerp(bottom, clampf((p.y - (c.y - r)) / (2.0 * r), 0.0, 1.0)))
+		draw_polygon(pts, cols)
+
+	func _oval(c: Vector2, rx: float, ry: float, col: Color) -> void:
+		var pts := PackedVector2Array()
+		for i in 32:
+			pts.append(c + Vector2(cos(TAU * i / 32.0) * rx, sin(TAU * i / 32.0) * ry))
+		draw_colored_polygon(pts, col)
 
 	func _draw() -> void:
-		var c := Vector2(size.x * 0.5, 50)
-		var down := button_pressed or is_pressed()
-		var r := 44.0 if not down else 41.0
-		draw_circle(c + Vector2(0, 4), r + 4, Color(0, 0, 0, 0.35))
-		draw_circle(c, r + 4, Color(0.106, 0.094, 0.149))
-		draw_circle(c, r, tint.darkened(0.15))
-		draw_circle(c - Vector2(0, 3), r - 3, tint)
-		if pic != null:
-			var s := 58.0 if price == "" else 46.0
-			var at := c if price == "" else c + Vector2(0, 10)
+		var down := is_pressed()
+		var c := Vector2(size.x * 0.5, 56 + (3 if down else 0))
+		var r := 42.0 if not down else 40.0
+		if not down:
+			draw_circle(c + Vector2(0, 6), r + 5, Color(0, 0, 0, 0.3))
+		draw_circle(c, r + 5, INK)
+		_disc(c, r + 1, Color(1.0, 0.86, 0.45), Color(0.72, 0.48, 0.16))
+		_disc(c, r - 4, tint.lightened(0.3), tint.darkened(0.2))
+		_oval(c - Vector2(0, r * 0.45), r * 0.62, r * 0.3, Color(1, 1, 1, 0.45))
+		if info:
+			draw_circle(c, 25, INK)
+			_disc(c, 22, Color(0.45, 0.78, 1.0), Color(0.16, 0.45, 0.85))
+			var fi := UIKit.FONT
+			var iw := fi.get_string_size("i", HORIZONTAL_ALIGNMENT_LEFT, -1, 38).x
+			draw_string_outline(fi, c + Vector2(-iw * 0.5, 13), "i", HORIZONTAL_ALIGNMENT_LEFT, -1, 38, 6, INK)
+			draw_string(fi, c + Vector2(-iw * 0.5, 13), "i", HORIZONTAL_ALIGNMENT_LEFT, -1, 38, Color.WHITE)
+		elif pic != null:
+			var s := 64.0 if price == "" else 54.0
+			var at := c if price == "" else c + Vector2(0, 6)
 			draw_texture_rect(pic, Rect2(at - Vector2(s, s) * 0.5, Vector2(s, s)), false)
 		var f := UIKit.FONT
-		var y := 108.0
-		var w := f.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
-		draw_string_outline(f, Vector2((size.x - w) * 0.5, y), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, 6, Color(0.106, 0.094, 0.149))
-		draw_string(f, Vector2((size.x - w) * 0.5, y), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+		var w := f.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x
+		var y := c.y + r + 30
+		draw_string_outline(f, Vector2((size.x - w) * 0.5, y), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, 7, INK)
+		draw_string(f, Vector2((size.x - w) * 0.5, y), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color.WHITE)
 		if price != "":
-			var pw := f.get_string_size(price, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + (20 if price_icon else 0)
-			var px := (size.x - pw) * 0.5
-			draw_string_outline(f, Vector2(px, 30), price, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 5, Color(0.106, 0.094, 0.149))
-			draw_string(f, Vector2(px, 30), price, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+			var tw := f.get_string_size(price, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
+			var pw := tw + (24.0 if price_icon else 0.0) + 16.0
+			var box := Rect2(Vector2((size.x - pw) * 0.5, c.y - r - 16), Vector2(pw, 26))
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = Color(0.106, 0.094, 0.149, 0.9)
+			sb.set_corner_radius_all(13)
+			draw_style_box(sb, box)
+			var tx := box.position.x + 8
+			draw_string(f, Vector2(tx, box.position.y + 20), price, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color.WHITE)
 			if price_icon:
-				draw_texture_rect(price_icon, Rect2(Vector2(px + pw - 18, 15), Vector2(18, 18)), false)
+				draw_texture_rect(price_icon, Rect2(Vector2(tx + tw + 3, box.position.y + 3), Vector2(20, 20)), false)
 
 
 class Glyph:
@@ -398,8 +431,8 @@ func _build_hud() -> void:
 	sel_buttons = HBoxContainer.new()
 	sel_buttons.add_theme_constant_override("separation", 6)
 	sel_buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	sel_buttons.position = Vector2(0, 40)
-	sel_buttons.size = Vector2(800, 130)
+	sel_buttons.position = Vector2(0, 46)
+	sel_buttons.size = Vector2(800, 136)
 	sel_bar.add_child(sel_buttons)
 	# placing: cancel / confirm over the ghost
 	place_bar = HBoxContainer.new()
@@ -459,8 +492,8 @@ func _refresh_hud() -> void:
 		res_rows[res]["row"].position.x = W - 300
 	attack_button.position = Vector2(16, H - 156)
 	shop_button.position = Vector2(W - 166, H - 156)
-	sel_bar.position = Vector2(roundf((W - 800) * 0.5), H - 182)
-	sel_bar.size = Vector2(800, 180)
+	sel_bar.position = Vector2(roundf((W - 800) * 0.5), H - 190)
+	sel_bar.size = Vector2(800, 188)
 	toast_label.position = Vector2(0, 150)
 	toast_label.size = Vector2(W, 40)
 	# values
@@ -603,24 +636,18 @@ func _round(caption: String, icon: String, cb: Callable, price: String = "", pri
 		r.price_icon = Art.vil("ic_" + ("gem" if price_res == "gems" else price_res))
 	if caption == "정보":
 		r.pic = null
-		r.tint = Color(0.75, 0.88, 1.0)
+		r.info = true
 	r.pressed.connect(func():
 		SoundManager.play("click")
 		cb.call())
 	pending.append(r)
-	if r.pic == null:
-		if caption == "정보":
-			var l := UIKit.outlined(UIKit.label("i", 44, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER), 8)
-			l.position = Vector2(0, 22)
-			l.size = Vector2(104, 56)
-			r.add_child(l)
-		else:
-			var g := Glyph.new()
-			g.kind = "x"
-			g.position = Vector2(22, 18)
-			g.size = Vector2(60, 64)
-			g.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			r.add_child(g)
+	if r.pic == null and not r.info:
+		var g := Glyph.new()
+		g.kind = "x"
+		g.position = Vector2(26, 22)
+		g.size = Vector2(60, 64)
+		g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		r.add_child(g)
 
 
 func _do(why: String) -> void:
