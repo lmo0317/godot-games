@@ -403,7 +403,8 @@ func _build_hud() -> void:
 		row.add_child(bar)
 		var amt := _label(row, "0", 22, Vector2(6, 10), Vector2(214, 36), Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT)
 		var mx := _label(row, "", 14, Vector2(6, -6), Vector2(214, 22), UIKit.MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
-		_icon(row, "ic_" + ("gem" if res == "gems" else res), Vector2(226, 2), 52)
+		var res_icon := _icon(row, "ic_" + ("gem" if res == "gems" else res), Vector2(226, 2), 52)
+		res_icon.pivot_offset = Vector2(26, 26)
 		if res != "gems":
 			# test only: fills this resource up to its storage cap
 			var add := Button.new()
@@ -417,7 +418,7 @@ func _build_hud() -> void:
 				_toast("테스트: %s 가득" % ("금" if res == "gold" else "엘릭서"))
 				_after_change())
 			row.add_child(add)
-		res_rows[res] = {"row": row, "bar": bar, "amt": amt, "max": mx}
+		res_rows[res] = {"row": row, "bar": bar, "amt": amt, "max": mx, "icon": res_icon}
 		y += 54.0
 	# bottom-left: attack; bottom-right: shop
 	attack_button = _big_button("공격!", "ic_attack", "primary", _open_attack)
@@ -672,11 +673,55 @@ func _collect(b: Dictionary) -> void:
 	var got := village.collect(b)
 	if got > 0:
 		SoundManager.play("coin")
-		_toast("+%s %s" % [UIKit.format_number(got), Data.RES_NAME[res]])
+		_collect_fx(b, res, got)
 	elif village.amount(res) >= village.capacity(res):
 		SoundManager.play("invalid")
 		_toast("저장소가 가득 찼어요")
 	_after_change()
+
+
+func _collect_fx(b: Dictionary, res: String, got: int) -> void:
+	## Coins or elixir drops spring up from the building like a fountain, then fly into the
+	## resource bar, which bumps as each one lands; "+amount" floats up over the building.
+	var s: int = Data.BUILDINGS[b["type"]]["size"]
+	var from := grid_to_screen(Vector2(b["x"] + s * 0.5, b["y"] + s * 0.5)) - Vector2(0, 40.0 * zoom)
+	var r: Dictionary = res_rows[res]
+	var target: Vector2 = r["row"].position + Vector2(252, 28)
+	var icon: Control = r["icon"]
+	var n := clampi(4 + got / 40, 5, 12)
+	for i in n:
+		var t := TextureRect.new()
+		t.texture = Art.vil("ic_" + res)
+		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		t.size = Vector2(38, 38)
+		t.pivot_offset = Vector2(19, 19)
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		t.position = from - t.pivot_offset
+		t.scale = Vector2(0.4, 0.4)
+		hud.add_child(t)
+		var peak := from + Vector2(randf_range(-80, 80), randf_range(-150, -80)) - t.pivot_offset
+		var land := peak + Vector2(randf_range(-20, 20), randf_range(40, 70))
+		var tw := create_tween()
+		tw.tween_property(t, "position", peak, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(t, "scale", Vector2.ONE, 0.28)
+		tw.tween_property(t, "position", land, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_interval(0.04 * i)
+		tw.tween_property(t, "position", target - t.pivot_offset, 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		tw.parallel().tween_property(t, "scale", Vector2(0.7, 0.7), 0.5)
+		tw.tween_callback(func():
+			t.queue_free()
+			SoundManager.play("coin")
+			icon.scale = Vector2(1.3, 1.3)
+			create_tween().tween_property(icon, "scale", Vector2.ONE, 0.15))
+	var l := UIKit.outlined(UIKit.label("+" + UIKit.format_number(got), 30, Color(1.0, 0.86, 0.3) if res == "gold" else Color(0.95, 0.6, 1.0), HORIZONTAL_ALIGNMENT_CENTER), 8)
+	l.size = Vector2(200, 44)
+	l.position = from - Vector2(100, 60)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(l)
+	var lt := create_tween()
+	lt.tween_property(l, "position:y", l.position.y - 60, 0.9).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	lt.parallel().tween_property(l, "modulate:a", 0.0, 0.4).set_delay(0.5)
+	lt.tween_callback(l.queue_free)
 
 
 func _on_finished(b: Dictionary) -> void:
