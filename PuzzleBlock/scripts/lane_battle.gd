@@ -134,6 +134,9 @@ var _fort_sprite: Sprite2D
 var _stage_label: Label
 var _stage_name: Label
 var _bg: TextureRect
+var _sky: ColorRect
+var _boss_timer: float = 0.0           # night_eye swoop clock
+var _splits_pending: Array = []        # [[kind, pos], ...] mini-mobs that spawn after a boss dies
 var _castle_fill: Panel
 var _castle_label: Label
 var _fort_fill: Panel
@@ -159,6 +162,8 @@ func _ready() -> void:
 	names.append_array(ENEMIES.keys())
 	names.append_array(["cannon", "cannonball", "flash", "boom_s", "boom_l", "smoke"])
 	names.append_array(["spark", "slash", "arrow", "bolt", "fireball", "holy", "heal", "dust", "ring"])
+	# 2026-10-09: per-stage backgrounds and boss sprites
+	names.append_array(["bg_grassland", "bg_goblin_camp", "bg_bat_cave", "boss_king_slime", "boss_goblin_chief", "boss_night_eye"])
 	for k in names:
 		var path := "res://assets/art/lane/%s.png" % k
 		if ResourceLoader.exists(path):
@@ -467,6 +472,8 @@ func _tick(delta: float) -> void:
 		var base_off: float = -node.texture.get_height() * 0.5
 		u["cd"] = maxf(0.0, u["cd"] - delta)
 		_tick_effects(u, delta)
+		if u.get("boss", false):
+			_tick_boss(u, delta)
 		if u["heal"] > 0.0:
 			u["heal_t"] -= delta
 			if u["heal_t"] <= 0.0:
@@ -578,10 +585,28 @@ func _boss_entry() -> void:
 	boss["atk"] *= bd["atk"]
 	boss["speed"] *= 0.75
 	boss["base_scale"] = Vector2.ONE * UNIT_PX * 2.0 * bd["scale"] / 1.6
+	# Swap in the boss sprite if the data carries a dedicated texture (e.g. boss_king_slime)
+	var btex: String = bd.get("tex", "")
+	if btex != "" and tex.has(btex):
+		boss["node"].texture = tex[btex]
+		boss["node"].offset = Vector2(0, -tex[btex].get_height() * 0.5)
+		# A dedicated boss sprite is already drawn big, so no extra 2x; just keep the stage scale
+		boss["base_scale"] = Vector2.ONE * UNIT_PX
 	boss["node"].scale = boss["base_scale"]
 	boss["kb"] = bd["kb"]
 	boss["kb_mark"] = boss["max_hp"] * (bd["kb"] - 1) / bd["kb"]
 	boss["boss"] = true
+	# Trait flags copied from the boss data (used by _tick and _kill)
+	boss["boss_key"] = stage_data["boss"]
+	boss["splits_into"] = bd.get("splits_into", [])
+	boss["berserk"] = bd.get("berserk", false)
+	boss["berserked"] = false
+	boss["swoop"] = bd.get("swoop", false)
+	boss["swoop_t"] = 10.0 if boss["swoop"] else 0.0
+	if boss["swoop"]:
+		# 밤의 눈: hover above the ground (flying). The base atk range is small, so a swoop acts as its reach
+		boss["flying"] = true
+		boss["node"].position.y = GROUND - FLY_H - 10.0
 	_fx_once("ring", boss["node"].position + Vector2(0, -6), 0.5, 3.0)
 	# The shockwave pushes every soldier back
 	for u in units:
@@ -750,6 +775,112 @@ func _tick_effects(u: Dictionary, delta: float) -> void:
 func _speed(u: Dictionary) -> float:
 	return u["speed"] * (SLOW_K if u["slow_t"] > 0.0 else 1.0)
 
+# Boss trait tick (2026-10-09): goblin chief berserks past half HP, night-eye bat swoops on a timer
+func _tick_boss(u: Dictionary, delta: float) -> void:
+	if u.get("berserk", false) and not u["berserked"] and u["hp"] <= u["max_hp"] * 0.5:
+		u["berserked"] = true
+		u["every"] = maxf(0.3, u["every"] / 1.5)
+		u["node"].self_modulate = Color(1.6, 0.55, 0.55)
+		_fx_once("ring", _mid(u), 0.4, 1.6)
+		_banner("고블린 두목이 광폭화!", "", Color(1.0, 0.3, 0.3))
+		_shake_lane(5.0, 0.2)
+	if u.get("swoop", false):
+		u["swoop_t"] -= delta
+		if u["swoop_t"] <= 0.0:
+			u["swoop_t"] = 10.0
+			_boss_swoop(u)
+
+# 밤의 눈 급강하: dive at the nearest soldier (or the castle), big damage + knockback, then climb back
+func _boss_swoop(u: Dictionary) -> void:
+	var node: Sprite2D = u["node"]
+	var ground_y: float = GROUND - 10.0
+	var hover_y: float = GROUND - FLY_H - 10.0
+	var target_x: float = CASTLE_X + 40.0
+	var target_u = _nearest_opponent(u)
+	if target_u != null:
+		target_x = target_u["node"].position.x
+	var start: Vector2 = node.position
+	var land: Vector2 = Vector2(clampf(target_x, ALLY_BASE_X - 20.0, ENEMY_START), ground_y)
+	_sfx("b_roar", -8.0)
+	var tw := node.create_tween()
+	tw.tween_property(node, "position", land, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func(): _swoop_impact(u, land))
+	tw.tween_property(node, "position", Vector2(start.x, hover_y), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _swoop_impact(u: Dictionary, at: Vector2) -> void:
+	_shake_lane(8.0, 0.3)
+	_hitstop = maxf(_hitstop, 0.08)
+	_fx_once("boom_l", at, 0.3, 1.4)
+	_fx_once("ring", at, 0.4, 2.2)
+	var dmg: float = u["atk"] * 2.0
+	for o in units.duplicate():
+		if o["side"] == u["side"] or o["hp"] <= 0.0:
+			continue
+		if absf(o["node"].position.x - at.x) <= 80.0:
+			_hurt(o, dmg, false)
+			_knock(o, KB_DIST * 1.8)
+	if at.x <= ALLY_BASE_X + 40.0:
+		castle_hp = maxi(0, castle_hp - roundi(dmg * 0.6))
+		_flash(_castle_sprite)
+		castle_hit.emit(roundi(dmg))
+	_dirty = true
+
+# Boss intro overlay: dim the lane, drop the boss art in big with a parchment name + hint, then
+# fade out after a short pause (also auto-dismissed by a tap)
+func _show_boss_intro() -> void:
+	var bd: Dictionary = LaneStages.BOSSES[stage_data["boss"]]
+	var btex: String = bd.get("tex", "")
+	if btex == "" or not tex.has(btex):
+		return
+	var overlay := Control.new()
+	overlay.name = "BossIntro"
+	overlay.size = Vector2(720, LANE_H)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.z_index = 50
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.0)
+	dim.size = overlay.size
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(dim)
+	var shot := Sprite2D.new()
+	shot.texture = tex[btex]
+	shot.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	shot.scale = Vector2.ONE * 4.0
+	shot.position = Vector2(360, 160)
+	shot.modulate.a = 0.0
+	overlay.add_child(shot)
+	var ribbon := LaneUI.ribbon(bd["name"], 320, 36)
+	ribbon.position = Vector2(200, 270)
+	overlay.add_child(ribbon)
+	var paper := Panel.new()
+	LaneUI.dress(paper, "panel_paper")
+	paper.position = Vector2(80, 320)
+	paper.size = Vector2(560, 46)
+	paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(paper)
+	var hint := LaneUI.label(bd.get("hint", ""), 18, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
+	hint.position = paper.position
+	hint.size = paper.size
+	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	overlay.add_child(hint)
+	_view.add_child(overlay)
+	# Intro overlay does NOT pause the battle so headless tests and the real-time flow keep ticking.
+	# It simply fades over the lane for a short beat; tap to dismiss early.
+	var tw := overlay.create_tween()
+	tw.tween_property(dim, "color:a", 0.6, 0.3)
+	tw.parallel().tween_property(shot, "modulate:a", 1.0, 0.35)
+	tw.parallel().tween_property(shot, "position:y", 180.0, 0.35).from(60.0).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var close := func():
+		if not is_instance_valid(overlay):
+			return
+		var ot := overlay.create_tween()
+		ot.tween_property(overlay, "modulate:a", 0.0, 0.3)
+		ot.tween_callback(overlay.queue_free)
+	overlay.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed:
+			close.call())
+	get_tree().create_timer(2.2).timeout.connect(close)
+
 func _cheer_around(u: Dictionary) -> void:
 	var any := false
 	for o in units:
@@ -809,10 +940,31 @@ func _start_stage() -> void:
 	warned = false
 	_stage_label.text = "STAGE %d" % stage
 	_stage_name.text = stage_data["name"]
+	# 2026-10-09: per-stage background (bg name in stage data, fallback to the generic lane picture)
+	_apply_background(stage_data.get("bg", "lane"))
 	_bg.self_modulate = LaneStages.chapter(stage)["tint"]
+	_boss_timer = 0.0
+	_splits_pending.clear()
+	# Boss intro overlay before the fight starts (fade-in boss shot + name + hint, then tap to start)
+	if stage_data.get("boss", "") != "":
+		_show_boss_intro()
 	_banner("STAGE %d · %s" % [stage, stage_data["name"]], stage_data.get("new", ""))
 	_spawn_enemy(_pick_enemy(), power)
 	_refresh()
+
+# Swap the lane picture for a per-stage background. Keeps the same ground line by anchoring the
+# picture's bottom to the fortress feet (as the default lane does)
+func _apply_background(name: String) -> void:
+	var t: Texture2D = tex.get(name)
+	if t == null:
+		t = tex["lane"]
+	_bg.texture = t
+	var k: float = ceil(maxf(720.0 / t.get_width(), LANE_H / t.get_height()))
+	_bg.size = Vector2(t.get_width(), t.get_height()) * k
+	_bg.position = Vector2((720.0 - _bg.size.x) * 0.5, LANE_H - _bg.size.y + 4.0)
+	if _sky != null:
+		_sky.color = t.get_image().get_pixel(t.get_width() / 2, 0)
+		_sky.size.y = _bg.position.y + 44.0
 
 # The fortress falls: stars from the castle HP left, then cleared() after the banner
 func _stage_cleared() -> void:
@@ -879,8 +1031,31 @@ func _spawn(kind: String, side: int, k: float) -> Dictionary:
 func _count(side: int) -> int:
 	return units.filter(func(u): return u["side"] == side).size()
 
+# 왕슬라임 분열: spawn each queued mini-mob at 60% HP, with a little pop
+func _spawn_splits() -> void:
+	for entry in _splits_pending:
+		var kind: String = entry[0]
+		var pos: Vector2 = entry[1]
+		if _count(-1) >= MAX_ENEMIES:
+			continue
+		var m := _spawn(kind, -1, power * 0.6)
+		m["node"].position.x = clampf(pos.x, ALLY_BASE_X + 20.0, ENEMY_START)
+		m["node"].scale = m["base_scale"] * 1.2
+		m["base_scale"] = m["node"].scale
+		_fx_once("ring", m["node"].position + Vector2(0, -6), 0.3, 1.0)
+	_splits_pending.clear()
+
 # Fallen units fly back with a spin, a dust puff and a burst of pixels
 func _kill(u: Dictionary) -> void:
+	# Boss death triggers (2026-10-09): the king slime splits into mini-slimes with 60% HP each
+	if u.get("boss", false) and (u.get("splits_into") as Array).size() > 0:
+		var spawn_pos: Vector2 = u["node"].position
+		var kinds: Array = u["splits_into"]
+		for i in range(kinds.size()):
+			var k: String = kinds[i]
+			var offset: float = (i - (kinds.size() - 1) * 0.5) * 24.0
+			_splits_pending.append([k, spawn_pos + Vector2(offset, 0)])
+		get_tree().create_timer(0.25).timeout.connect(_spawn_splits)
 	units.erase(u)
 	var node: Sprite2D = u["node"]
 	var side: int = u["side"]
@@ -1052,6 +1227,7 @@ func _build() -> void:
 	sky.position = Vector2(-40, -40)
 	sky.size = Vector2(800, bg.position.y + 44.0)
 	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sky = sky
 	_shake.add_child(sky)
 	_shake.add_child(bg)
 	for side in [1, -1]:

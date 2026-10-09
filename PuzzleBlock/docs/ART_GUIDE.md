@@ -179,3 +179,6 @@ Codex가 "Selected model is at capacity" 오류로 실패하면 같은 명령을
 | 내 성·적 요새 | `assets/art/lane/castle.png`, `fortress.png` | Codex | 위 `bases.png` | 전장 양 끝 | 완료 |
 | 전장 배경 | `assets/art/lane/lane.png` (296×148) | Codex | 위 `lane.png` | 전장 | 완료 |
 | 테마 배경 7종 | `assets/art/*.jpg` | 생성 이미지 | 기존 원본 | 게임 화면 | 유지 |
+| 블록 기사단 보스 3종 (1~3) | `assets/art/lane/boss_king_slime.png` (58×42), `boss_goblin_chief.png` (54×53), `boss_night_eye.png` (78×50) | Codex 시트(ref_mobs.png 참고) | 2026-10-09 `bosses.png` | 1·2·3 스테이지 보스 + 보스 인트로 샷 + 스테이지 선택 카드 | 완료 |
+| 블록 기사단 쫄몹 리뉴얼 | `assets/art/lane/slime.png`·`goblin.png`·`bat.png` 덮어쓰기(원본은 `_backup/`) | Codex 시트(ref_mobs.png 참고) | 2026-10-09 `mobs_v2.png` | 1·2·3 쫄몹 그림체 통일 | 완료 |
+| 블록 기사단 스테이지 배경 3종 | `assets/art/lane/bg_grassland.png` (161×81), `bg_goblin_camp.png` (296×148), `bg_bat_cave.png` (148×74) | Codex (불투명 배경) | 2026-10-09 스테이지 1~3 재설계 | 1·2·3 스테이지 전장 배경 | 완료 |

@@ -46,8 +46,15 @@ static func start_gold(stage_id: int) -> int:
 	return 60 + 15 * (stage_id - 1)
 
 const BOSSES: Dictionary = {
-	"slime_king": {"name": "왕슬라임", "kind": "slime", "hp": 12.0, "atk": 3.0, "scale": 2.0, "kb": 3},
-	"goblin_chief": {"name": "고블린 대장", "kind": "goblin", "hp": 6.0, "atk": 2.0, "scale": 1.6, "kb": 4},
+	# 2026-10-09 1-3 재설계: 각 보스에 고유 특기(trait)와 전용 아트(tex). 전용 tex가 없으면 kind의 그림을 씀.
+	# traits: splits_into (죽으면 작은 몹 N마리), berserk (HP 50% 이하 공속*1.5·붉어짐), swoop (10초마다 급강하 + 큰 피해·넉백)
+	"slime_king": {"name": "왕슬라임", "kind": "slime", "tex": "boss_king_slime", "hint": "쓰러지면 작은 슬라임 둘로 쪼개져요",
+		"hp": 8.0, "atk": 2.5, "scale": 1.8, "kb": 3, "splits_into": ["slime", "slime"]},
+	"goblin_chief": {"name": "고블린 두목", "kind": "goblin", "tex": "boss_goblin_chief", "hint": "체력 절반 이하가 되면 광폭화해요",
+		"hp": 5.0, "atk": 1.8, "scale": 1.5, "kb": 4, "berserk": true},
+	"night_eye": {"name": "밤의 눈", "kind": "bat", "tex": "boss_night_eye", "hint": "하늘을 날며 급강하 공격을 해요 — 원거리 병사 필수",
+		"hp": 6.0, "atk": 2.0, "scale": 2.2, "kb": 4, "swoop": true},
+	# 4~24 스테이지에서 쓰던 보스 유지
 	"iron_captain": {"name": "철갑 대장", "kind": "armored", "hp": 4.5, "atk": 1.6, "scale": 1.5, "kb": 4},
 	"demon_lord": {"name": "마왕", "kind": "demon", "hp": 4.5, "atk": 1.25, "scale": 1.6, "kb": 5},
 }
@@ -55,12 +62,16 @@ const BOSSES: Dictionary = {
 # waves: [seconds after the start, [monster kinds]]; after the last one it repeats every 40 s.
 # swarm: false keeps slimes single
 const STAGES: Array[Dictionary] = [
-	{"id": 1, "name": "첫 출정", "role": "teach", "fortress": 1000, "power": 0.95, "every": 11.0, "pool": ["slime"], "swarm": false,
-		"waves": [[35.0, ["slime", "slime", "slime"]]], "boss": "", "new": "기사로 막고 줄을 지워 금화를 모아요"},
-	{"id": 2, "name": "고블린 정찰대", "role": "teach", "fortress": 1100, "power": 0.95, "every": 10.0, "pool": ["slime", "goblin"], "swarm": false,
-		"waves": [[30.0, ["goblin", "goblin", "slime", "slime"]], [65.0, ["goblin", "goblin", "goblin"]]], "boss": "", "new": "궁수를 섞어 보세요"},
-	{"id": 3, "name": "고블린 무리", "role": "test", "fortress": 1350, "power": 1.21, "every": 10.0, "pool": ["goblin"],
-		"waves": [[25.0, ["goblin", "goblin", "goblin"]], [55.0, ["goblin", "goblin", "goblin", "goblin"]]], "boss": "", "new": "방패병으로 앞줄을 버텨요"},
+	# 2026-10-09 1-3 재설계 (docs/STAGE_1_3_PLAN.md): 매 스테이지 보스 + 고유 배경 + 쫄몹 조합.
+	{"id": 1, "name": "슬라임 들판", "role": "boss", "fortress": 1200, "power": 0.95, "every": 11.0, "pool": ["slime"], "swarm": false,
+		"waves": [[25.0, ["slime", "slime", "slime", "slime"]], [50.0, ["slime", "slime", "slime", "slime", "slime"]]],
+		"boss": "slime_king", "bg": "bg_grassland", "clear_gem": 200, "new": "기사로 막고 줄을 지워 금화를 모아요"},
+	{"id": 2, "name": "고블린 캠프", "role": "boss", "fortress": 1500, "power": 1.05, "every": 10.0, "pool": ["slime", "goblin"],
+		"waves": [[20.0, ["goblin", "goblin", "slime"]], [45.0, ["goblin", "goblin", "goblin", "goblin"]]],
+		"boss": "goblin_chief", "bg": "bg_goblin_camp", "clear_gem": 220, "new": "궁수가 뒤에서 쏘게 하세요"},
+	{"id": 3, "name": "박쥐 동굴", "role": "boss", "fortress": 1800, "power": 1.15, "every": 10.0, "pool": ["bat", "goblin"],
+		"waves": [[20.0, ["bat", "bat", "bat"]], [45.0, ["bat", "bat", "goblin", "goblin"]]],
+		"boss": "night_eye", "bg": "bg_bat_cave", "clear_gem": 280, "new": "박쥐는 원거리 병사만 맞혀요"},
 	{"id": 4, "name": "박쥐 동굴", "role": "teach", "fortress": 1450, "power": 1.22, "every": 10.0, "pool": ["goblin", "bat"],
 		"waves": [[30.0, ["bat", "bat", "bat"]], [60.0, ["bat", "bat", "goblin", "goblin"]]], "boss": "", "new": "박쥐는 원거리 병사만 맞혀요"},
 	{"id": 5, "name": "슬라임 늪", "role": "twist", "fortress": 1750, "power": 1.48, "every": 10.0, "pool": ["slime"],

@@ -170,20 +170,38 @@ func _run() -> void:
 	_expect(spear["node"].position.x < 450.0, "held soldiers walk back (%.0f)" % spear["node"].position.x)
 	b.toggle_march()
 
-	# The horn and a big wave (stage 1: three slimes)
+	# The horn and a big wave (stage 1 재설계: four slimes in the first wave)
 	b.next_wave_at = b.elapsed + 0.05
 	await get_tree().create_timer(0.2).timeout
 	_expect(b._pending.size() + b._count(-1) >= 2, "a big wave arrives (%d queued, %d out)" % [b._pending.size(), b._count(-1)])
-	await get_tree().create_timer(1.6).timeout
+	await get_tree().create_timer(3.5).timeout
 	_expect(b._pending.is_empty(), "the wave has marched out")
 
-	# The boss comes when the fortress drops to half (borrow stage 6's slime king)
-	_expect(b.boss_out, "stage 1 has no boss")
-	b.stage_data = LaneStages.get_stage(6)
-	b.boss_out = false
+	# Stage 1 재설계: boss comes at half fortress (왕슬라임 — unique boss sprite, splits on death)
+	_expect(not b.boss_out, "stage 1 has a boss now (왕슬라임)")
+	for u in b.units.duplicate():
+		if u["side"] == -1:
+			b._kill(u)
 	b.fortress_hp = b.fortress_max * 0.49
 	await get_tree().create_timer(0.3).timeout
 	_expect(b.boss_out and b.units.any(func(u): return u.get("boss", false) and u["kind"] == "slime"), "the slime king appears at half the fortress")
+	# 왕슬라임이 죽으면 작은 슬라임 2마리로 분열
+	var slime_king: Dictionary = b.units.filter(func(u): return u.get("boss", false))[0]
+	var slimes_before: int = b.units.filter(func(u): return u["side"] == -1 and u["kind"] == "slime" and not u.get("boss", false)).size()
+	b._kill(slime_king)
+	await get_tree().create_timer(0.4).timeout
+	var slimes_after: int = b.units.filter(func(u): return u["side"] == -1 and u["kind"] == "slime" and not u.get("boss", false)).size()
+	_expect(slimes_after >= slimes_before + 2, "the king slime splits into mini slimes (%d -> %d)" % [slimes_before, slimes_after])
+	# Goblin chief 광폭화: HP 50% 이하에서 공속이 1.5배로 빨라짐
+	b.stage_data = LaneStages.get_stage(2)
+	b.boss_out = false
+	b._boss_entry()
+	var chief: Dictionary = b.units.filter(func(u): return u.get("boss", false))[0]
+	var atk_every_before: float = chief["every"]
+	chief["hp"] = chief["max_hp"] * 0.4
+	await get_tree().create_timer(0.2).timeout
+	_expect(chief["berserked"] and chief["every"] < atk_every_before, "the goblin chief berserks past half HP (%.2f -> %.2f)" % [atk_every_before, chief["every"]])
+	b._kill(chief)
 	b.stage_data = LaneStages.get_stage(1)
 
 	# Roles: the tank takes less, the crossbow hits flyers hard, the cannoneer hits the fortress hard,

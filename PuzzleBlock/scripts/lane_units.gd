@@ -359,9 +359,16 @@ static func reward_fail(fortress_damaged: float) -> Dictionary:
 	return {"gems": gems}
 
 # Rewards for a stage clear: gems only. Returns {"gems"}
+# 2026-10-09: a stage may set a custom first-clear gem amount (clear_gem). Replays still pay the small
+# flat amount so grinding doesn't farm gems.
 static func reward_clear(stage_id: int, first: bool, new_stars: int, boss: bool) -> Dictionary:
 	var army := load_army()
-	var gems: int = ((GEMS_FIRST_BOSS if boss else GEMS_FIRST) if first else GEMS_REPLAY) + GEMS_PER_STAR * new_stars
+	var first_gems: int = GEMS_FIRST_BOSS if boss else GEMS_FIRST
+	if first:
+		var stage: Dictionary = LaneStages.get_stage(stage_id)
+		if stage.has("clear_gem"):
+			first_gems = int(stage["clear_gem"])
+	var gems: int = (first_gems if first else GEMS_REPLAY) + GEMS_PER_STAR * new_stars
 	army["gems"] += gems
 	save_army(army)
 	return {"gems": gems}

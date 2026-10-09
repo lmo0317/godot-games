@@ -268,7 +268,12 @@ func _stage_card(s: Dictionary, stars: int, locked: bool, power: int) -> Control
 	# Monster portrait, big (centred in the middle band)
 	var icon_kind: String = ""
 	if boss:
-		icon_kind = LaneStages.BOSSES[s["boss"]]["kind"]
+		# Prefer the dedicated boss sprite (boss_king_slime, boss_goblin_chief, boss_night_eye)
+		# then fall back to the base kind so older bosses still show
+		var bd: Dictionary = LaneStages.BOSSES[s["boss"]]
+		icon_kind = bd.get("tex", "")
+		if icon_kind == "" or _load_tex("res://assets/art/lane/%s.png" % icon_kind) == null:
+			icon_kind = bd["kind"]
 	elif s.has("pool") and not s["pool"].is_empty():
 		icon_kind = s["pool"][0]
 	if icon_kind == "":

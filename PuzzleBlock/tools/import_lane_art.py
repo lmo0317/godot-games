@@ -45,6 +45,11 @@ FOES2 = ["wolf", "gob_archer", "priest", "golem", "demon"]
 FX2 = ["spark", "slash", "arrow", "bolt", "fireball", "holy", "heal", "dust", None, "ring"]
 # summon.png pieces are full of loose light specks, so they are cut by empty columns instead
 SUMMON = ["summon_altar", "summon_portal", "summon_pillar", "summon_burst", "summon_rays", "summon_sparkle"]
+# 2026-10-09 stage 1-3 redo: bosses sheet (3 bosses) and renewed mobs sheet (3 small monsters)
+BOSSES = ["boss_king_slime", "boss_goblin_chief", "boss_night_eye"]
+MOBS_V2 = ["slime", "goblin", "bat"]
+# backgrounds: opaque, saved at their art-pixel size (the game picks them per stage, nearest x3)
+BACKGROUNDS = ["bg_grassland", "bg_goblin_camp", "bg_bat_cave"]
 
 
 def block_size(img):
@@ -185,15 +190,21 @@ def save(img, name):
 
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else "."
-    sprites = split(to_grid(Image.open(os.path.join(src, "sheet.png"))))
-    if len(sprites) != len(UNITS):
-        sys.exit(f"expected {len(UNITS)} sprites in sheet.png, found {len(sprites)}")
-    for name, sp in zip(UNITS, sprites):
-        save(sp, name)
-    bases = split(to_grid(Image.open(os.path.join(src, "bases.png"))))
-    save(bases[0], BASES[0])
-    save(bases[-1], BASES[1])
-    save(to_grid(Image.open(os.path.join(src, "lane.png")), opaque=True), "lane")
+    sheet_path = os.path.join(src, "sheet.png")
+    if os.path.exists(sheet_path):
+        sprites = split(to_grid(Image.open(sheet_path)))
+        if len(sprites) != len(UNITS):
+            sys.exit(f"expected {len(UNITS)} sprites in sheet.png, found {len(sprites)}")
+        for name, sp in zip(UNITS, sprites):
+            save(sp, name)
+    bases_path = os.path.join(src, "bases.png")
+    if os.path.exists(bases_path):
+        bases = split(to_grid(Image.open(bases_path)))
+        save(bases[0], BASES[0])
+        save(bases[-1], BASES[1])
+    lane_path = os.path.join(src, "lane.png")
+    if os.path.exists(lane_path):
+        save(to_grid(Image.open(lane_path), opaque=True), "lane")
     foes_path = os.path.join(src, "foes.png")
     if os.path.exists(foes_path):
         foes = split(to_grid(Image.open(foes_path)))
@@ -235,6 +246,25 @@ def main():
             sys.exit(f"expected {len(FX)} pieces in fx.png, found {len(fx)}")
         for name, sp in zip(FX, fx):
             save(sp, name)
+    # Stage 1-3 redo (2026-10-09): bosses, renewed small mobs, three backgrounds
+    bosses_path = os.path.join(src, "bosses.png")
+    if os.path.exists(bosses_path):
+        pieces = split(to_grid(Image.open(bosses_path)))
+        if len(pieces) != len(BOSSES):
+            sys.exit(f"expected {len(BOSSES)} sprites in bosses.png, found {len(pieces)}")
+        for name, sp in zip(BOSSES, pieces):
+            save(sp, name)
+    mobs_v2_path = os.path.join(src, "mobs_v2.png")
+    if os.path.exists(mobs_v2_path):
+        pieces = split(to_grid(Image.open(mobs_v2_path)))
+        if len(pieces) != len(MOBS_V2):
+            sys.exit(f"expected {len(MOBS_V2)} sprites in mobs_v2.png, found {len(pieces)}")
+        for name, sp in zip(MOBS_V2, pieces):
+            save(sp, name)
+    for name in BACKGROUNDS:
+        p = os.path.join(src, name + ".png")
+        if os.path.exists(p):
+            save(to_grid(Image.open(p), opaque=True), name)
 
 
 if __name__ == "__main__":
