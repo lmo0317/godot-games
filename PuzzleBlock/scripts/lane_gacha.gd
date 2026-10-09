@@ -110,25 +110,49 @@ func _ready() -> void:
 	_aura.modulate = Color(1, 1, 1, 0)
 	_build_pack()
 
-	# Rates, always visible, on parchment
+	# Rates, always visible, as a 2x2 grid of tier cards (레전더리/유니크/레어/노멀).
+	# Each cell reuses LaneTierCard so the frame colour matches the tier (iron/sapphire/amethyst/gold)
+	# — same visual language as the collection screen.
 	rates = Panel.new()
-	LaneUI.dress(rates, "panel_paper")
-	rates.position = Vector2(30, 698)
-	rates.size = Vector2(660, 140)
+	LaneUI.dress(rates, "panel_wood", Color(0.78, 0.78, 0.82))
+	rates.position = Vector2(20, 664)
+	rates.size = Vector2(680, 176)
 	add_child(rates)
-	var y := 10
-	for t in [3, 2, 1, 0]:
-		var kinds: Array = LaneUnits.ORDER.filter(func(k): return LaneUnits.UNITS[k]["tier"] == t)
-		var col: Color = LaneUnits.tier_color(t).darkened(0.45) if t > 0 else LaneUI.INK
+	var cell_w: float = 316.0
+	var cell_h: float = 66.0
+	var gap: float = 10.0
+	var ox: float = (rates.size.x - cell_w * 2 - gap) * 0.5
+	var oy: float = 14.0
+	# Order: 레전더리, 유니크, 레어, 노멀 (top-left to bottom-right, rarest first)
+	var tiers: Array = [3, 2, 1, 0]
+	for i in range(tiers.size()):
+		var t: int = tiers[i]
+		var col_i: int = i % 2
+		var row_i: int = i / 2
+		var cell := LaneTierCard.new(t, Vector2(cell_w, cell_h))
+		cell.position = Vector2(ox + col_i * (cell_w + gap), oy + row_i * (cell_h + gap))
+		rates.add_child(cell)
 		var pct: String = ("%.1f%%" % (LaneUnits.BASE_RATE[t] * 100.0)).replace(".0%", "%")
-		var line := LaneUI.label("%s %s  ·  %s" % [LaneUnits.TIER_NAME[t], pct, ", ".join(kinds.map(func(k): return LaneUnits.UNITS[k]["name"]))], 16, col, HORIZONTAL_ALIGNMENT_LEFT, false)
-		line.position = Vector2(20, y)
-		line.size = Vector2(620, 24)
-		rates.add_child(line)
-		y += 26
-	var promise := LaneUI.label("같은 병사는 복제가 되어 합성(성급 올리기)에 써요", 15, Color(0.36, 0.25, 0.15), HORIZONTAL_ALIGNMENT_LEFT, false)
-	promise.position = Vector2(20, y)
-	promise.size = Vector2(590, 22)
+		var kinds_n: int = LaneUnits.ORDER.filter(func(k): return LaneUnits.UNITS[k]["tier"] == t).size()
+		var tier_col: Color = LaneUnits.tier_color(t).lightened(0.35)
+		# Big percent on the left
+		var pct_l := LaneUI.label(pct, 28, tier_col, HORIZONTAL_ALIGNMENT_CENTER)
+		pct_l.position = Vector2(10, 14)
+		pct_l.size = Vector2(110, 40)
+		pct_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cell.add_child(pct_l)
+		# Tier name + "n종" on the right
+		var name_l := LaneUI.label(LaneUnits.TIER_NAME[t], 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_LEFT)
+		name_l.position = Vector2(126, 8)
+		name_l.size = Vector2(cell_w - 136, 28)
+		cell.add_child(name_l)
+		var count_l := LaneUI.label("%d종" % kinds_n, 16, Color(0.9, 0.88, 0.78), HORIZONTAL_ALIGNMENT_LEFT)
+		count_l.position = Vector2(126, 36)
+		count_l.size = Vector2(cell_w - 136, 24)
+		cell.add_child(count_l)
+	var promise := LaneUI.label("같은 병사는 복제 → 합성(성급 올리기)에 써요", 14, Color(1.0, 0.9, 0.6), HORIZONTAL_ALIGNMENT_CENTER, true)
+	promise.position = Vector2(0, 150)
+	promise.size = Vector2(680, 22)
 	rates.add_child(promise)
 
 	pull1 = Button.new()
@@ -165,16 +189,16 @@ func _ready() -> void:
 # Pity bar: one slim strip with both pities side by side (유니크 보장 / 레전더리 보장)
 func _build_pity_bar() -> void:
 	pity_bar = Panel.new()
-	LaneUI.dress(pity_bar, "panel_paper")
+	LaneUI.dress(pity_bar, "panel_wood")
 	pity_bar.position = Vector2(20, 92)
-	pity_bar.size = Vector2(680, 50)
+	pity_bar.size = Vector2(680, 56)
 	add_child(pity_bar)
-	pity_u_label = LaneUI.label("", 18, Color(0.4, 0.2, 0.55), HORIZONTAL_ALIGNMENT_CENTER, false)
-	pity_u_label.position = Vector2(10, 12)
+	pity_u_label = LaneUI.label("", 18, LaneUnits.tier_color(2).lightened(0.45), HORIZONTAL_ALIGNMENT_CENTER, true)
+	pity_u_label.position = Vector2(10, 15)
 	pity_u_label.size = Vector2(330, 26)
 	pity_bar.add_child(pity_u_label)
-	pity_l_label = LaneUI.label("", 18, Color(0.65, 0.42, 0.08), HORIZONTAL_ALIGNMENT_CENTER, false)
-	pity_l_label.position = Vector2(340, 12)
+	pity_l_label = LaneUI.label("", 18, LaneUnits.tier_color(3).lightened(0.3), HORIZONTAL_ALIGNMENT_CENTER, true)
+	pity_l_label.position = Vector2(340, 15)
 	pity_l_label.size = Vector2(330, 26)
 	pity_bar.add_child(pity_l_label)
 
