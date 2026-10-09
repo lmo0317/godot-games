@@ -402,6 +402,7 @@ func _run() -> void:
 	# Merging copies raises the star tier
 	var army3 := LaneUnits.load_army()
 	army3["owned"]["knight"] = {"tier": 0, "copies": 3}
+	army3["gems"] = 1000 # merges cost gems since 2026-10-09
 	LaneUnits.save_army(army3)
 	_expect(LaneUnits.can_merge("knight") and LaneUnits.merge("knight") == 1, "1 copy merges a 노멀 knight into 레어")
 	_expect(LaneUnits.merge("knight") == 2 and LaneUnits.load_army()["owned"]["knight"]["copies"] == 0, "2 more copies make it 유니크")
@@ -409,6 +410,7 @@ func _run() -> void:
 	_expect(is_equal_approx(LaneUnits.stats("knight", 2)["atk"], LaneUnits.UNITS["knight"]["atk"] * 1.5), "유니크 knight hits 50% harder")
 	army3 = LaneUnits.load_army()
 	army3["owned"]["archer"] = {"tier": 0, "copies": 1}
+	army3["gems"] = 1000
 	LaneUnits.save_army(army3)
 	main.lane_deck.selected = "archer"
 	main.lane_deck.refresh()
@@ -429,6 +431,57 @@ func _run() -> void:
 	_expect(LaneUnits.deck().any(func(k): return k != ""), "the deck never goes empty")
 	main.lane_deck.close()
 	main.lane_select.visible = false
+
+	# Pity, universal shards and bulk merge (2026-10-09 재설계)
+	LaneUnits.save_army(LaneUnits.default_army())
+	var army4 := LaneUnits.load_army()
+	_expect(army4.has("pulls_since_unique") and army4.has("pulls_since_legendary") and army4.has("universal_shards") and army4.has("auto_flip"), "new army fields exist")
+	# Soft pity: force 20 pulls_since_unique, then a 10-pull must include a 유니크+
+	army4["gems"] = 100000
+	army4["pulls_since_unique"] = LaneUnits.PITY_UNIQUE
+	LaneUnits.save_army(army4)
+	var rng3 := RandomNumberGenerator.new()
+	rng3.seed = 42
+	var pres: Array = LaneUnits.pull(10, rng3)
+	_expect(pres.any(func(r): return LaneUnits.UNITS[r["kind"]]["tier"] >= 2), "pity: next 10 pulls include a 유니크+")
+	_expect(LaneUnits.load_army()["pulls_since_unique"] <= LaneUnits.PITY_UNIQUE, "pity counter does not go up without need")
+	# Shard: a 전설 duplicate gives a universal shard, not gems
+	var army5 := LaneUnits.load_army()
+	army5["owned"]["dragon"] = {"tier": LaneUnits.MAX_TIER, "copies": 0}
+	army5["universal_shards"] = 0
+	LaneUnits.save_army(army5)
+	var res_shard: Dictionary = LaneUnits.add_unit(army5, "dragon")
+	_expect(int(res_shard.get("shard", 0)) == 1 and int(army5["universal_shards"]) == 1, "전설 중복 → 💎 파편 +1 (not gems)")
+	# Shard spend: converts to a copy of any owned soldier not at max
+	army5["owned"]["knight"] = {"tier": 0, "copies": 0}
+	LaneUnits.save_army(army5)
+	_expect(LaneUnits.spend_shard("knight") and LaneUnits.load_army()["owned"]["knight"]["copies"] == 1 and LaneUnits.load_army()["universal_shards"] == 0, "spend_shard: +1 copy, -1 shard")
+	# Gem cost: without gems, merge/can_merge fail
+	var army6 := LaneUnits.load_army()
+	army6["owned"]["knight"] = {"tier": 0, "copies": 1}
+	army6["gems"] = 0
+	LaneUnits.save_army(army6)
+	_expect(LaneUnits.has_copies("knight") and not LaneUnits.can_merge("knight"), "no gems: can_merge false (but copies ready)")
+	_expect(LaneUnits.merge("knight") == -1, "no gems: merge refuses")
+	army6["gems"] = 50
+	LaneUnits.save_army(army6)
+	_expect(LaneUnits.can_merge("knight") and LaneUnits.merge("knight") == 1 and LaneUnits.load_army()["gems"] == 0, "gems + copies: merge spends both")
+	# Bulk / max chain stops where resources run out
+	var army7 := LaneUnits.load_army()
+	army7["owned"]["knight"] = {"tier": 0, "copies": 10}
+	army7["gems"] = 50 + 150  # covers 노멀→레어 and 레어→유니크; stops before 유니크→레전더리
+	LaneUnits.save_army(army7)
+	# Open the deck for the detail bulk button
+	main.lane_deck.open()
+	main.lane_deck.selected = "knight"
+	main.lane_deck._show_info(LaneUnits.load_army())
+	main.lane_deck._on_bulk_merge()
+	_expect(LaneUnits.tier_of("knight") == 2, "bulk merge chains to 유니크 (2) and stops when gems run out: %d" % LaneUnits.tier_of("knight"))
+	# Auto-flip toggle saves
+	LaneUnits.set_auto_flip(true)
+	_expect(bool(LaneUnits.load_army()["auto_flip"]), "auto_flip saved")
+	LaneUnits.set_auto_flip(false)
+	main.lane_deck.close()
 
 	# The home lobby: tabs open the gacha and the soldiers screen and come back home, gems on top
 	main._open_home_screen()

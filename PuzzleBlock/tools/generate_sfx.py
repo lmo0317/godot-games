@@ -315,6 +315,21 @@ def gacha_sounds():
     x = noise_lp(0.09, 0.15, 0.6, 25)
     mix(x, sweep(1800, 2600, 0.02, 90), at=0.07, gain=0.4)
     write("g_flip", x)
+    # Promote: lucky-roll step up — a quick riser into a bright bell + flash click
+    x = riser(0.25)
+    mix(x, bell(note("G6"), 0.6), at=0.22, gain=0.6)
+    mix(x, sweep(2400, 1200, 0.03, 60), at=0.22, gain=0.35)
+    write("g_promote", reverb(x, 0.25))
+    # Fuse chain: three climbing bells for a chain merge ("띵-띵-띵")
+    x = []
+    for k, name in enumerate(["C5", "E5", "G5"]):
+        mix(x, bell(note(name), 0.5), at=0.08 * k, gain=0.6)
+    mix(x, bell(note("C6"), 0.7), at=0.3, gain=0.5)
+    write("g_fuse_chain", reverb(x, 0.28))
+    # Shard: a short gentle twinkle for a universal shard
+    x = bell(note("E6"), 0.4)
+    mix(x, bell(note("B6"), 0.35), at=0.06, gain=0.5)
+    write("g_shard", reverb(x, 0.3))
 
 
 if __name__ == "__main__":

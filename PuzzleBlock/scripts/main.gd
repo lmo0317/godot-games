@@ -257,6 +257,7 @@ func _ready() -> void:
 		_update_home_profile_ui())
 	# "합성하러 가기" after a pull opens the soldiers screen
 	lane_gacha.deck_requested.connect(func(): lane_deck.open())
+	lane_gacha.deck_requested_kind.connect(func(k): lane_deck.open_with(k))
 	# Stage results sit over the battle and lead back to the base
 	lane_result = LaneResult.new()
 	$UI.add_child(lane_result)

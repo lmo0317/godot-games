@@ -17,6 +17,7 @@ extends Control
 
 signal closed
 signal deck_requested
+signal deck_requested_kind(kind: String)
 
 const PACK_AT: Vector2 = Vector2(360, 430)
 const PACK_K: float = 4.0
@@ -29,6 +30,10 @@ const SUM_CARD: Vector2 = Vector2(110, 150)
 
 var rng := RandomNumberGenerator.new()
 var gem_bar: Panel
+var pity_bar: Panel
+var pity_u_label: Label
+var pity_l_label: Label
+var auto_flip_btn: Button
 var note: Label
 var pull1: Button
 var pull10: Button
@@ -58,6 +63,12 @@ var _flip_all: Button
 var _sum_ok: Button
 var _sum_deck: Button
 var _again: Button
+# Summary bar at the top of the result screen (3 counters) + mini-thumbnail strip for mergeables
+var _sum_bar: Control
+var _sum_new: Label
+var _sum_merge_count: Label
+var _sum_shard: Label
+var _sum_strip: HBoxContainer
 
 # The big show for a rare card
 var _show: Control
@@ -82,6 +93,7 @@ func _ready() -> void:
 	var title := LaneUI.ribbon("병사 뽑기", 400, 32)
 	title.position = Vector2(160, 92)
 	add_child(title)
+	_build_pity_bar()
 
 	_stage = Node2D.new()
 	add_child(_stage)
@@ -147,6 +159,56 @@ func _ready() -> void:
 	_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_flash)
+
+# Pity bar + auto-flip toggle, between the title and the pack
+func _build_pity_bar() -> void:
+	pity_bar = Panel.new()
+	LaneUI.dress(pity_bar, "panel_wood")
+	pity_bar.position = Vector2(20, 164)
+	pity_bar.size = Vector2(680, 72)
+	add_child(pity_bar)
+	pity_u_label = LaneUI.label("", 17, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	pity_u_label.position = Vector2(12, 10)
+	pity_u_label.size = Vector2(320, 24)
+	pity_bar.add_child(pity_u_label)
+	pity_l_label = LaneUI.label("", 17, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	pity_l_label.position = Vector2(12, 38)
+	pity_l_label.size = Vector2(320, 24)
+	pity_bar.add_child(pity_l_label)
+	auto_flip_btn = Button.new()
+	LaneUI.button(auto_flip_btn, "blue", 17)
+	auto_flip_btn.position = Vector2(354, 10)
+	auto_flip_btn.size = Vector2(312, 52)
+	auto_flip_btn.pressed.connect(_toggle_auto_flip)
+	pity_bar.add_child(auto_flip_btn)
+
+func _toggle_auto_flip() -> void:
+	SoundManager.play_click()
+	var army := LaneUnits.load_army()
+	var on: bool = not bool(army.get("auto_flip", false))
+	LaneUnits.set_auto_flip(on)
+	_refresh_pity()
+
+func _refresh_pity() -> void:
+	var army := LaneUnits.load_army()
+	var since_u: int = int(army.get("pulls_since_unique", 0))
+	var since_l: int = int(army.get("pulls_since_legendary", 0))
+	var left_u: int = maxi(0, LaneUnits.PITY_UNIQUE - since_u)
+	var left_l: int = maxi(0, LaneUnits.PITY_LEGENDARY - since_l)
+	if left_u == 0:
+		pity_u_label.text = "유니크 이상 10연 보장!"
+		pity_u_label.add_theme_color_override("font_color", LaneUI.GOLD)
+	else:
+		pity_u_label.text = "유니크 보장까지 %d뽑" % left_u
+		pity_u_label.add_theme_color_override("font_color", LaneUI.TEXT)
+	if left_l == 0:
+		pity_l_label.text = "레전더리 10연 보장!"
+		pity_l_label.add_theme_color_override("font_color", Color(1.0, 0.56, 0.1))
+	else:
+		pity_l_label.text = "레전더리 보장까지 %d뽑" % left_l
+		pity_l_label.add_theme_color_override("font_color", LaneUI.GOLD)
+	var on: bool = bool(army.get("auto_flip", false))
+	auto_flip_btn.text = ("빠르게 열기  켬" if on else "빠르게 열기  끔") + "\n(10장 한 번에 뒤집기)"
 
 func _sprite(name: String, at: Vector2, k: float, parent: Node = null) -> Sprite2D:
 	var s := Sprite2D.new()
@@ -214,6 +276,7 @@ func _refresh() -> void:
 	back.disabled = _busy
 	if _again:
 		_again.disabled = gems < (LaneUnits.PULL10_COST if _results.size() >= 10 else LaneUnits.PULL_COST)
+	_refresh_pity()
 
 func _reset_pack() -> void:
 	_pack_open = false
@@ -278,31 +341,43 @@ func pull(count: int) -> Array:
 	_charge_pack()
 	return results
 
-# The aura tells the best card inside, sometimes one step low first and then turning up
+# Lucky-roll "ladder": the aura climbs white → blue → purple → gold and stops at the best tier
+# inside, with a 50% fakeout where it hesitates one step below first (docs/GACHA_RESEARCH.md 럭키 롤)
 func _charge_pack() -> void:
 	var best := _best_rarity()
-	var start := best
-	if best == 3 and rng.randf() < 0.6:
-		start = 2
-	elif best == 2 and rng.randf() < 0.5:
-		start = 1
-	elif best >= 1 and rng.randf() < 0.3:
-		start = 0
 	SoundManager.play_battle("g_charge", -6.0)
-	_aura.modulate = Color(LIGHT[start], 0.0)
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(_aura, "modulate:a", 0.85 if start > 0 else 0.4, 0.5)
-	tw.tween_property(_rays, "modulate", Color(LIGHT[start], 0.4), 0.5)
 	_pack_hint.text = "팩을 옆으로 쓸어서 열어요"
-	if start != best:
-		get_tree().create_timer(0.9).timeout.connect(func():
+	_aura.modulate = Color(LIGHT[0], 0.0)
+	_rays.modulate = Color(LIGHT[0], 0.4)
+	var fakeout: bool = best >= 1 and rng.randf() < 0.5
+	# Climb one step every ~0.35 s, pausing a touch at the fakeout tier
+	var step_dur: float = 0.35
+	var at: float = 0.0
+	for step in range(best + 1):
+		var col: Color = LIGHT[step]
+		var dur: float = step_dur
+		if fakeout and step == best - 1:
+			dur = step_dur + 0.55 # hesitate below
+		var t := create_tween().set_parallel(true)
+		t.tween_interval(at)
+		t.chain().tween_callback(func():
+			if _busy and not _pack_open:
+				SoundManager.play_battle("g_promote", -5.0)
+				_flash_screen(0.35 + 0.15 * step, 0.22, col))
+		t.chain().tween_property(_aura, "modulate", Color(col, 0.5 + 0.15 * step), 0.18)
+		t.tween_property(_rays, "modulate", Color(col, 0.3 + 0.08 * step), 0.18)
+		at += dur
+	if best >= 1:
+		# Final pound at the best tier
+		get_tree().create_timer(at).timeout.connect(func():
 			if not _busy or _pack_open:
 				return
 			SoundManager.play_battle("g_shift", -3.0)
-			_flash_screen(0.55, 0.3, LIGHT[best])
+			_flash_screen(0.75, 0.35, LIGHT[best])
+			_shake(_stage, 6.0 + 4.0 * best, 0.3)
 			var t2 := create_tween().set_parallel(true)
-			t2.tween_property(_aura, "modulate", Color(LIGHT[best], 0.95), 0.15)
-			t2.tween_property(_rays, "modulate", Color(LIGHT[best], 0.45), 0.15))
+			t2.tween_property(_aura, "modulate", Color(LIGHT[best], 0.95), 0.12)
+			t2.tween_property(_rays, "modulate", Color(LIGHT[best], 0.5), 0.12))
 
 func _on_pack_input(ev: InputEvent) -> void:
 	if not _busy or _pack_open:
@@ -364,6 +439,7 @@ func _build_table() -> void:
 	var ttl := LaneUI.ribbon("뽑기 결과", 400, 32)
 	ttl.position = Vector2(160, 92)
 	_table.add_child(ttl)
+	_build_sum_bar()
 	_table_line = LaneUI.label("", 24, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	_table_line.position = Vector2(0, 740)
 	_table_line.size = Vector2(720, 34)
@@ -407,6 +483,75 @@ func _build_table() -> void:
 		deck_requested.emit())
 	_table.add_child(_sum_deck)
 
+func _build_sum_bar() -> void:
+	_sum_bar = Control.new()
+	_sum_bar.position = Vector2(20, 164)
+	_sum_bar.size = Vector2(680, 148)
+	_sum_bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	_sum_bar.visible = false
+	_table.add_child(_sum_bar)
+	var bar := Panel.new()
+	LaneUI.dress(bar, "panel_wood")
+	bar.size = Vector2(680, 76)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sum_bar.add_child(bar)
+	# Three cells: 🆕 new / ⬆ mergeable / 💎 shards
+	var cell_w: float = 680.0 / 3.0
+	_sum_new = LaneUI.label("", 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	_sum_new.position = Vector2(0, 20)
+	_sum_new.size = Vector2(cell_w, 40)
+	bar.add_child(_sum_new)
+	_sum_merge_count = LaneUI.label("", 20, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_sum_merge_count.position = Vector2(cell_w, 20)
+	_sum_merge_count.size = Vector2(cell_w, 40)
+	bar.add_child(_sum_merge_count)
+	_sum_shard = LaneUI.label("", 20, Color(0.7, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	_sum_shard.position = Vector2(cell_w * 2, 20)
+	_sum_shard.size = Vector2(cell_w, 40)
+	bar.add_child(_sum_shard)
+	# Mini-thumbnail horizontal strip under the bar: 4 fit, drag/scroll for more
+	var strip_wrap := ScrollContainer.new()
+	strip_wrap.position = Vector2(0, 82)
+	strip_wrap.size = Vector2(680, 66)
+	strip_wrap.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	strip_wrap.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	strip_wrap.mouse_filter = Control.MOUSE_FILTER_PASS
+	_sum_bar.add_child(strip_wrap)
+	_sum_strip = HBoxContainer.new()
+	_sum_strip.add_theme_constant_override("separation", 8)
+	strip_wrap.add_child(_sum_strip)
+
+func _fill_sum_strip(merge_kinds: Array) -> void:
+	for c in _sum_strip.get_children():
+		c.queue_free()
+	for k in merge_kinds:
+		var u: Dictionary = LaneUnits.UNITS[k]
+		var army := LaneUnits.load_army()
+		var tier: int = int(army["owned"][k]["tier"]) if army["owned"].has(k) else int(u["tier"])
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.custom_minimum_size = Vector2(60, 60)
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		var card := LaneTierCard.new(tier, Vector2(60, 60))
+		btn.add_child(card)
+		var tex: Texture2D = load("res://assets/art/lane/%s.png" % k)
+		var art := TextureRect.new()
+		art.texture = tex
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.size = Vector2(50, 50)
+		art.position = Vector2(5, 5)
+		card.add_child(art)
+		btn.pressed.connect(func():
+			SoundManager.play_click()
+			_finish_table()
+			visible = false
+			deck_requested_kind.emit(k))
+		_sum_strip.add_child(btn)
+
 func _finish_table() -> void:
 	_table.visible = false
 	_busy = false
@@ -425,7 +570,20 @@ func _deal_cards() -> void:
 	_sum_ok.visible = false
 	_again.visible = false
 	_sum_deck.visible = false
+	if _sum_bar != null:
+		_sum_bar.visible = false
+	# Put the best-rarity card at the last position (so the manual-flip climax is biggest).
+	# For a 1-pull nothing changes. The _results array is reordered too so the big show runs last
 	var n: int = _results.size()
+	if n > 1:
+		var best_i: int = 0
+		for i in range(1, n):
+			if int(LaneUnits.UNITS[_results[i]["kind"]]["tier"]) > int(LaneUnits.UNITS[_results[best_i]["kind"]]["tier"]):
+				best_i = i
+		if best_i != n - 1:
+			var tmp = _results[n - 1]
+			_results[n - 1] = _results[best_i]
+			_results[best_i] = tmp
 	var sz: Vector2 = CARD_10 if n > 1 else CARD_1
 	for i in range(n):
 		var at: Vector2
@@ -445,6 +603,9 @@ func _deal_cards() -> void:
 		tw.tween_property(card, "position", at, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		tw.tween_property(card, "scale", Vector2.ONE, 0.3)
 		tw.tween_property(card, "modulate:a", 1.0, 0.15)
+	# Auto flip: hands the player the result quickly, with the big show only for the best tier
+	if bool(LaneUnits.load_army().get("auto_flip", false)) and n > 1:
+		get_tree().create_timer(0.3 + 0.06 * n).timeout.connect(flip_all)
 
 # A face-down card that glows in its rarity's colour; tap to flip
 func _card_back(res: Dictionary, sz: Vector2) -> Control:
@@ -506,6 +667,8 @@ func flip(entry: Dictionary, quiet: bool = false) -> void:
 			SoundManager.play_battle("g_reveal_%d" % mini(rarity, 1), -8.0 if rarity == 0 else -5.0)
 			if res["new"] and rarity < 2:
 				SoundManager.play_battle("g_new", -8.0)
+			if int(res.get("shard", 0)) > 0:
+				SoundManager.play_battle("g_shard", -5.0)
 		if rarity >= 1:
 			front.burst())
 	tw.tween_property(holder, "scale", Vector2(1.1, 1.1), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -529,21 +692,31 @@ func _check_done() -> void:
 	if _cards.any(func(c): return not c["open"]) or _show.visible:
 		return
 	var fresh := 0
-	var merge: Array = []
+	var shards := 0
+	var merge_kinds: Array = []
+	var army: Dictionary = LaneUnits.load_army()
 	for r in _results:
 		if r["new"]:
 			fresh += 1
-		var nm: String = LaneUnits.UNITS[r["kind"]]["name"]
-		if LaneUnits.can_merge(r["kind"]) and not merge.has(nm):
-			merge.append(nm)
-	_table_line.text = "새 병사 %d명 · 복제 %d개" % [fresh, _results.size() - fresh]
-	_table_merge.text = ("합성할 수 있어요: " + ", ".join(merge)) if not merge.is_empty() else ""
+		shards += int(r.get("shard", 0))
+		var k: String = r["kind"]
+		if LaneUnits.has_copies(k, army) and not merge_kinds.has(k):
+			merge_kinds.append(k)
+	_sum_new.text = "🆕 새 %d" % fresh
+	_sum_merge_count.text = "⬆ 합성 가능 %d" % merge_kinds.size()
+	_sum_shard.text = "💎 파편 %d" % shards
+	_sum_bar.visible = true
+	_fill_sum_strip(merge_kinds)
+	_table_line.text = "새 병사 %d명 · 복제 %d개" % [fresh, _results.size() - fresh - shards]
+	var mnames: Array = merge_kinds.map(func(k): return LaneUnits.UNITS[k]["name"])
+	_table_merge.text = ("합성할 수 있어요: " + ", ".join(mnames)) if not mnames.is_empty() else ""
 	LaneUI.set_gem_bar(_table.get_node("Gems"))
 	_flip_all.visible = false
 	_sum_ok.visible = true
 	_again.visible = true
 	_again.text = "다시 %d회" % _results.size()
-	_sum_deck.visible = not merge.is_empty()
+	_sum_deck.visible = not merge_kinds.is_empty()
+	_sum_deck.text = "합성하러 가기"
 	var buttons: Array = [_sum_ok, _again] + ([_sum_deck] if _sum_deck.visible else [])
 	var w: float = 210.0 * buttons.size() + 16.0 * (buttons.size() - 1)
 	for i in range(buttons.size()):
@@ -575,7 +748,7 @@ func _card(res: Dictionary, sz: Vector2 = SUM_CARD) -> LaneTierCard:
 	n.position = Vector2(0, sz.y * 0.67)
 	n.size = Vector2(sz.x, 24)
 	c.add_child(n)
-	var tag_text: String = "NEW!" if res["new"] else ("+%d 보석" % res["refund"] if res["refund"] > 0 else _copies_short(int(res["copies"]), t))
+	var tag_text: String = "NEW!" if res["new"] else ("💎 파편 +1" if int(res.get("shard", 0)) > 0 else _copies_short(int(res["copies"]), t))
 	var ready: bool = not res["new"] and LaneUnits.merge_need(t) > 0 and int(res["copies"]) >= LaneUnits.merge_need(t)
 	var tag := LaneUI.label(tag_text, 15, LaneUI.GOLD if res["new"] or ready else Color(0.7, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	tag.position = Vector2(0, sz.y - 30)
@@ -677,7 +850,7 @@ func _big_show(res: Dictionary) -> void:
 		tag = LaneUI.ribbon("NEW!", 220, 30)
 		tag.position = Vector2(250, 790)
 	else:
-		tag = LaneUI.label("+%d 보석" % res["refund"] if res["refund"] > 0 else _copies_text(int(res["copies"]), tier), 26, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		tag = LaneUI.label("💎 파편 +1" if int(res.get("shard", 0)) > 0 else _copies_text(int(res["copies"]), tier), 26, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 		tag.position = Vector2(0, 796)
 		tag.size = Vector2(720, 40)
 	tag.pivot_offset = tag.size * 0.5

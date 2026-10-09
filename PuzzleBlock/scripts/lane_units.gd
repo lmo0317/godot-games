@@ -23,7 +23,13 @@ const TIER_COLOR: Array[Color] = [
 ]
 const MAX_TIER: int = 5
 const MERGE_COST: Array[int] = [1, 2, 3, 4, 5]   # copies to go from tier i to i + 1
+# Gems also go with the copies, so the player picks who to raise (2026-10-09)
+const MERGE_GEMS: Array[int] = [50, 150, 400, 800, 1500]
 const TIER_BONUS: float = 0.25                  # +25% HP and attack per tier above the base
+# Soft pity: 20 pulls with no 유니크+ → the next 10-pull guarantees one. Hard pity: 90 pulls with no
+# 레전더리 → the next 10-pull guarantees one (docs/GACHA_RESEARCH.md 피티)
+const PITY_UNIQUE: int = 20
+const PITY_LEGENDARY: int = 90
 # The gacha picks a base tier first, then a soldier of that tier
 # (16 soldiers since 2026-10-08: 6 노멀, 6 레어, 3 유니크, 1 레전더리)
 const BASE_RATE: Dictionary = {0: 0.60, 1: 0.30, 2: 0.085, 3: 0.015}
@@ -107,7 +113,8 @@ static func _fresh(kind: String) -> Dictionary:
 	return {"tier": int(UNITS[kind]["tier"]), "copies": 0}
 
 static func default_army() -> Dictionary:
-	return {"gems": START_GEMS, "owned": {"knight": _fresh("knight"), "archer": _fresh("archer")}, "deck": ["knight", "archer", "", ""]}
+	return {"gems": START_GEMS, "owned": {"knight": _fresh("knight"), "archer": _fresh("archer")}, "deck": ["knight", "archer", "", ""],
+		"pulls_since_unique": 0, "pulls_since_legendary": 0, "universal_shards": 0, "auto_flip": false}
 
 static func load_army() -> Dictionary:
 	var army := default_army()
@@ -136,6 +143,11 @@ static func load_army() -> Dictionary:
 			deck.append(str(k) if army["owned"].has(str(k)) and not deck.has(str(k)) else "")
 		deck.resize(DECK_SIZE)
 		army["deck"] = deck.map(func(k): return "" if k == null else k)
+	# 2026-10-09 new fields: default to 0 / false when the save is older
+	army["pulls_since_unique"] = maxi(0, int(data.get("pulls_since_unique", 0)))
+	army["pulls_since_legendary"] = maxi(0, int(data.get("pulls_since_legendary", 0)))
+	army["universal_shards"] = maxi(0, int(data.get("universal_shards", 0)))
+	army["auto_flip"] = bool(data.get("auto_flip", false))
 	# Older saves started with the knight only: hand them the starters too
 	for k in STARTERS:
 		if not army["owned"].has(k):
@@ -159,9 +171,10 @@ static func tier_of(kind: String) -> int:
 	return int(o["tier"]) if o is Dictionary else int(UNITS[kind]["tier"])
 
 # Adds a soldier: new -> its base tier (and into an empty deck slot), owned -> one more copy to merge,
-# already 전설 -> gems back. Returns {"kind", "new", "tier", "copies", "refund"}
+# already 전설 -> a universal shard (2026-10-09, used to be gems).
+# Returns {"kind", "new", "tier", "copies", "shard"}
 static func add_unit(army: Dictionary, kind: String) -> Dictionary:
-	var res := {"kind": kind, "new": false, "tier": int(UNITS[kind]["tier"]), "copies": 0, "refund": 0}
+	var res := {"kind": kind, "new": false, "tier": int(UNITS[kind]["tier"]), "copies": 0, "shard": 0, "refund": 0}
 	if not army["owned"].has(kind):
 		army["owned"][kind] = _fresh(kind)
 		res["new"] = true
@@ -171,8 +184,8 @@ static func add_unit(army: Dictionary, kind: String) -> Dictionary:
 	elif int(army["owned"][kind]["tier"]) < MAX_TIER:
 		army["owned"][kind]["copies"] = int(army["owned"][kind]["copies"]) + 1
 	else:
-		army["gems"] += MAXED_REFUND
-		res["refund"] = MAXED_REFUND
+		army["universal_shards"] = int(army.get("universal_shards", 0)) + 1
+		res["shard"] = 1
 	res["tier"] = int(army["owned"][kind]["tier"])
 	res["copies"] = int(army["owned"][kind]["copies"])
 	return res
@@ -181,20 +194,60 @@ static func add_unit(army: Dictionary, kind: String) -> Dictionary:
 static func merge_need(tier: int) -> int:
 	return MERGE_COST[tier] if tier < MAX_TIER else 0
 
-static func can_merge(kind: String) -> bool:
-	var o = load_army()["owned"].get(kind)
+# Gems needed for the next tier (0 at 전설)
+static func merge_gems(tier: int) -> int:
+	return MERGE_GEMS[tier] if tier < MAX_TIER else 0
+
+static func can_merge(kind: String, army: Dictionary = {}) -> bool:
+	if army.is_empty():
+		army = load_army()
+	var o = army["owned"].get(kind)
+	if not (o is Dictionary) or int(o["tier"]) >= MAX_TIER:
+		return false
+	var t: int = int(o["tier"])
+	return int(o["copies"]) >= merge_need(t) and int(army.get("gems", 0)) >= merge_gems(t)
+
+# Copies-only check (used by the gacha "can merge" callout and the result summary)
+static func has_copies(kind: String, army: Dictionary = {}) -> bool:
+	if army.is_empty():
+		army = load_army()
+	var o = army["owned"].get(kind)
 	return o is Dictionary and int(o["tier"]) < MAX_TIER and int(o["copies"]) >= merge_need(int(o["tier"]))
 
-# Merges copies into the next tier; returns the new tier (-1 when not possible)
+# Merges copies + gems into the next tier; returns the new tier (-1 when not possible)
 static func merge(kind: String) -> int:
 	var army := load_army()
 	var o = army["owned"].get(kind)
-	if not o is Dictionary or int(o["tier"]) >= MAX_TIER or int(o["copies"]) < merge_need(int(o["tier"])):
+	if not (o is Dictionary) or int(o["tier"]) >= MAX_TIER:
 		return -1
-	o["copies"] = int(o["copies"]) - merge_need(int(o["tier"]))
-	o["tier"] = int(o["tier"]) + 1
+	var t: int = int(o["tier"])
+	if int(o["copies"]) < merge_need(t) or int(army.get("gems", 0)) < merge_gems(t):
+		return -1
+	o["copies"] = int(o["copies"]) - merge_need(t)
+	army["gems"] = int(army["gems"]) - merge_gems(t)
+	o["tier"] = t + 1
 	save_army(army)
 	return int(o["tier"])
+
+# Spend a universal shard for one copy of any soldier (even 전설, since copies cap at 0 then);
+# returns true on success
+static func spend_shard(kind: String) -> bool:
+	var army := load_army()
+	if int(army.get("universal_shards", 0)) <= 0 or not army["owned"].has(kind):
+		return false
+	var o: Dictionary = army["owned"][kind]
+	if int(o["tier"]) >= MAX_TIER:
+		return false
+	army["universal_shards"] = int(army["universal_shards"]) - 1
+	o["copies"] = int(o["copies"]) + 1
+	save_army(army)
+	return true
+
+# Setter used by UI (auto_flip toggle)
+static func set_auto_flip(on: bool) -> void:
+	var army := load_army()
+	army["auto_flip"] = on
+	save_army(army)
 
 # ---------------------------------------------------------------------------
 # Gacha
@@ -214,18 +267,40 @@ static func roll_kind(rng: RandomNumberGenerator, min_tier: int = 0) -> String:
 	return pool[rng.randi() % pool.size()]
 
 # Spends gems and returns the results (empty when there are not enough gems). Ten pulls promise at
-# least one 레어 or better
+# least one 레어 or better. Pity: 20 pulls without 유니크+ → next 10-pull has 유니크+. 90 pulls without
+# 레전더리 → next 10-pull has 레전더리 (docs/GACHA_RESEARCH.md 피티)
 static func pull(count: int, rng: RandomNumberGenerator) -> Array:
 	var army := load_army()
 	var cost: int = PULL10_COST if count >= 10 else PULL_COST * count
 	if army["gems"] < cost:
 		return []
 	army["gems"] -= cost
+	var pity_u: bool = count >= 10 and int(army.get("pulls_since_unique", 0)) >= PITY_UNIQUE
+	var pity_l: bool = count >= 10 and int(army.get("pulls_since_legendary", 0)) >= PITY_LEGENDARY
 	var kinds: Array = []
 	for i in range(count):
 		kinds.append(roll_kind(rng))
 	if count >= 10 and kinds.all(func(k): return UNITS[k]["tier"] == 0):
 		kinds[rng.randi() % count] = roll_kind(rng, 1)
+	if pity_u and not kinds.any(func(k): return UNITS[k]["tier"] >= 2):
+		kinds[rng.randi() % count] = roll_kind(rng, 2)
+	if pity_l and not kinds.any(func(k): return UNITS[k]["tier"] >= 3):
+		kinds[rng.randi() % count] = roll_kind(rng, 3)
+	# Update pity counters per card (reset when 유니크+ / 레전더리 shows)
+	var since_u: int = int(army.get("pulls_since_unique", 0))
+	var since_l: int = int(army.get("pulls_since_legendary", 0))
+	for k in kinds:
+		var t: int = int(UNITS[k]["tier"])
+		if t >= 2:
+			since_u = 0
+		else:
+			since_u += 1
+		if t >= 3:
+			since_l = 0
+		else:
+			since_l += 1
+	army["pulls_since_unique"] = since_u
+	army["pulls_since_legendary"] = since_l
 	var results: Array = []
 	for k in kinds:
 		results.append(add_unit(army, k))

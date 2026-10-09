@@ -27,6 +27,10 @@ var _shine: ColorRect
 var _clock: float = 0.0
 var _next_shine: float = 0.6
 var _next_spark: float = 0.2
+# 2026-10-09: gold "mergeable" halo + "⬆" ribbon in the corner (docs/LANE_UNITS.md 합성 가능 리본)
+var _merge_glow: ColorRect
+var _merge_ribbon: Label
+var mergeable: bool = false
 
 func _init(t: int = 0, sz: Vector2 = Vector2(120, 140), fscale: float = -1.0) -> void:
 	tier = t
@@ -64,6 +68,36 @@ func _ready() -> void:
 	_shine.visible = false
 	_fx.add_child(_shine)
 
+# Call after _ready: a gold border halo breathes (1.2 s) and a "⬆" ribbon sits in the corner
+func set_mergeable(on: bool) -> void:
+	mergeable = on
+	if _fx == null:
+		# Not ready yet; wait a frame and retry
+		if is_inside_tree():
+			call_deferred("set_mergeable", on)
+		return
+	if on and _merge_glow == null:
+		_merge_glow = ColorRect.new()
+		_merge_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_merge_glow.color = Color(1, 0.84, 0.32, 0.0)
+		_merge_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_fx.add_child(_merge_glow)
+		_merge_ribbon = Label.new()
+		_merge_ribbon.text = "⬆"
+		_merge_ribbon.add_theme_font_override("font", UIKit.FONT)
+		_merge_ribbon.add_theme_font_size_override("font_size", 20)
+		_merge_ribbon.add_theme_color_override("font_color", Color(1, 0.95, 0.5))
+		_merge_ribbon.add_theme_color_override("font_outline_color", Color(0.4, 0.2, 0.0))
+		_merge_ribbon.add_theme_constant_override("outline_size", 6)
+		_merge_ribbon.position = Vector2(size.x - 24, 2)
+		_merge_ribbon.size = Vector2(22, 26)
+		_merge_ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_fx.add_child(_merge_ribbon)
+	if _merge_glow != null:
+		_merge_glow.visible = on
+	if _merge_ribbon != null:
+		_merge_ribbon.visible = on
+
 func set_tier(t: int) -> void:
 	tier = clampi(t, 0, LaneUnits.MAX_TIER)
 	var col: Color = LaneUnits.tier_color(tier)
@@ -98,6 +132,9 @@ func _process(delta: float) -> void:
 		if _next_spark <= 0.0:
 			_next_spark = 0.5 - 0.08 * (tier - 3)
 			_sparkle()
+	if mergeable and _merge_glow != null:
+		var p: float = 0.5 + 0.5 * sin(_clock * (TAU / 1.2))
+		_merge_glow.color = Color(1.0, 0.86, 0.32, 0.18 + 0.22 * p)
 	if tier >= 4:
 		var col: Color = LaneUnits.tier_color(tier)
 		if tier >= 5:
