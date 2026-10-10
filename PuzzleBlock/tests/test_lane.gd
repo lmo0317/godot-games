@@ -336,14 +336,14 @@ func _run() -> void:
 	# 영웅은 성 쪽 캐스터: role=caster, 자동 공격 없음, 전진 없음, 성 x좌표 고정
 	_expect(b.hero_unit.get("role", "") == "caster", "영웅 role=caster")
 	_expect(b.hero_unit["atk"] == 0.0 and b.hero_unit["speed"] == 0.0, "영웅은 자동 공격·전진 안 함")
-	_expect(absf(b.hero_unit["node"].position.x - (LaneBattle.CASTLE_X + 60.0)) < 1.0, "영웅은 성 옆 x좌표에 고정 (%.1f)" % b.hero_unit["node"].position.x)
+	_expect(absf(b.hero_unit["node"].position.x - (LaneBattle.CASTLE_X + 44.0)) < 1.0, "영웅은 성 옆 x좌표에 고정 (%.1f)" % b.hero_unit["node"].position.x)
 	# 전진 금지 확인: 적을 멀리 두고 1프레임 돌려도 x가 안 움직여야 함
 	var hero_x0: float = b.hero_unit["node"].position.x
 	await get_tree().create_timer(0.3).timeout
 	_expect(absf(b.hero_unit["node"].position.x - hero_x0) < 1.0, "영웅이 전진하지 않음 (%.1f → %.1f)" % [hero_x0, b.hero_unit["node"].position.x])
-	# 영웅 렌더 높이: 쫄몹의 2배 근처 (104px 목표, 90~130 허용)
+	# 영웅 렌더 높이: 쫄몹의 1.5배 근처 (78px 목표, 65~95 허용)
 	var hero_rendered_h: float = b.hero_unit["node"].texture.get_height() * b.hero_unit["node"].scale.y
-	_expect(hero_rendered_h >= 90.0 and hero_rendered_h <= 130.0, "영웅 렌더 높이 ≈ 쫄몹의 2배 (%.1fpx)" % hero_rendered_h)
+	_expect(hero_rendered_h >= 65.0 and hero_rendered_h <= 95.0, "영웅 렌더 높이 ≈ 쫄몹의 1.5배 (%.1fpx)" % hero_rendered_h)
 	# 스킬 발동: 삼장 "염불 결계" — 아군 전원 buff_t · buff_guard 적용
 	var ally_for_skill := b._spawn("knight", 1, 1.0)
 	b.hero_cool = 0.0

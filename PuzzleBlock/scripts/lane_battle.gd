@@ -985,14 +985,14 @@ func _spawn_hero() -> void:
 	var tex_name: String = hero_info.get("tex", "hero_sanzang")
 	var node := Sprite2D.new()
 	node.texture = tex.get(tex_name, tex["knight"])
-	# 영웅 크기 = 쫄몹 렌더 높이 × 2.0 (스프라이트 원본이 영웅마다 달라 동적 계산)
-	# 쫄몹 평균 원본 h ≈ 37px, UNIT_PX=1.4 → 쫄몹 렌더 h ≈ 52px, 영웅 목표 ≈ 104px
+	# 영웅 크기 = 쫄몹 렌더 높이 × 1.5 (스프라이트 원본이 영웅마다 달라 동적 계산)
+	# 쫄몹 평균 원본 h ≈ 37px, UNIT_PX=1.4 → 쫄몹 렌더 h ≈ 52px, 영웅 목표 ≈ 78px
 	var tex_h: float = maxf(1.0, float(node.texture.get_height()))
-	var hero_scale: float = 104.0 / tex_h
+	var hero_scale: float = 78.0 / tex_h
 	node.scale = Vector2.ONE * hero_scale
 	node.offset = Vector2(0, -node.texture.get_height() * 0.5)
-	# 영웅은 성 바로 오른쪽 옆, 지면 위에 서서 캐스팅. 성과 겹치지 않고 성 위로 보이게 z=5.
-	node.position = Vector2(CASTLE_X + 60.0, GROUND - 10.0)
+	# 영웅은 성 문 앞(성 오른쪽 가장자리 지면)에 자연스럽게 서서 캐스팅. 성 위로 보이게 z=5.
+	node.position = Vector2(CASTLE_X + 44.0, GROUND)
 	node.z_index = 5
 	_units_layer.add_child(node)
 	var hp: float = h["hp"]
@@ -1006,7 +1006,7 @@ func _spawn_hero() -> void:
 		"aura": 0.0, "aura_r": 0.0, "aura_t": HEAL_EVERY * 0.5,
 		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
 		"base_scale": Vector2.ONE * hero_scale,
-		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X + 60.0}
+		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X + 44.0}
 	u["bar"] = _unit_bar(node)
 	units.append(u)
 	hero_unit = u
