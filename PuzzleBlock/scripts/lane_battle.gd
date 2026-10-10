@@ -112,6 +112,12 @@ var test_mode: bool = false
 # 2026-10-11: test_mode를 세로 화면에 쓸 때 전체를 90° CCW 회전시켜 성(원래 LEFT)=바닥,
 # 요새(원래 RIGHT)=상단으로 보이게 한다. 전투 로직(가로)은 그대로 두고 뷰만 돌린다.
 var test_rotated: bool = false
+# 2026-10-11: "전투만" 모드. 블록 퍼즐 없이 가로 전투만. 덱의 4명만 소환 버튼, 자동 wave 유지,
+# 금화는 1/sec 트리클 + 시작 100 (퍼즐 클리어 수익이 없으므로). test_mode와 다르게 금화/쿨/덱 규칙은 지킨다.
+var battle_only_mode: bool = false
+const BATTLE_ONLY_INCOME: float = 1.0
+const BATTLE_ONLY_START_GOLD: int = 100
+var _bo_panel: Control = null
 var _test_panel: Control = null
 
 var stage: int = 1
@@ -549,7 +555,9 @@ func _tick(delta: float) -> void:
 			_hero_skill_btn.scale = Vector2.ONE
 	_refresh_hero_ui()
 	if gold < wallet_max():
-		_gold_acc += WALLET_INCOME[wallet] * delta
+		# 전투만 모드: 퍼즐 클리어 수익이 없으므로 금화를 초당 1씩 트리클
+		var inc: float = BATTLE_ONLY_INCOME if battle_only_mode else WALLET_INCOME[wallet]
+		_gold_acc += inc * delta
 		if _gold_acc >= 1.0:
 			gold = mini(wallet_max(), gold + int(_gold_acc))
 			_gold_acc -= int(_gold_acc)
@@ -2126,6 +2134,8 @@ func _process(delta: float) -> void:
 		_gold_label.modulate.a = 0.55 + 0.45 * absf(sin(_clock * 5.0))
 	else:
 		_gold_label.modulate.a = 1.0
+	if battle_only_mode:
+		_bo_tick(delta)
 
 # Damage (or heal, with "+") numbers pop up big and shrink as they rise
 func _number(pos: Vector2, value: float, col: Color, prefix: String = "") -> void:
@@ -2174,21 +2184,39 @@ func _banner(title: String, sub: String, col: Color = UIKit.TEXT) -> void:
 # =========================================================
 
 # 테스트 모드일 때만 하단 빈 영역(y=LANE_H ~ 1280)에 소환 버튼 패널을 켠다. 자동 소환 off.
+# battle_only_mode: 덱의 4명만 가로 소환 바를 하단에 띄움 (자동 wave 유지, 금화·쿨 적용)
 func _apply_test_mode() -> void:
-	if not test_mode:
+	# 둘 다 꺼져 있으면 패널 전부 숨김
+	if not test_mode and not battle_only_mode:
 		if _test_panel != null:
 			_test_panel.visible = false
+		if _bo_panel != null:
+			_bo_panel.visible = false
 		_apply_test_rotation(false)
 		return
-	auto_summon = false
-	gold = wallet_max()
-	for k in cooldown:
-		cooldown[k] = 0.0
-	hero_cool = 0.0
-	if _test_panel == null:
-		_build_test_panel()
-	_test_panel.visible = true
-	_apply_test_rotation(test_rotated)
+	if test_mode:
+		auto_summon = false
+		gold = wallet_max()
+		for k in cooldown:
+			cooldown[k] = 0.0
+		hero_cool = 0.0
+		if _test_panel == null:
+			_build_test_panel()
+		_test_panel.visible = true
+		if _bo_panel != null:
+			_bo_panel.visible = false
+		_apply_test_rotation(test_rotated)
+	elif battle_only_mode:
+		# 자동 소환 off (덱 4명을 눌러서 소환하는 재미), 자동 wave는 _waves()가 그대로 돈다
+		auto_summon = false
+		gold = BATTLE_ONLY_START_GOLD
+		if _test_panel != null:
+			_test_panel.visible = false
+		if _bo_panel == null:
+			_build_bo_panel()
+		_bo_panel.visible = true
+		_bo_refresh_slots()
+		_apply_test_rotation(false)
 
 # 2026-10-11: 세로 화면용 90° CCW 회전. 레인(_view)만 돌리고, 하단 소환 패널은 그대로 둔다.
 # 전투 로직(x축 이동, CASTLE_LEFT 등)은 변경 없음.
@@ -2497,4 +2525,139 @@ func _test_full_heal() -> void:
 	if not hero_unit.is_empty() and hero_unit.has("hp") and hero_unit.has("hp_max"):
 		hero_unit["hp"] = hero_unit["hp_max"]
 	_refresh()
+
+# =========================================================
+# 전투만 모드 (battle_only_mode): 덱 4명만 가로 소환 바
+# =========================================================
+
+var _bo_slots: Array = []  # {btn, cost_label, veil, kind}
+var _bo_gold_label: Label = null
+var _bo_home_btn: Button = null
+
+func _build_bo_panel() -> void:
+	size = Vector2(720, 1280)
+	mouse_filter = Control.MOUSE_FILTER_PASS
+	_bo_panel = Control.new()
+	_bo_panel.position = Vector2(0, LANE_H + 8)
+	_bo_panel.size = Vector2(720, 1280 - LANE_H - 8)
+	_bo_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(_bo_panel)
+	var bg := Panel.new()
+	LaneUI.dress(bg, "panel_wood")
+	bg.position = Vector2.ZERO
+	bg.size = _bo_panel.size
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_panel.add_child(bg)
+	# 상단: 홈 + 금화 표시
+	_bo_home_btn = Button.new()
+	LaneUI.button(_bo_home_btn, "red", 18)
+	_bo_home_btn.text = "←"
+	_bo_home_btn.focus_mode = Control.FOCUS_NONE
+	_bo_home_btn.position = Vector2(12, 10)
+	_bo_home_btn.size = Vector2(72, 44)
+	_bo_home_btn.pressed.connect(func(): home_pressed.emit())
+	_bo_panel.add_child(_bo_home_btn)
+	var coin_icon := LaneUI.icon("icon_coin", Vector2(28, 28))
+	coin_icon.position = Vector2(100, 20)
+	_bo_panel.add_child(coin_icon)
+	_bo_gold_label = _outlined("0", 24, UIKit.GOLD, HORIZONTAL_ALIGNMENT_LEFT)
+	_bo_gold_label.position = Vector2(136, 14)
+	_bo_gold_label.size = Vector2(140, 36)
+	_bo_panel.add_child(_bo_gold_label)
+	var title := _outlined("전투만 (dev)", 18, Color(0.75, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	title.position = Vector2(0, 20)
+	title.size = Vector2(720, 24)
+	_bo_panel.add_child(title)
+	# 덱 4개 버튼: 가로 4칸, 셀 170×112 (여유있는 터치 영역)
+	_bo_slots.clear()
+	var cell_w: float = 164.0
+	var cell_h: float = 118.0
+	var total: float = cell_w * 4 + 12 * 3
+	var pad_x: float = (720.0 - total) * 0.5
+	var y0: float = 70.0
+	for i in range(LaneUnits.DECK_SIZE):
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		btn.position = Vector2(pad_x + i * (cell_w + 12), y0)
+		btn.size = Vector2(cell_w, cell_h)
+		for st in ["normal", "hover", "pressed", "hover_pressed"]:
+			var kk: float = 1.0
+			if st == "hover": kk = 1.12
+			elif st == "pressed" or st == "hover_pressed": kk = 0.82
+			btn.add_theme_stylebox_override(st, UIKit.box(Color(0.22 * kk, 0.42 * kk, 0.7 * kk, 1.0), Color(0.95, 0.85, 0.4), 10, 2))
+		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		var slot_i := i
+		btn.pressed.connect(func(): summon(deck[slot_i] if slot_i < deck.size() else ""))
+		_bo_panel.add_child(btn)
+		var icon := TextureRect.new()
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.position = Vector2(10, 6)
+		icon.size = Vector2(144, 70)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(icon)
+		var name_lab := _outlined("", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+		name_lab.position = Vector2(0, 76)
+		name_lab.size = Vector2(cell_w, 20)
+		name_lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(name_lab)
+		var cost_lab := _outlined("", 18, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		cost_lab.position = Vector2(0, 94)
+		cost_lab.size = Vector2(cell_w, 22)
+		cost_lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(cost_lab)
+		# 쿨다운 베일
+		var veil := ColorRect.new()
+		veil.color = Color(0.02, 0.03, 0.08, 0.55)
+		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		veil.size = Vector2(cell_w, 0)
+		veil.position = Vector2(0, 0)
+		btn.add_child(veil)
+		_bo_slots.append({"btn": btn, "icon": icon, "name": name_lab, "cost": cost_lab, "veil": veil, "kind": ""})
+
+func _bo_refresh_slots() -> void:
+	if _bo_panel == null:
+		return
+	for i in range(_bo_slots.size()):
+		var s: Dictionary = _bo_slots[i]
+		var kind: String = deck[i] if i < deck.size() else ""
+		s["kind"] = kind
+		if kind == "" or not ALLIES.has(kind):
+			s["icon"].texture = null
+			s["name"].text = ""
+			s["cost"].text = "-"
+			s["btn"].modulate = Color(0.4, 0.4, 0.44)
+			continue
+		var st: Dictionary = ALLIES[kind]
+		s["icon"].texture = tex.get(kind)
+		s["name"].text = str(st.get("name", kind))
+		s["cost"].text = "%d" % int(st["cost"])
+
+func _bo_tick(delta: float) -> void:
+	if _bo_panel == null or not _bo_panel.visible:
+		return
+	if _bo_gold_label != null:
+		_bo_gold_label.text = str(gold)
+	for i in range(_bo_slots.size()):
+		var s: Dictionary = _bo_slots[i]
+		var kind: String = str(s.get("kind", ""))
+		if kind == "" or not ALLIES.has(kind):
+			continue
+		var st: Dictionary = ALLIES[kind]
+		var cool_left: float = float(cooldown.get(kind, 0.0))
+		var cool_total: float = float(st.get("cool", 1.0))
+		var veil: ColorRect = s["veil"]
+		var ch: float = s["btn"].size.y
+		var cw: float = s["btn"].size.x
+		if cool_left > 0.0:
+			var p: float = clampf(cool_left / maxf(0.01, cool_total), 0.0, 1.0)
+			veil.size = Vector2(cw, ch * p)
+			veil.position = Vector2(0, ch - ch * p)
+			veil.visible = true
+		else:
+			veil.visible = false
+		var ok: bool = gold >= int(st["cost"]) and cool_left <= 0.0 and _count(1) < MAX_ALLIES and not finished
+		s["btn"].modulate = Color.WHITE if ok else Color(0.6, 0.6, 0.66)
 

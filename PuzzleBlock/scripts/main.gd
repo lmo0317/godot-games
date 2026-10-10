@@ -265,12 +265,13 @@ func _ready() -> void:
 		LaneUnits.reset_army()
 		LaneStages.reset_progress()
 		_update_home_profile_ui())
-	# 테스트 모드 선택 (dev, 2026-10-10):
-	#   1) 세로 전투: 퍼즐 숨기고 풀스크린 전투 + 하단 소환 패널 (_start_battle_test)
-	#   2) 블록 퍼즐만: classic 모드로 바로
-	#   3) 블록 + 가로 전투: stage 1 정규 흐름 (영웅 선택 생략, 저장된 선택)
-	# 세로 전투: 기존 가로 LaneBattle을 90° 회전 — 성(바닥) ↔ 요새(상단) + 하단 소환 패널
+	# 테스트 모드 선택 (dev, 2026-10-11): 4가지
+	#   1) 전투 테스트: 모든 유닛 소환 + 유틸 (금화/쿨 무시) — _start_vertical_battle
+	#   2) 전투만: 덱 4명, 자동 wave, 금화 트리클 — _start_battle_only
+	#   3) 블록만: classic 모드로 바로 — _on_start_play_pressed
+	#   4) 전투+블록: stage 1 정규 흐름 (영웅 선택 거침)
 	start_screen.battle_test_pressed.connect(_start_vertical_battle)
+	start_screen.battle_only_pressed.connect(_start_battle_only)
 	start_screen.puzzle_test_pressed.connect(_on_start_play_pressed)
 	start_screen.lane_test_pressed.connect(func():
 		start_screen.visible = false
@@ -469,8 +470,8 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 		n.visible = not battle_mode
 	btn_leaderboard.visible = not battle_mode and _has_ranking()
 	_apply_layout(battle_mode)
-	# 전투 테스트: 퍼즐 보드/트레이/점수를 전부 숨기고 전투만 보여준다 (2026-10-10)
-	if battle_mode and battle.test_mode:
+	# 전투 테스트 / 전투만: 퍼즐 보드·트레이·점수를 전부 숨기고 전투만 보여준다 (2026-10-10, 11)
+	if battle_mode and (battle.test_mode or battle.battle_only_mode):
 		board.visible = false
 		board_background.visible = false
 		combo_aura.visible = false
@@ -562,6 +563,10 @@ static func battle_trio(b, combo: int, sc: int, grace: int, first: bool) -> Arra
 	return shapes
 
 func _spawn_new_tray() -> void:
+	# 전투 테스트 / 전투만 모드: 트레이 자체가 숨겨져 있으므로 블록 조각을 만들지 않는다.
+	# (TrayPlates만 숨겨도 BlockPiece는 main의 자식으로 추가되므로 2026-10-11 이전엔 하단에 노출됐음)
+	if game_mode == "battle" and (battle.test_mode or battle.battle_only_mode):
+		return
 	SoundManager.play_deal()
 	var shapes: Array[Dictionary] = []
 	var gen_start_usec: int = Time.get_ticks_usec()
@@ -1447,10 +1452,11 @@ func _after_lane_screen() -> void:
 
 # Leaving a stage (house button in the lane, or the back button) goes to the stage select
 func _leave_battle() -> void:
-	# 전투 테스트에서 나오면 퍼즐 UI 다시 보이도록 복원
-	if battle.test_mode:
+	# 전투 테스트 / 전투만에서 나오면 퍼즐 UI 다시 보이도록 복원
+	if battle.test_mode or battle.battle_only_mode:
 		battle.test_mode = false
 		battle.test_rotated = false
+		battle.battle_only_mode = false
 		vertical_mode = false
 		board.visible = true
 		board_background.visible = true
@@ -1485,6 +1491,7 @@ func _start_vertical_battle() -> void:
 	battle_stage = 1
 	battle.test_mode = true
 	battle.test_rotated = false  # 회전 포기 — 가로 레인 상단 유지, 퍼즐만 제거
+	battle.battle_only_mode = false
 	battle.size = Vector2(720, 1280)
 	vertical_mode = true
 	lane_select.visible = false
@@ -1497,6 +1504,28 @@ func _leave_vertical_battle() -> void:
 	battle.test_rotated = false
 	# _leave_battle이 test_mode를 끄고 보드도 복원함
 	_leave_battle()
+
+# 전투만 모드 (dev 2026-10-11): 블록 퍼즐 숨김 + 덱의 4 유닛만 소환 버튼 + 자동 wave + 금화 트리클.
+# 영웅 선택은 저장된 영웅을 그대로 사용 (바로 stage 1 진입).
+func _start_battle_only() -> void:
+	start_screen.visible = false
+	game_over_panel.visible = false
+	if settings_modal.visible:
+		settings_modal.close()
+	# 퍼즐 보드/트레이 숨김
+	board.visible = false
+	board_background.visible = false
+	$TrayPlates.visible = false
+	battle_stage = 1
+	battle.test_mode = false
+	battle.test_rotated = false
+	battle.battle_only_mode = true
+	vertical_mode = true  # back 버튼이 _leave_vertical_battle로 가게
+	battle.size = Vector2(720, 1280)
+	lane_select.visible = false
+	if lane_hero_select != null:
+		lane_hero_select.visible = false
+	start_new_game(false, "battle")
 
 # 가로 전투 테스트 모드 (dev 2026-10-10): 퍼즐 보드/트레이는 완전히 숨기고 1장 전투만 띄운다.
 # battle.test_mode = true 로 LaneBattle이 하단에 소환 버튼 패널을 깐다.
@@ -1542,8 +1571,8 @@ func _apply_layout(compact: bool) -> void:
 func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	if is_game_over:
 		return
-	# 전투 테스트: 결과창·보상·업적 생략, 바로 로비로 돌아감 (2026-10-10)
-	if battle.test_mode:
+	# 전투 테스트 / 전투만: 결과창·보상·업적 생략, 바로 로비로 돌아감 (2026-10-10, 11)
+	if battle.test_mode or battle.battle_only_mode:
 		is_game_over = true
 		battle.stop()
 		_leave_battle()

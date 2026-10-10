@@ -16,9 +16,10 @@ signal settings_pressed
 signal profile_pressed
 signal sound_pressed
 signal lane_reset_pressed
-signal battle_test_pressed       # 모드 1: 세로 전투 (풀스크린 lane_battle + 하단 소환 panel)
-signal puzzle_test_pressed       # 모드 2: 블록 퍼즐만 (classic)
-signal lane_test_pressed         # 모드 3: 블록 + 가로 전투 (stage 1 바로)
+signal battle_test_pressed       # 모드 1: 전투 테스트 (모든 유닛 소환, 금화·쿨 무시)
+signal battle_only_pressed       # 모드 2: 전투만 (덱 4명만, 자동 wave, 보드/트레이 숨김)
+signal puzzle_test_pressed       # 모드 3: 블록 퍼즐만 (classic)
+signal lane_test_pressed         # 모드 4: 블록 + 전투 (stage 1 바로)
 
 const W: float = 720.0
 const GROUND: float = 820.0
@@ -225,40 +226,50 @@ func _build_reset() -> void:
 	var cap := LaneUI.label("테스트", 15, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	_place(cap, 16, 358, 96, 22)
 	add_child(cap)
-	# 테스트 모드 선택 (dev 전용, 2026-10-10): 3가지 플레이 방식을 바로 띄워 시험.
-	#   1) 세로 전투 - 퍼즐 숨기고 풀스크린 전투 + 하단 소환 버튼
-	#   2) 블록 퍼즐만 - classic 모드
-	#   3) 블록 + 가로 전투 - stage 1 정규 흐름 (영웅 선택 생략, 저장된 선택 사용)
+	# 테스트 모드 선택 (dev 전용, 2026-10-11): 4가지 플레이 방식을 바로 띄워 시험.
+	#   1) 전투 테스트 - 모든 유닛/적 소환, 유틸, 금화·쿨 무시 (dev 디버그용)
+	#   2) 전투만 - 덱 4명만, 자동 wave, 금화 트리클, 보드·트레이 숨김
+	#   3) 블록만 - classic 모드
+	#   4) 전투+블록 - stage 1 정규 흐름 (영웅 선택 거침)
 	var tcap := LaneUI.label("모드 테스트", 13, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	_place(tcap, 16, 386, 96, 20)
 	add_child(tcap)
 	var t1 := Button.new()
-	t1.text = "세로\n전투"
-	LaneUI.button(t1, "blue", 14)
+	t1.text = "전투\n테스트"
+	LaneUI.button(t1, "red", 14)
 	_place(t1, 16, 408, 96, 56)
-	t1.tooltip_text = "1. 세로 전투 (성 ↔ 요새, 하단 소환)"
+	t1.tooltip_text = "1. 전투 테스트 (모든 유닛 소환, 유틸)"
 	t1.pressed.connect(func():
 		SoundManager.play_click()
 		battle_test_pressed.emit())
 	add_child(t1)
 	var t2 := Button.new()
-	t2.text = "블록\n퍼즐"
-	LaneUI.button(t2, "green", 14)
+	t2.text = "전투만"
+	LaneUI.button(t2, "blue", 16)
 	_place(t2, 16, 468, 96, 56)
-	t2.tooltip_text = "2. 블록 퍼즐만 (classic)"
+	t2.tooltip_text = "2. 전투만 (덱 4명, 자동 wave)"
 	t2.pressed.connect(func():
 		SoundManager.play_click()
-		puzzle_test_pressed.emit())
+		battle_only_pressed.emit())
 	add_child(t2)
 	var t3 := Button.new()
-	t3.text = "블록+\n가로전투"
-	LaneUI.button(t3, "red", 13)
+	t3.text = "블록만"
+	LaneUI.button(t3, "green", 16)
 	_place(t3, 16, 528, 96, 56)
-	t3.tooltip_text = "3. 블록 + 가로 전투 (stage 1)"
+	t3.tooltip_text = "3. 블록 퍼즐만 (classic)"
 	t3.pressed.connect(func():
 		SoundManager.play_click()
-		lane_test_pressed.emit())
+		puzzle_test_pressed.emit())
 	add_child(t3)
+	var t4 := Button.new()
+	t4.text = "전투+\n블록"
+	LaneUI.button(t4, "red", 14)
+	_place(t4, 16, 588, 96, 56)
+	t4.tooltip_text = "4. 블록 + 전투 (stage 1)"
+	t4.pressed.connect(func():
+		SoundManager.play_click()
+		lane_test_pressed.emit())
+	add_child(t4)
 
 func _on_reset() -> void:
 	SoundManager.play_click()

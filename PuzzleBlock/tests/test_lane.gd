@@ -588,6 +588,40 @@ func _run() -> void:
 	_expect(main.lane_select.visible, "출전 opens the stage select")
 	main.lane_select.visible = false
 
+	# 전투만 모드 smoke test (dev, 2026-10-11): 덱 4명만, 보드/트레이 숨김, 트리클 금화
+	main.start_screen.visible = true
+	main._start_battle_only()
+	await _wait_until(func(): return b.battle_only_mode and not b.finished, 4.0)
+	_expect(b.battle_only_mode and not b.test_mode, "battle-only: flag on, test_mode off")
+	_expect(not main.board.visible and not main.board_background.visible, "battle-only: board hidden")
+	_expect(not main.get_node("TrayPlates").visible, "battle-only: tray hidden")
+	_expect(main.tray_pieces[0] == null and main.tray_pieces[1] == null and main.tray_pieces[2] == null, "battle-only: no block pieces in tray")
+	_expect(b._bo_panel != null and b._bo_panel.visible, "battle-only: bottom summon panel built")
+	_expect(b._bo_slots.size() == 4, "battle-only: 4 deck slots")
+	var g_start: int = b.gold
+	b.gold = 10
+	b._gold_acc = 0.0
+	await get_tree().create_timer(1.3).timeout
+	_expect(b.gold > 10, "battle-only: gold trickles up (%d)" % b.gold)
+	# 자동 wave: trickle timer가 돌아 쫄몹이 나와야 함
+	_expect(b.trickle_timer < 10.0, "battle-only: waves still running (trickle %.1f)" % b.trickle_timer)
+	# 덱만 소환 가능 (test_mode의 "모든 유닛"과 다름): 덱 밖은 거부
+	var not_in_deck := ""
+	for k in LaneBattle.ALLY_ORDER:
+		if not b.deck.has(k):
+			not_in_deck = k
+			break
+	if not_in_deck != "":
+		b.gold = 300
+		b.cooldown[not_in_deck] = 0.0
+		_expect(not b.summon(not_in_deck), "battle-only: deck 밖 유닛 소환 거부 (%s)" % not_in_deck)
+	# 홈 복귀로 플래그 해제 + UI 복원
+	b.home_pressed.emit()
+	await get_tree().process_frame
+	_expect(not b.battle_only_mode and main.lane_select.visible, "battle-only: 홈 복귀로 flag 해제")
+	main.lane_select.close()
+	await get_tree().process_frame
+
 	# Classic gets the normal layout back
 	main.game_over_panel.visible = false
 	main._on_start_play_pressed()
