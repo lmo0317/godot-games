@@ -167,6 +167,11 @@ var _hero_name_label: Label
 var _hero_skill_btn: Button
 var _hero_skill_fill: ColorRect
 var _hero_skill_label: Label
+var _hero_skill_icon: Control
+var _hero_skill_name_label: Label
+var _hero_skill_name_bg: Panel
+var _hero_skill_ready_pulse: float = 0.0  # 쿨 끝났을 때 "준비!" 깜빡임 타이머
+var _hero_skill_breath: float = 0.0       # 호흡 애니 clock
 var _wave_push_t: float = 0.0          # 사오정 보스의 wave_push 타이머
 var _stun_roar_t: float = 0.0          # 호선봉 보스의 stun_roar 타이머
 var _castle_fill: Panel
@@ -496,12 +501,24 @@ func _tick(delta: float) -> void:
 	for k in cooldown:
 		cooldown[k] = maxf(0.0, cooldown[k] - delta)
 	# 영웅 스킬 쿨 감소 + UI 리프레시 (매 틱 호출해도 가벼움)
+	var was_cooling: bool = hero_cool > 0.0
 	if hero_cool > 0.0:
 		hero_cool = maxf(0.0, hero_cool - delta)
-		_refresh_hero_ui()
-	else:
-		# 영웅 HP 변화 반영을 위해 매 틱 리프레시 (매우 가벼움)
-		_refresh_hero_ui()
+		if hero_cool <= 0.0 and was_cooling:
+			_hero_skill_ready_pulse = 0.8  # 쿨 끝남 → "준비!" 짧게
+	if _hero_skill_ready_pulse > 0.0:
+		_hero_skill_ready_pulse = maxf(0.0, _hero_skill_ready_pulse - delta)
+	# 쿨 아님 상태에서 호흡 (±2%)
+	_hero_skill_breath += delta
+	if _hero_skill_btn != null and _hero_skill_btn.visible:
+		var ready: bool = hero_cool <= 0.0 and not hero_dead
+		if ready:
+			var s: float = 1.0 + 0.02 * sin(_hero_skill_breath * 3.0)
+			_hero_skill_btn.pivot_offset = _hero_skill_btn.size * 0.5
+			_hero_skill_btn.scale = Vector2(s, s)
+		else:
+			_hero_skill_btn.scale = Vector2.ONE
+	_refresh_hero_ui()
 	if gold < wallet_max():
 		_gold_acc += WALLET_INCOME[wallet] * delta
 		if _gold_acc >= 1.0:
@@ -971,8 +988,10 @@ func _spawn_hero() -> void:
 	# 영웅은 성 뒤에서 캐스팅만 하는 역할 — 보통 유닛보다 살짝 큰 1.3x
 	node.scale = Vector2.ONE * UNIT_PX * 1.3
 	node.offset = Vector2(0, -node.texture.get_height() * 0.5)
-	# 성 바로 위에 고정 (CASTLE_X 기준 살짝 뒤쪽), 전진 금지
-	node.position = Vector2(CASTLE_X + 18.0, GROUND)
+	# 영웅은 성벽 중간 높이에서 캐스팅: x는 성 중앙(CASTLE_X), y는 지면보다 28px 위.
+	# z_index 음수로 성 그래픽(0) 뒤에 보여, 성이 가려지지 않도록 함.
+	node.position = Vector2(CASTLE_X, GROUND - 28.0)
+	node.z_index = -1
 	_units_layer.add_child(node)
 	var hp: float = h["hp"]
 	var u := {"node": node, "side": 1, "kind": hero_id, "hp": hp, "max_hp": hp, "atk": 0.0,
@@ -985,7 +1004,7 @@ func _spawn_hero() -> void:
 		"aura": 0.0, "aura_r": 0.0, "aura_t": HEAL_EVERY * 0.5,
 		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
 		"base_scale": Vector2.ONE * UNIT_PX * 1.3,
-		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X + 18.0}
+		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X}
 	u["bar"] = _unit_bar(node)
 	units.append(u)
 	hero_unit = u
@@ -999,9 +1018,11 @@ func _refresh_hero_ui() -> void:
 		return
 	var active: bool = hero_id != "" and HEROES.has(hero_id)
 	_hero_portrait.visible = active
-	_hero_hp_fill.get_parent().visible = active
-	_hero_name_label.visible = active
+	_hero_hp_fill.get_parent().get_parent().visible = active  # hero_box
 	_hero_skill_btn.visible = active
+	if _hero_skill_name_bg != null:
+		_hero_skill_name_bg.visible = active
+		_hero_skill_name_label.visible = active
 	if not active:
 		return
 	var info: Dictionary = LaneUnits.HEROES.get(hero_id, {})
@@ -1009,12 +1030,17 @@ func _refresh_hero_ui() -> void:
 	var tex_name: String = info.get("tex", "")
 	if tex.has(tex_name):
 		_hero_portrait.texture = tex[tex_name]
+	# 스킬 이름 양피지 라벨
+	_hero_skill_name_label.text = HEROES[hero_id].get("skill_name", "스킬")
+	# 아이콘 다시 그리기 (영웅이 바뀌었거나 상태가 바뀌면)
+	_hero_skill_icon.queue_redraw()
 	# HP 바
 	var alive: bool = not hero_dead and hero_unit.has("hp") and hero_unit["hp"] > 0.0
+	var hp_bar_w: float = 106.0
 	if alive:
 		var r: float = clampf(hero_unit["hp"] / hero_unit["max_hp"], 0.0, 1.0)
-		_hero_hp_fill.size.x = 120.0 * r
-		_hero_hp_fill.add_theme_stylebox_override("panel", UIKit.box(_hp_color(r), Color.TRANSPARENT, 6))
+		_hero_hp_fill.size.x = hp_bar_w * r
+		_hero_hp_fill.add_theme_stylebox_override("panel", UIKit.box(_hp_color(r), Color.TRANSPARENT, 8))
 		_hero_hp_label.text = "%d / %d" % [maxi(0, roundi(hero_unit["hp"])), roundi(hero_unit["max_hp"])]
 		_hero_dead_x.visible = false
 		_hero_portrait.modulate = Color.WHITE
@@ -1023,20 +1049,71 @@ func _refresh_hero_ui() -> void:
 		_hero_hp_label.text = "쓰러짐"
 		_hero_dead_x.visible = true
 		_hero_portrait.modulate = Color(0.4, 0.4, 0.4, 1)
-	# 스킬 버튼
+	# 스킬 버튼: 쿨 중엔 숫자만, 쿨 아님엔 아이콘만. 호흡 애니.
 	var ready: bool = alive and hero_cool <= 0.0
 	_hero_skill_btn.disabled = not ready
-	_hero_skill_btn.modulate = Color.WHITE if ready else Color(0.55, 0.55, 0.6)
 	if ready:
-		_hero_skill_label.text = HEROES[hero_id].get("skill_name", "스킬")
+		_hero_skill_icon.visible = true
 		_hero_skill_fill.size.y = 0.0
+		if _hero_skill_ready_pulse > 0.0:
+			_hero_skill_label.text = "준비!"
+			_hero_skill_label.visible = true
+		else:
+			_hero_skill_label.text = ""
+			_hero_skill_label.visible = false
 	else:
+		_hero_skill_icon.visible = false
 		var left: float = hero_cool
-		_hero_skill_label.text = "%ds" % ceili(left)
+		_hero_skill_label.text = "%d" % ceili(left)
+		_hero_skill_label.visible = true
 		var cool_total: float = HEROES[hero_id]["cool"]
 		var veil_h: float = 96.0 * clampf(left / cool_total, 0.0, 1.0)
 		_hero_skill_fill.size = Vector2(96, veil_h)
 		_hero_skill_fill.position = Vector2(0, 96.0 - veil_h)
+
+# 영웅별 스킬 아이콘을 코드로 그림 (쿨 아님 상태에서 보임)
+func _draw_skill_icon() -> void:
+	if hero_id == "" or _hero_skill_icon == null:
+		return
+	var c: Vector2 = Vector2(48, 48)
+	var canvas: CanvasItem = _hero_skill_icon
+	match hero_id:
+		"sanzang":
+			# 염불 결계: 금색 광륜 + 중앙 염주 세 알
+			canvas.draw_arc(c, 28.0, 0.0, TAU, 48, Color(1.00, 0.85, 0.35), 5.0, true)
+			canvas.draw_arc(c, 28.0, 0.0, TAU, 48, Color(1.00, 0.98, 0.70), 2.0, true)
+			for i in 3:
+				var ang: float = -PI * 0.5 + i * TAU / 3.0
+				var p: Vector2 = c + Vector2(cos(ang), sin(ang)) * 14.0
+				canvas.draw_circle(p, 6.0, Color(1.00, 0.72, 0.28))
+				canvas.draw_circle(p, 6.0, Color(0.55, 0.30, 0.10), false, 1.5)
+		"wukong":
+			# 여의봉 광풍: 가로 긴 금봉 + 양 끝 캡 + 바람 선 2개
+			canvas.draw_line(c + Vector2(-32, 0), c + Vector2(32, 0), Color(0.60, 0.42, 0.18), 10.0)
+			canvas.draw_line(c + Vector2(-32, 0), c + Vector2(32, 0), Color(1.00, 0.85, 0.35), 6.0)
+			canvas.draw_circle(c + Vector2(-32, 0), 7.0, Color(0.95, 0.78, 0.28))
+			canvas.draw_circle(c + Vector2(32, 0), 7.0, Color(0.95, 0.78, 0.28))
+			canvas.draw_line(c + Vector2(-28, -14), c + Vector2(-8, -14), Color(0.90, 0.95, 1.00, 0.75), 3.0)
+			canvas.draw_line(c + Vector2(8, 14), c + Vector2(28, 14), Color(0.90, 0.95, 1.00, 0.75), 3.0)
+		"bajie":
+			# 쇄기 돌진: 삼지창(갈퀴) 모양
+			canvas.draw_line(c + Vector2(0, 26), c + Vector2(0, -8), Color(0.55, 0.35, 0.18), 7.0)
+			for dx in [-14, 0, 14]:
+				canvas.draw_line(c + Vector2(dx, -8), c + Vector2(dx, -26), Color(0.80, 0.85, 0.95), 5.0)
+				var tip: Vector2 = c + Vector2(dx, -26)
+				var pts: PackedVector2Array = [tip + Vector2(-5, 4), tip + Vector2(0, -6), tip + Vector2(5, 4)]
+				canvas.draw_colored_polygon(pts, Color(0.95, 0.98, 1.00))
+			# 가로 지지대
+			canvas.draw_line(c + Vector2(-18, -8), c + Vector2(18, -8), Color(0.55, 0.35, 0.18), 5.0)
+		"wujing":
+			# 수룡 재생: 녹색 ⊕ 십자 + 물방울
+			canvas.draw_circle(c, 26.0, Color(0.20, 0.60, 0.40, 0.35))
+			canvas.draw_rect(Rect2(c + Vector2(-6, -20), Vector2(12, 40)), Color(0.40, 0.95, 0.55))
+			canvas.draw_rect(Rect2(c + Vector2(-20, -6), Vector2(40, 12)), Color(0.40, 0.95, 0.55))
+			canvas.draw_rect(Rect2(c + Vector2(-6, -20), Vector2(12, 40)), Color(0.12, 0.45, 0.22), false, 2.0)
+			canvas.draw_rect(Rect2(c + Vector2(-20, -6), Vector2(40, 12)), Color(0.12, 0.45, 0.22), false, 2.0)
+		_:
+			canvas.draw_circle(c, 28.0, Color(1.0, 0.85, 0.35))
 
 func activate_hero_skill() -> bool:
 	if hero_dead or hero_cool > 0.0 or hero_id == "" or not HEROES.has(hero_id):
@@ -1045,7 +1122,13 @@ func activate_hero_skill() -> bool:
 		return false
 	var skill: String = HEROES[hero_id]["skill"]
 	hero_cool = HEROES[hero_id]["cool"]
+	_hero_skill_ready_pulse = 0.0
 	_sfx("b_summon", -2.0)
+	# 버튼 scale punch
+	if _hero_skill_btn != null:
+		_hero_skill_btn.pivot_offset = _hero_skill_btn.size * 0.5
+		_hero_skill_btn.scale = Vector2(1.18, 1.18)
+		_hero_skill_btn.create_tween().tween_property(_hero_skill_btn, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	match skill:
 		"aura_buff":  _skill_aura_buff()
 		"line_sweep": _skill_line_sweep()
@@ -1654,75 +1737,112 @@ func _build() -> void:
 	bl.size = boss_badge.size
 	bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	boss_badge.add_child(bl)
-	# 영웅 패널 (좌상단): 초상 + 이름 + HP 바. 상단 메뉴 pill 아래 배치 — 재화/메뉴와 겹치지 않도록.
-	# 메뉴 pill y=6~54, 쇼케이스 라벨 y=2~46 → 영웅 패널은 y=58 (16px 간격)에 두고 높이 70.
+	# 영웅 패널 (좌상단): 큰 초상 + 이름 + 두꺼운 HP 바.
+	# 상단 메뉴 pill(y=6~54) 아래 16px 간격 → y=70부터 88px 세로 패널.
 	var hero_box := Panel.new()
 	LaneUI.dress(hero_box, "panel_wood")
 	hero_box.name = "HeroBox"
 	hero_box.position = Vector2(6, 70)
-	hero_box.size = Vector2(176, 54)
+	hero_box.size = Vector2(200, 88)
 	hero_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_view.add_child(hero_box)
+	# 초상 프레임: 좌측 64×64 돌 테두리
+	var portrait_frame := Panel.new()
+	portrait_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	portrait_frame.position = Vector2(8, 12)
+	portrait_frame.size = Vector2(64, 64)
+	portrait_frame.add_theme_stylebox_override("panel", UIKit.box(Color(0.08, 0.06, 0.12, 0.95), Color(0.78, 0.62, 0.32, 1.0), 8, 2))
+	hero_box.add_child(portrait_frame)
 	_hero_portrait = TextureRect.new()
 	_hero_portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_hero_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_hero_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_hero_portrait.position = Vector2(6, 4)
-	_hero_portrait.size = Vector2(46, 46)
+	_hero_portrait.position = Vector2(2, 2)
+	_hero_portrait.size = Vector2(60, 60)
 	_hero_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hero_box.add_child(_hero_portrait)
-	_hero_dead_x = _outlined("✕", 36, Color(1.0, 0.3, 0.3), HORIZONTAL_ALIGNMENT_CENTER)
-	_hero_dead_x.position = Vector2(6, 4)
-	_hero_dead_x.size = Vector2(46, 46)
+	portrait_frame.add_child(_hero_portrait)
+	_hero_dead_x = _outlined("✕", 44, Color(1.0, 0.3, 0.3), HORIZONTAL_ALIGNMENT_CENTER)
+	_hero_dead_x.position = Vector2(2, 2)
+	_hero_dead_x.size = Vector2(60, 60)
 	_hero_dead_x.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_hero_dead_x.visible = false
-	hero_box.add_child(_hero_dead_x)
-	_hero_name_label = _outlined("", 14, Color(1.0, 0.95, 0.75))
-	_hero_name_label.position = Vector2(58, 2)
-	_hero_name_label.size = Vector2(114, 18)
+	portrait_frame.add_child(_hero_dead_x)
+	# 이름: 패널 우측 상단
+	_hero_name_label = _outlined("", 20, Color(1.0, 0.95, 0.75), HORIZONTAL_ALIGNMENT_LEFT)
+	_hero_name_label.position = Vector2(80, 10)
+	_hero_name_label.size = Vector2(112, 24)
+	_hero_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hero_box.add_child(_hero_name_label)
-	# HP 바 (좁은 트로프)
+	# HP 바: 패널 우측 하단, 큼직하게 (돌 테두리 트로프 + 녹색 fill + 중앙 숫자)
 	var hpbg := Panel.new()
 	hpbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hpbg.position = Vector2(58, 22)
-	hpbg.size = Vector2(124, 14)
-	hpbg.add_theme_stylebox_override("panel", UIKit.box(Color(0.05, 0.04, 0.08, 0.82), Color(0.75, 0.65, 0.4, 0.9), 7, 2))
+	hpbg.position = Vector2(80, 42)
+	hpbg.size = Vector2(112, 32)
+	hpbg.add_theme_stylebox_override("panel", UIKit.box(Color(0.05, 0.04, 0.08, 0.88), Color(0.78, 0.62, 0.32, 1.0), 10, 2))
 	hero_box.add_child(hpbg)
 	_hero_hp_fill = Panel.new()
 	_hero_hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hero_hp_fill.position = Vector2(2, 2)
-	_hero_hp_fill.size = Vector2(120, 10)
-	_hero_hp_fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.35, 0.86, 0.43), Color.TRANSPARENT, 5))
+	_hero_hp_fill.position = Vector2(3, 3)
+	_hero_hp_fill.size = Vector2(106, 26)
+	_hero_hp_fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.35, 0.86, 0.43), Color.TRANSPARENT, 8))
 	hpbg.add_child(_hero_hp_fill)
-	_hero_hp_label = _outlined("", 12, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	_hero_hp_label.position = Vector2(58, 36)
-	_hero_hp_label.size = Vector2(124, 16)
+	_hero_hp_label = _outlined("", 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_hero_hp_label.position = Vector2(0, 0)
+	_hero_hp_label.size = Vector2(112, 32)
 	_hero_hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	hero_box.add_child(_hero_hp_label)
+	hpbg.add_child(_hero_hp_label)
 
-	# 영웅 스킬 버튼 (우하단, 큰 둥근 터치 영역). HP 바와 fortress HP 라벨은 LANE_H-32에 있음 → 겹침 피하려 y=LANE_H-130
+	# 영웅 스킬 버튼 (우측 중단, 큰 둥근 터치 영역 96×96).
+	# 요새 HP 바(y=LANE_H-32)보다 16+ 위 → y = LANE_H - 32 - 16 - 96 = LANE_H - 144
 	_hero_skill_btn = Button.new()
 	_hero_skill_btn.name = "HeroSkillBtn"
-	_hero_skill_btn.position = Vector2(610, LANE_H - 180.0)
+	_hero_skill_btn.position = Vector2(614, LANE_H - 144.0)
 	_hero_skill_btn.size = Vector2(96, 96)
 	_hero_skill_btn.focus_mode = Control.FOCUS_NONE
-	for st in ["normal", "hover", "pressed", "hover_pressed"]:
-		_hero_skill_btn.add_theme_stylebox_override(st, LaneUI.box("card_frame", 6, Color(0.6, 0.95, 1.0) if st != "pressed" else Color(0.5, 0.85, 1.0)))
+	# 둥근 금테 패널 느낌의 스타일박스
+	for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var fill := Color(0.14, 0.10, 0.22, 0.95) if st != "pressed" else Color(0.08, 0.06, 0.15, 0.95)
+		var border := Color(1.00, 0.82, 0.36, 1.0) if st != "disabled" else Color(0.55, 0.48, 0.32, 1.0)
+		_hero_skill_btn.add_theme_stylebox_override(st, UIKit.box(fill, border, 48, 3))
 	_hero_skill_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	_hero_skill_btn.pressed.connect(activate_hero_skill)
 	_view.add_child(_hero_skill_btn)
-	# 쿨 어둡게 깔림 (버튼 안)
 	_hero_skill_btn.clip_contents = true
+	# 스킬 아이콘 (코드로 그린 심볼). _refresh_hero_ui에서 영웅별로 다시 그림.
+	_hero_skill_icon = Control.new()
+	_hero_skill_icon.name = "SkillIcon"
+	_hero_skill_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hero_skill_icon.position = Vector2(0, 0)
+	_hero_skill_icon.size = Vector2(96, 96)
+	_hero_skill_icon.draw.connect(_draw_skill_icon)
+	_hero_skill_btn.add_child(_hero_skill_icon)
+	# 쿨 베일 (반투명, 아래→위로 줄어듦)
 	_hero_skill_fill = ColorRect.new()
-	_hero_skill_fill.color = Color(0.02, 0.03, 0.08, 0.72)
+	_hero_skill_fill.color = Color(0.02, 0.03, 0.08, 0.68)
 	_hero_skill_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hero_skill_fill.size = Vector2(96, 0)
 	_hero_skill_fill.position = Vector2(0, 96)
 	_hero_skill_btn.add_child(_hero_skill_fill)
-	_hero_skill_label = _outlined("", 22, Color(1.0, 0.95, 0.75), HORIZONTAL_ALIGNMENT_CENTER)
+	# 쿨 중 큰 숫자 (중앙, 28px)
+	_hero_skill_label = _outlined("", 28, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	_hero_skill_label.size = Vector2(96, 96)
 	_hero_skill_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hero_skill_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hero_skill_btn.add_child(_hero_skill_label)
+	# 버튼 아래 작은 양피지 라벨 (스킬 이름)
+	var skill_name_bg := Panel.new()
+	LaneUI.dress(skill_name_bg, "panel_paper")
+	skill_name_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	skill_name_bg.position = Vector2(602, LANE_H - 40.0 - 22.0 - 4.0 - 16.0)
+	skill_name_bg.size = Vector2(120, 22)
+	_view.add_child(skill_name_bg)
+	_hero_skill_name_label = LaneUI.label("", 14, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
+	_hero_skill_name_label.position = skill_name_bg.position
+	_hero_skill_name_label.size = skill_name_bg.size
+	_hero_skill_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hero_skill_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_view.add_child(_hero_skill_name_label)
+	_hero_skill_name_bg = skill_name_bg
 
 	# Top-left of the lane: home / settings / sound on a dark pill, then charge/hold and auto
 	var pill := Panel.new()

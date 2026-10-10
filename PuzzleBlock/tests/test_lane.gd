@@ -336,7 +336,7 @@ func _run() -> void:
 	# 영웅은 성 쪽 캐스터: role=caster, 자동 공격 없음, 전진 없음, 성 x좌표 고정
 	_expect(b.hero_unit.get("role", "") == "caster", "영웅 role=caster")
 	_expect(b.hero_unit["atk"] == 0.0 and b.hero_unit["speed"] == 0.0, "영웅은 자동 공격·전진 안 함")
-	_expect(absf(b.hero_unit["node"].position.x - (LaneBattle.CASTLE_X + 18.0)) < 1.0, "영웅은 성 x좌표에 고정 (%.1f)" % b.hero_unit["node"].position.x)
+	_expect(absf(b.hero_unit["node"].position.x - LaneBattle.CASTLE_X) < 1.0, "영웅은 성 x좌표에 고정 (%.1f)" % b.hero_unit["node"].position.x)
 	# 전진 금지 확인: 적을 멀리 두고 1프레임 돌려도 x가 안 움직여야 함
 	var hero_x0: float = b.hero_unit["node"].position.x
 	await get_tree().create_timer(0.3).timeout

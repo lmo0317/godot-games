@@ -3,6 +3,8 @@
 *.log
 tools/data/
 tools/node_modules/
+scratch/
+assets/art/lane/_backup/
 
 # Android store builds (large; rebuilt from source)
 build/android/
