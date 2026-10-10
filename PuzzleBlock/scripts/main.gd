@@ -76,8 +76,9 @@ var tutorial_hint: TutorialHint = null
 # 블록 기사단 (LaneBattle): a lane battle above a board shrunk to COMPACT_SCALE; every placed piece
 # is one battle turn and clears earn gold for soldiers
 var battle: LaneBattle
-# 세로 전투 테스트 모드 (dev, 2026-10-11): 성(바닥) ↔ 요새(상단) 1화면 세로 레인 (vertical_battle.gd)
-var vertical_battle: VerticalBattle
+# 세로 전투 테스트 모드 (dev, 2026-10-11): LaneBattle(가로) 전체를 90° CCW 회전 — 성(바닥) ↔ 요새(상단).
+# 전투 로직은 가로 그대로. test_mode=true + test_rotated=true로 LaneBattle이 뷰만 돌린다.
+var vertical_mode: bool = false
 # The header is hidden in the battle (its buttons move into the summon bar) so the lane starts at the top
 const COMPACT_SCALE: float = 0.95      # board in the battle
 const TRAY_COMPACT_SCALE: float = 0.85 # tray in the battle
@@ -268,12 +269,7 @@ func _ready() -> void:
 	#   1) 세로 전투: 퍼즐 숨기고 풀스크린 전투 + 하단 소환 패널 (_start_battle_test)
 	#   2) 블록 퍼즐만: classic 모드로 바로
 	#   3) 블록 + 가로 전투: stage 1 정규 흐름 (영웅 선택 생략, 저장된 선택)
-	# 진짜 세로 전투: 별도 씬 (VerticalBattle). 성(바닥) ↔ 요새(상단) + 하단 소환 패널
-	vertical_battle = VerticalBattle.new()
-	$UI.add_child(vertical_battle)
-	$UI.move_child(vertical_battle, settings_modal.get_index())
-	vertical_battle.visible = false
-	vertical_battle.home_pressed.connect(_leave_vertical_battle)
+	# 세로 전투: 기존 가로 LaneBattle을 90° 회전 — 성(바닥) ↔ 요새(상단) + 하단 소환 패널
 	start_screen.battle_test_pressed.connect(_start_vertical_battle)
 	start_screen.puzzle_test_pressed.connect(_on_start_play_pressed)
 	start_screen.lane_test_pressed.connect(func():
@@ -341,7 +337,7 @@ func _on_back_pressed() -> void:
 		leaderboard_modal.close()
 	elif adventure_select.visible:
 		adventure_select.close()
-	elif vertical_battle != null and vertical_battle.visible:
+	elif vertical_mode:
 		_leave_vertical_battle()
 	elif lane_result.visible:
 		lane_result.visible = false
@@ -1203,9 +1199,8 @@ func _open_home_screen() -> void:
 	lane_gacha.visible = false
 	lane_deck.visible = false
 	lane_result.visible = false
-	if vertical_battle != null:
-		vertical_battle.stop()
-		vertical_battle.visible = false
+	if vertical_mode:
+		_leave_vertical_battle()
 
 func _on_start_play_pressed() -> void:
 	start_screen.visible = false
@@ -1455,6 +1450,8 @@ func _leave_battle() -> void:
 	# 전투 테스트에서 나오면 퍼즐 UI 다시 보이도록 복원
 	if battle.test_mode:
 		battle.test_mode = false
+		battle.test_rotated = false
+		vertical_mode = false
 		board.visible = true
 		board_background.visible = true
 		$TrayPlates.visible = true
@@ -1474,20 +1471,32 @@ func _start_lane_stage(stage_id: int) -> void:
 	game_over_panel.visible = false
 	start_new_game(false, "battle")
 
-# 세로 전투 테스트 (dev 2026-10-11): 성(바닥) ↔ 요새(상단) 1화면 세로 레인.
-# 별도 vertical_battle 씬. 금화·쿨 없이 소환 버튼으로 자유 테스트.
+# 세로 전투 테스트 (dev 2026-10-11): LaneBattle(가로)을 90° CCW 회전해 성(바닥) ↔ 요새(상단)으로 보이게 한다.
+# 전투 로직은 가로 그대로, 뷰만 돌리고 아래 180px에 소환 패널을 깐다.
 func _start_vertical_battle() -> void:
 	start_screen.visible = false
 	game_over_panel.visible = false
 	if settings_modal.visible:
 		settings_modal.close()
-	vertical_battle.visible = true
-	vertical_battle.start()
+	# 퍼즐 보드/트레이 숨김
+	board.visible = false
+	board_background.visible = false
+	$TrayPlates.visible = false
+	battle_stage = 1
+	battle.test_mode = true
+	battle.test_rotated = true
+	battle.size = Vector2(720, 1280)
+	vertical_mode = true
+	lane_select.visible = false
+	if lane_hero_select != null:
+		lane_hero_select.visible = false
+	start_new_game(false, "battle")
 
 func _leave_vertical_battle() -> void:
-	vertical_battle.stop()
-	vertical_battle.visible = false
-	_open_home_screen()
+	vertical_mode = false
+	battle.test_rotated = false
+	# _leave_battle이 test_mode를 끄고 보드도 복원함
+	_leave_battle()
 
 # 가로 전투 테스트 모드 (dev 2026-10-10): 퍼즐 보드/트레이는 완전히 숨기고 1장 전투만 띄운다.
 # battle.test_mode = true 로 LaneBattle이 하단에 소환 버튼 패널을 깐다.

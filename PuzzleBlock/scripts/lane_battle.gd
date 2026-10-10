@@ -109,6 +109,9 @@ const CHEERED_TINT: Color = Color(1.15, 1.05, 0.75)
 # 완전히 숨기고, 전장 아래 빈 영역에 쫄몹·아군 소환 버튼을 배치해 전투만 손으로 시험한다.
 # 소환은 금화·쿨다운·덱 체크 없이 자유. master로 머지 전 자동 비활성(홈의 DEV_TOOLS로 가림).
 var test_mode: bool = false
+# 2026-10-11: test_mode를 세로 화면에 쓸 때 전체를 90° CCW 회전시켜 성(원래 LEFT)=바닥,
+# 요새(원래 RIGHT)=상단으로 보이게 한다. 전투 로직(가로)은 그대로 두고 뷰만 돌린다.
+var test_rotated: bool = false
 var _test_panel: Control = null
 
 var stage: int = 1
@@ -2091,6 +2094,7 @@ func _refresh() -> void:
 		var ok: bool = kind != "" and gold >= ALLIES[kind]["cost"] and _count(1) < MAX_ALLIES and not finished
 		_slots[i]["btn"].modulate = Color.WHITE if ok else Color(0.5, 0.5, 0.56)
 	_cannon_label.text = "발사!" if cannon >= 100.0 else "%d%%" % int(cannon)
+	_rot_refresh()
 	for u in units:
 		var bg: Panel = u["bar"]
 		bg.visible = u["hp"] < u["max_hp"]
@@ -2174,6 +2178,7 @@ func _apply_test_mode() -> void:
 	if not test_mode:
 		if _test_panel != null:
 			_test_panel.visible = false
+		_apply_test_rotation(false)
 		return
 	auto_summon = false
 	gold = wallet_max()
@@ -2183,6 +2188,196 @@ func _apply_test_mode() -> void:
 	if _test_panel == null:
 		_build_test_panel()
 	_test_panel.visible = true
+	_apply_test_rotation(test_rotated)
+
+# 2026-10-11: 세로 화면용 90° CCW 회전. 레인(_view)만 돌리고, 하단 소환 패널은 그대로 둔다.
+# 전투 로직(x축 이동, CASTLE_LEFT 등)은 변경 없음.
+var _rot_overlay: Control = null
+var _rot_castle_fill: ColorRect = null
+var _rot_castle_label: Label = null
+var _rot_fort_fill: ColorRect = null
+var _rot_fort_label: Label = null
+var _rot_summon_panel: Control = null
+
+func _apply_test_rotation(on: bool) -> void:
+	if _view == null:
+		return
+	# 회전 중 숨길 _view 내부 UI 목록: 상단 pill·금화·STAGE 리본·영웅 패널·스킬 버튼 등
+	var hide_names: Array = ["BossBadge", "HeroBox", "HeroSkillBtn"]
+	if on:
+		_view.pivot_offset = Vector2.ZERO
+		_view.rotation = -PI * 0.5
+		_view.scale = Vector2(1.53, 1.53)
+		_view.position = Vector2(0, 1100)
+		# _view의 자식 중 Panel/Button/Label(즉 UI 요소)은 모두 숨긴다. _shake(Node2D)는 레인 본체라 유지.
+		for c in _view.get_children():
+			if c == _shake:
+				continue
+			if c is Control:
+				c.visible = false
+		# 기본 테스트 패널(세로형 그리드)은 숨기고, 전용 가로 컴팩트 패널을 띄운다
+		if _test_panel != null:
+			_test_panel.visible = false
+		if _rot_summon_panel == null:
+			_build_rot_summon_panel()
+		_rot_summon_panel.visible = true
+		if _rot_overlay == null:
+			_build_rot_overlay()
+		_rot_overlay.visible = true
+		_rot_refresh()
+	else:
+		_view.rotation = 0.0
+		_view.scale = Vector2.ONE
+		_view.position = Vector2.ZERO
+		for c in _view.get_children():
+			if c is Control:
+				c.visible = true
+		if _test_panel != null:
+			_test_panel.visible = true
+		if _rot_overlay != null:
+			_rot_overlay.visible = false
+		if _rot_summon_panel != null:
+			_rot_summon_panel.visible = false
+
+func _build_rot_overlay() -> void:
+	_rot_overlay = Control.new()
+	_rot_overlay.position = Vector2.ZERO
+	_rot_overlay.size = Vector2(720, 64)
+	_rot_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_rot_overlay)
+	# 상단: 요새(원래 RIGHT) HP + 성(원래 LEFT) HP + 홈 버튼
+	# 요새 바 (위쪽 = 적)
+	var fb_bg := Panel.new()
+	fb_bg.position = Vector2(60, 6)
+	fb_bg.size = Vector2(300, 24)
+	fb_bg.add_theme_stylebox_override("panel", UIKit.box(Color(0.1, 0.07, 0.1, 0.9), Color(0.9, 0.3, 0.3), 8, 2))
+	fb_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rot_overlay.add_child(fb_bg)
+	_rot_fort_fill = ColorRect.new()
+	_rot_fort_fill.position = Vector2(3, 3)
+	_rot_fort_fill.size = Vector2(294, 18)
+	_rot_fort_fill.color = Color(0.9, 0.3, 0.3)
+	fb_bg.add_child(_rot_fort_fill)
+	_rot_fort_label = _outlined("요새", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_rot_fort_label.size = fb_bg.size
+	_rot_fort_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	fb_bg.add_child(_rot_fort_label)
+	# 성 바 (아래쪽 = 아군)
+	var cb_bg := Panel.new()
+	cb_bg.position = Vector2(60, 34)
+	cb_bg.size = Vector2(300, 24)
+	cb_bg.add_theme_stylebox_override("panel", UIKit.box(Color(0.1, 0.1, 0.07, 0.9), Color(0.4, 0.7, 1.0), 8, 2))
+	cb_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rot_overlay.add_child(cb_bg)
+	_rot_castle_fill = ColorRect.new()
+	_rot_castle_fill.position = Vector2(3, 3)
+	_rot_castle_fill.size = Vector2(294, 18)
+	_rot_castle_fill.color = Color(0.4, 0.7, 1.0)
+	cb_bg.add_child(_rot_castle_fill)
+	_rot_castle_label = _outlined("성", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_rot_castle_label.size = cb_bg.size
+	_rot_castle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cb_bg.add_child(_rot_castle_label)
+	# 홈 버튼 (왼쪽)
+	var home := Button.new()
+	home.position = Vector2(6, 10)
+	home.size = Vector2(48, 44)
+	home.text = "←"
+	home.focus_mode = Control.FOCUS_NONE
+	LaneUI.button(home, "red", 20)
+	home.pressed.connect(func(): home_pressed.emit())
+	_rot_overlay.add_child(home)
+
+func _build_rot_summon_panel() -> void:
+	_rot_summon_panel = Control.new()
+	_rot_summon_panel.position = Vector2(0, 1102)
+	_rot_summon_panel.size = Vector2(720, 178)
+	_rot_summon_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(_rot_summon_panel)
+	var bg := Panel.new()
+	LaneUI.dress(bg, "panel_wood")
+	bg.position = Vector2.ZERO
+	bg.size = _rot_summon_panel.size
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rot_summon_panel.add_child(bg)
+	# 아군 1줄: 16종, 셀 40×54 (아이콘 36 + 라벨 자리 짧게)
+	var cell_w: float = 42.0
+	var cell_h: float = 54.0
+	var pad_x: float = (720.0 - cell_w * ALLY_ORDER.size()) * 0.5
+	var ally_y: float = 8.0
+	for i in range(ALLY_ORDER.size()):
+		var kind: String = ALLY_ORDER[i]
+		var b := _rot_kind_button(kind, true)
+		b.position = Vector2(pad_x + i * cell_w, ally_y)
+		b.size = Vector2(cell_w - 4, cell_h)
+		_rot_summon_panel.add_child(b)
+	# 적 1줄
+	var enemy_kinds: Array = ENEMIES.keys()
+	var pad_x2: float = (720.0 - cell_w * enemy_kinds.size()) * 0.5
+	var enemy_y: float = ally_y + cell_h + 6.0
+	for i in range(enemy_kinds.size()):
+		var kind2: String = enemy_kinds[i]
+		var b2 := _rot_kind_button(kind2, false)
+		b2.position = Vector2(pad_x2 + i * cell_w, enemy_y)
+		b2.size = Vector2(cell_w - 4, cell_h)
+		_rot_summon_panel.add_child(b2)
+	# 유틸 1줄
+	var util_y: float = enemy_y + cell_h + 6.0
+	var u1 := _test_util_button("아군 제거", func(): _test_clear_side(1))
+	u1.position = Vector2(10, util_y); u1.size = Vector2(170, 42); _rot_summon_panel.add_child(u1)
+	var u2 := _test_util_button("적 제거", func(): _test_clear_side(-1))
+	u2.position = Vector2(188, util_y); u2.size = Vector2(170, 42); _rot_summon_panel.add_child(u2)
+	var u3 := _test_util_button("체력 회복", func(): _test_full_heal())
+	u3.position = Vector2(366, util_y); u3.size = Vector2(170, 42); _rot_summon_panel.add_child(u3)
+	var u4 := _test_util_button("대포 충전", func(): cannon = 100.0; _refresh())
+	u4.position = Vector2(544, util_y); u4.size = Vector2(170, 42); _rot_summon_panel.add_child(u4)
+
+func _rot_kind_button(kind: String, ally: bool) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var tint: Color = Color(0.25, 0.5, 0.75) if ally else Color(0.65, 0.25, 0.3)
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		var kk: float = 1.0
+		if st == "hover": kk = 1.15
+		elif st == "pressed" or st == "hover_pressed": kk = 0.8
+		b.add_theme_stylebox_override(st, UIKit.box(Color(tint.r * kk, tint.g * kk, tint.b * kk, 1.0), Color(0.95, 0.85, 0.4), 6, 2))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var icon := TextureRect.new()
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.position = Vector2(2, 2)
+	icon.size = Vector2(34, 36)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.texture = tex.get(kind)
+	b.add_child(icon)
+	var nm: String = kind
+	if ally and ALLIES.has(kind):
+		nm = ALLIES[kind].get("name", kind)
+	var lab := _outlined(nm, 10, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	lab.position = Vector2(0, 38)
+	lab.size = Vector2(38, 14)
+	lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(lab)
+	if ally:
+		b.pressed.connect(func(): summon(kind))
+	else:
+		b.pressed.connect(func(): _spawn_enemy(kind, 1.0))
+	return b
+
+func _rot_refresh() -> void:
+	if _rot_overlay == null or not _rot_overlay.visible:
+		return
+	if _rot_castle_fill != null:
+		var cp: float = clampf(float(castle_hp) / float(CASTLE_HP), 0.0, 1.0)
+		_rot_castle_fill.size.x = 294.0 * cp
+		_rot_castle_label.text = "성  %d / %d" % [max(0, castle_hp), CASTLE_HP]
+	if _rot_fort_fill != null:
+		var fmax: float = maxf(1.0, fortress_max)
+		var fp: float = clampf(fortress_hp / fmax, 0.0, 1.0)
+		_rot_fort_fill.size.x = 294.0 * fp
+		_rot_fort_label.text = "요새  %d / %d" % [max(0, int(fortress_hp)), int(fmax)]
 
 func _build_test_panel() -> void:
 	# Control의 size를 늘려서 터치가 들어오게 한다 (버튼은 자식이라 Control size 밖이어도 그려짐)
