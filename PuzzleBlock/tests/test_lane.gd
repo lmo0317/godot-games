@@ -71,13 +71,13 @@ func _run() -> void:
 	main.combo_count = 0
 	main._update_combo_aura()
 
-	# Real time: the monster walks toward the castle and gold trickles in without any move
+	# Real time: the monster walks toward the castle. Gold no longer trickles — only puzzle clears pay.
 	var enemy: Dictionary = b.units[0]
 	var x0: float = enemy["node"].position.x
 	var g0: int = b.gold
 	await get_tree().create_timer(1.2).timeout
 	_expect(enemy["node"].position.x < x0, "the monster walks by itself (%.0f -> %.0f)" % [x0, enemy["node"].position.x])
-	_expect(b.gold > g0, "gold trickles in over time (%d -> %d)" % [g0, b.gold])
+	_expect(b.gold == g0, "gold stays put without clears (%d -> %d)" % [g0, b.gold])
 
 	# Settings pause the battle
 	main._open_settings()

@@ -7,7 +7,7 @@ extends Control
 # - The 4 summon buttons are the player's deck (LaneUnits, built outside battles with the gacha and
 #   the deck screen). Each soldier has a role: melee, tank, armor breaker, ranged, anti-air, mage,
 #   healer, siege; star tiers (merged from duplicates) raise HP and attack.
-# - Gold trickles in up to the wallet's limit; clears pay more. "수입 UP" raises income and limit.
+# - Gold comes only from clearing puzzle lines; "지갑 확장" only raises the max carry limit.
 # - Clears and combos charge the castle cannon; one tap blasts every monster.
 # - Stages (LaneStages) set the monsters, waves and a boss that roars in at half the fortress.
 # - Monster traits: bats fly (only ranged soldiers reach them), armor (spears), goblin archers shoot,
@@ -54,7 +54,7 @@ const CASTLE_HP: int = 600
 const START_GOLD: int = 60
 # Wallet levels: limit, gold per second, cost of the next level
 const WALLET_MAX: Array[int] = [200, 320, 480, 700, 1000]
-const WALLET_INCOME: Array[float] = [1.0, 1.4, 1.8, 2.3, 2.8]
+const WALLET_INCOME: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 const WALLET_COST: Array[int] = [60, 130, 220, 340]
 const GOLD_PER_LINE: int = 18
 const GOLD_PER_POINT: float = 0.5
@@ -1530,7 +1530,7 @@ func _refresh() -> void:
 	_gold_label.text = str(gold)
 	_wallet_label.text = "/%d" % wallet_max()
 	if wallet < WALLET_COST.size():
-		_income_btn.text = "수입 UP  %d" % WALLET_COST[wallet]
+		_income_btn.text = "지갑 확장  %d" % WALLET_COST[wallet]
 		_income_btn.modulate = Color.WHITE if gold >= WALLET_COST[wallet] else Color(0.6, 0.6, 0.65)
 	else:
 		_income_btn.text = "수입 MAX"
