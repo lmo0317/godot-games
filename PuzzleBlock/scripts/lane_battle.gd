@@ -536,6 +536,11 @@ func _tick(delta: float) -> void:
 		if u["stun"] > 0.0:
 			u["stun"] -= delta
 			continue
+		# 영웅(caster)은 성 쪽에 고정 — 자동 공격·전진 안 함. 스킬 버튼으로만 행동
+		if u.get("role", "") == "caster":
+			node.position.x = u.get("anchor_x", node.position.x)
+			node.offset.y = base_off
+			continue
 		var target = _target_for(u)
 		if target != null:
 			node.offset.y = base_off
@@ -963,23 +968,24 @@ func _spawn_hero() -> void:
 	var tex_name: String = hero_info.get("tex", "hero_sanzang")
 	var node := Sprite2D.new()
 	node.texture = tex.get(tex_name, tex["knight"])
-	# 보통 유닛 1.4x → 영웅은 그 2배 ≒ 2.8x
-	node.scale = Vector2.ONE * UNIT_PX * 2.0
+	# 영웅은 성 뒤에서 캐스팅만 하는 역할 — 보통 유닛보다 살짝 큰 1.3x
+	node.scale = Vector2.ONE * UNIT_PX * 1.3
 	node.offset = Vector2(0, -node.texture.get_height() * 0.5)
-	node.position = Vector2(ALLY_START + 20.0, GROUND)
+	# 성 바로 위에 고정 (CASTLE_X 기준 살짝 뒤쪽), 전진 금지
+	node.position = Vector2(CASTLE_X + 18.0, GROUND)
 	_units_layer.add_child(node)
 	var hp: float = h["hp"]
-	var u := {"node": node, "side": 1, "kind": hero_id, "hp": hp, "max_hp": hp, "atk": h["atk"],
-		"range": h["range"], "shot": h.get("shot", ""), "splash": 0.0,
-		"speed": h["speed"] * SPEED_K, "every": h["every"], "cd": 0.5, "phase": rng.randf() * TAU,
-		"kb": h["kb"], "kb_mark": hp * (h["kb"] - 1) / h["kb"], "stun": 0.0,
-		"stand": maxf(16.0, h["range"] * 0.8),
+	var u := {"node": node, "side": 1, "kind": hero_id, "hp": hp, "max_hp": hp, "atk": 0.0,
+		"range": 0.0, "shot": "", "splash": 0.0,
+		"speed": 0.0, "every": 999.0, "cd": 999.0, "phase": rng.randf() * TAU,
+		"kb": 9999.0, "kb_mark": -1.0, "stun": 0.0,
+		"stand": 0.0,
 		"flying": false, "armor": false, "guard": 0.3,  # 영웅은 받는 피해 30% 감소
 		"heal": 0.0, "heal_r": 0.0, "heal_t": HEAL_EVERY,
 		"aura": 0.0, "aura_r": 0.0, "aura_t": HEAL_EVERY * 0.5,
 		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
-		"base_scale": Vector2.ONE * UNIT_PX * 2.0,
-		"hero": true, "hero_id": hero_id}
+		"base_scale": Vector2.ONE * UNIT_PX * 1.3,
+		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X + 18.0}
 	u["bar"] = _unit_bar(node)
 	units.append(u)
 	hero_unit = u
@@ -1075,19 +1081,36 @@ func _skill_line_sweep() -> void:
 				_knock(o, 80.0)
 			_fx_once("slash", _mid(o), 0.25, 1.5)
 
-# 저팔계 "쇄기 돌진" — 영웅 전방 180px 범위 150 피해 + 넉백 + 2초 스턴
+# 저팔계 "환영 쇄기 돌진" — 적이 가장 몰린 지점에 환영을 투사해 180px 범위 150 피해 + 넉백 + 2초 스턴
+# 영웅 위치와 무관. 전장에 적이 없으면 전장 가운데에 터트림
 func _skill_cone_dash() -> void:
 	_banner("쇄기 돌진!", "", Color(1.0, 0.6, 0.3))
-	if not hero_unit.has("node"):
-		return
-	var hx: float = hero_unit["node"].position.x
-	_fx_once("boom_l", Vector2(hx + 90.0, GROUND - 30), 0.3, 1.6)
+	# 적 밀집 지점 찾기: 각 적을 중심으로 180px 창에 들어오는 적 수 최대인 x 선택
+	var enemies: Array = []
+	for o in units:
+		if o["side"] == -1 and o["hp"] > 0.0:
+			enemies.append(o)
+	var center_x: float = 360.0  # 적이 없으면 전장 가운데
+	if not enemies.is_empty():
+		var best_cnt: int = -1
+		var best_x: float = enemies[0]["node"].position.x
+		for a in enemies:
+			var ax: float = a["node"].position.x
+			var cnt: int = 0
+			for b in enemies:
+				if absf(b["node"].position.x - ax) <= 90.0:
+					cnt += 1
+			if cnt > best_cnt:
+				best_cnt = cnt
+				best_x = ax
+		center_x = best_x
+	_fx_once("boom_l", Vector2(center_x, GROUND - 30), 0.3, 1.6)
 	_shake_lane(7.0, 0.25)
 	for o in units.duplicate():
 		if o["side"] != -1 or o["hp"] <= 0.0:
 			continue
-		var d: float = o["node"].position.x - hx
-		if d >= 0.0 and d <= 180.0:
+		var d: float = absf(o["node"].position.x - center_x)
+		if d <= 90.0:
 			_hurt(o, 150.0, true)
 			if o["hp"] > 0.0:
 				o["stun"] = maxf(o["stun"], 2.0)

@@ -333,6 +333,16 @@ func _run() -> void:
 		b._spawn_hero()
 	_expect(b.hero_unit.has("hp") and b.hero_unit["hp"] > 0.0 and b.units.has(b.hero_unit), "영웅이 자동 소환됨")
 	_expect(b._hero_hp_fill != null and b._hero_portrait != null, "영웅 HP 바 + 초상 UI 존재")
+	# 영웅은 성 쪽 캐스터: role=caster, 자동 공격 없음, 전진 없음, 성 x좌표 고정
+	_expect(b.hero_unit.get("role", "") == "caster", "영웅 role=caster")
+	_expect(b.hero_unit["atk"] == 0.0 and b.hero_unit["speed"] == 0.0, "영웅은 자동 공격·전진 안 함")
+	_expect(absf(b.hero_unit["node"].position.x - (LaneBattle.CASTLE_X + 18.0)) < 1.0, "영웅은 성 x좌표에 고정 (%.1f)" % b.hero_unit["node"].position.x)
+	# 전진 금지 확인: 적을 멀리 두고 1프레임 돌려도 x가 안 움직여야 함
+	var hero_x0: float = b.hero_unit["node"].position.x
+	await get_tree().create_timer(0.3).timeout
+	_expect(absf(b.hero_unit["node"].position.x - hero_x0) < 1.0, "영웅이 전진하지 않음 (%.1f → %.1f)" % [hero_x0, b.hero_unit["node"].position.x])
+	# 영웅 스케일: 보통 유닛(1.0 * UNIT_PX)보다 크지만 과거 2.0배보다 작음
+	_expect(b.hero_unit["node"].scale.x > LaneBattle.UNIT_PX and b.hero_unit["node"].scale.x < LaneBattle.UNIT_PX * 1.6, "영웅 스케일 1.3x (%.2f)" % b.hero_unit["node"].scale.x)
 	# 스킬 발동: 삼장 "염불 결계" — 아군 전원 buff_t · buff_guard 적용
 	var ally_for_skill := b._spawn("knight", 1, 1.0)
 	b.hero_cool = 0.0
