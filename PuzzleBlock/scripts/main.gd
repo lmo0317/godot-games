@@ -1484,7 +1484,7 @@ func _start_vertical_battle() -> void:
 	$TrayPlates.visible = false
 	battle_stage = 1
 	battle.test_mode = true
-	battle.test_rotated = true
+	battle.test_rotated = false  # 회전 포기 — 가로 레인 상단 유지, 퍼즐만 제거
 	battle.size = Vector2(720, 1280)
 	vertical_mode = true
 	lane_select.visible = false
