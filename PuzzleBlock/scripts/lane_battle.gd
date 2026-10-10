@@ -117,7 +117,27 @@ var test_rotated: bool = false
 var battle_only_mode: bool = false
 const BATTLE_ONLY_INCOME: float = 1.0
 const BATTLE_ONLY_START_GOLD: int = 100
+# 2026-10-11: 전투만 모드에서는 레인 뷰를 세로로 더 넓게 보여 "넉넉한 전장"을 만든다.
+# LANE_H(=470)는 그대로 두고 _view.size.y만 680으로 override, 하단 패널은 y=680~1280 (600px).
+const BO_VIEW_H: float = 680.0
+const BO_PANEL_TOP: float = 680.0
 var _bo_panel: Control = null
+var _bo_ground_fill: ColorRect = null
+# 하단 전용 위젯 (전투만 모드)
+var _bo_back_btn: Button = null
+var _bo_skill_btn: Button = null
+var _bo_skill_icon: TextureRect = null
+var _bo_skill_veil: ColorRect = null
+var _bo_skill_label: Label = null
+var _bo_skill_name_label: Label = null
+var _bo_auto_btn: Button = null
+var _bo_march_btn: Button = null
+var _bo_cannon_btn: Button = null
+var _bo_cannon_fill: ColorRect = null
+var _bo_cannon_label: Label = null
+var _bo_wallet_btn: Button = null
+var _bo_wave_label: Label = null
+var _bo_enemy_list: HBoxContainer = null
 var _test_panel: Control = null
 
 var stage: int = 1
@@ -1700,19 +1720,23 @@ func _build() -> void:
 	_shake.add_child(_fx_layer)
 	_bars_layer = Node2D.new()
 	_shake.add_child(_bars_layer)
-	# One ribbon on the right, "STAGE N" big with the stage name as a parchment subline just below
-	var rib := LaneUI.ribbon("", 200, 22)
-	rib.position = Vector2(356, 2)
+	# 2026-10-11 UI fix: ribbon narrower (150) + shifted right so it does not touch the gold pill
+	# (gold ends at x=448, ribbon starts at x=460). Parchment subline sits directly under the ribbon
+	# at y=68 — the ribbon's visible content ends at y≈60, so a 20px gap keeps the stage name legible.
+	var rib := LaneUI.ribbon("", 150, 22)
+	rib.name = "StageRibbon"
+	rib.position = Vector2(460, 2)
 	_view.add_child(rib)
 	_stage_label = rib.get_child(0)
 	var sub := Panel.new()
 	LaneUI.dress(sub, "panel_paper")
+	sub.name = "StageSub"
 	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	sub.position = Vector2(386, 46)
+	sub.position = Vector2(465, 68)
 	sub.size = Vector2(140, 22)
 	_view.add_child(sub)
 	_stage_name = LaneUI.label("", 13, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
-	_stage_name.position = Vector2(386, 46)
+	_stage_name.position = Vector2(465, 68)
 	_stage_name.size = Vector2(140, 22)
 	_stage_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_view.add_child(_stage_name)
@@ -1804,7 +1828,9 @@ func _build() -> void:
 	# y=70부터 시작하면 세로로 겹치지 않는다.
 	_hero_skill_btn = Button.new()
 	_hero_skill_btn.name = "HeroSkillBtn"
-	_hero_skill_btn.position = Vector2(614, 70)
+	# 2026-10-11 UI fix: shifted to (618, 76) — right edge 714 (6px margin from view width 720),
+	# top below the stage ribbon's lower edge (ribbon y=2..~66) → y=76 keeps a 10px breathing gap.
+	_hero_skill_btn.position = Vector2(618, 76)
 	_hero_skill_btn.size = Vector2(96, 96)
 	_hero_skill_btn.focus_mode = Control.FOCUS_NONE
 	# 둥근 금테 패널 느낌의 스타일박스
@@ -1843,10 +1869,10 @@ func _build() -> void:
 	var skill_name_bg := Panel.new()
 	LaneUI.dress(skill_name_bg, "panel_paper")
 	skill_name_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# 2026-10-10 UI fix: 스킬 버튼 아래로 이동 (버튼 y=70, h=96 → 양피지 y=70+96+4=170).
-	# 이전: Vector2(602, LANE_H - 40 - 22 - 4 - 16) 하단.
-	skill_name_bg.position = Vector2(602, 170)
-	skill_name_bg.size = Vector2(120, 22)
+	# 2026-10-11 UI fix: 스킬 버튼 (618, 76, 96×96) 바로 아래 → y=76+96+4=176.
+	# 가로는 폭 108로 줄여 x=608..716 (view=720, 4px 여백). 이전 (602, 170) size (120, 22)는 x 끝이 722로 화면 밖.
+	skill_name_bg.position = Vector2(608, 176)
+	skill_name_bg.size = Vector2(108, 22)
 	_view.add_child(skill_name_bg)
 	_hero_skill_name_label = LaneUI.label("", 14, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
 	_hero_skill_name_label.position = skill_name_bg.position
@@ -1856,9 +1882,13 @@ func _build() -> void:
 	_view.add_child(_hero_skill_name_label)
 	_hero_skill_name_bg = skill_name_bg
 
-	# Top-left of the lane: home / settings / sound on a dark pill, then charge/hold and auto
+	# Top-left of the lane: home / settings / sound on a dark pill, then charge/hold and auto.
+	# 2026-10-11 UI fix: 상단 한 줄 레이아웃을 모두 겹치지 않게 재배치.
+	#   pill   (6..156)   |  march (164..250)  |  auto hidden (258..344)  |  gold (352..448)  |  ribbon (460..610)  |  skill btn (618..714)
+	#   가로 간격 ≥ 8px, 세로는 ribbon(y=2-66) 아래로 skill btn(y=76)·sub(y=68) 배치.
 	var pill := Panel.new()
 	LaneUI.dress(pill, "panel_wood")
+	pill.name = "MenuPill"
 	pill.position = Vector2(6, 6)
 	pill.size = Vector2(150, 48)
 	pill.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -1876,21 +1906,27 @@ func _build() -> void:
 		_menu[key] = mb
 		i_menu += 1
 	_march_btn = Button.new()
-	_march_btn.position = Vector2(160, 8)
-	_march_btn.size = Vector2(90, 44)
+	_march_btn.name = "MarchBtn"
+	_march_btn.position = Vector2(164, 8)
+	_march_btn.size = Vector2(86, 44)
 	_march_btn.focus_mode = Control.FOCUS_NONE
 	_march_btn.pressed.connect(toggle_march)
 	_view.add_child(_march_btn)
-	# Auto always plays (user request 2026-10-08): the toggle stays for tests but is not shown
+	# Auto always plays (user request 2026-10-08): the toggle stays for tests but is not shown.
+	# 보이지 않더라도 혹시 보일 상황에 대비해 겹치지 않는 자리를 잡아둔다 (258..344).
 	_auto_btn = Button.new()
+	_auto_btn.name = "AutoBtn"
+	_auto_btn.position = Vector2(258, 8)
+	_auto_btn.size = Vector2(86, 44)
 	_auto_btn.visible = false
 	_auto_btn.pressed.connect(toggle_auto)
 	_view.add_child(_auto_btn)
 	# Gold from the puzzle, next to the menu, so clears still show where the soldiers come from
 	var gold_pill := Panel.new()
 	LaneUI.dress(gold_pill, "panel_wood")
-	gold_pill.position = Vector2(256, 6)
-	gold_pill.size = Vector2(90, 48)
+	gold_pill.name = "GoldPill"
+	gold_pill.position = Vector2(352, 6)
+	gold_pill.size = Vector2(96, 48)
 	gold_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_view.add_child(gold_pill)
 	var coin := LaneUI.icon("icon_coin", Vector2(22, 22))
@@ -2006,6 +2042,53 @@ func _build() -> void:
 	_cannon_label.position = Vector2(0, 46)
 	_cannon_label.size = Vector2(106, 26)
 	_cannon_btn.add_child(_cannon_label)
+	# 2026-10-11 UI gate: print each top-of-battle widget's rect and check that no two overlap.
+	# This runs once per battle build; any overlap pushes an error that shows in the editor log and
+	# in the exported web console, so regressions are caught before capture.
+	_log_top_ui_rects(pill, gold_pill)
+
+func _log_top_ui_rects(pill: Panel, gold_pill: Panel) -> void:
+	# Pull the three ribbon/subline/skill nodes we built above by node name so this helper does not
+	# need five extra arguments.
+	var ribbon: Control = _view.get_node_or_null("StageRibbon")
+	var stage_sub: Control = _view.get_node_or_null("StageSub")
+	var skill_bg: Control = _hero_skill_name_bg
+	var items: Array = [
+		{"name": "menu_pill",     "node": pill},
+		{"name": "march_btn",     "node": _march_btn},
+		{"name": "auto_btn",      "node": _auto_btn},
+		{"name": "gold_pill",     "node": gold_pill},
+		{"name": "stage_ribbon",  "node": ribbon},
+		{"name": "stage_sub",     "node": stage_sub},
+		{"name": "hero_skill",    "node": _hero_skill_btn},
+		{"name": "skill_name_bg", "node": skill_bg},
+	]
+	for it in items:
+		var n: Control = it["node"]
+		if n == null:
+			continue
+		print("[UI] ", it["name"], ": pos=", n.position, " size=", n.size, " visible=", n.visible)
+	for i in range(items.size()):
+		var a_it: Dictionary = items[i]
+		var a: Control = a_it["node"]
+		if a == null or not a.visible:
+			continue
+		var ra := Rect2(a.position, a.size)
+		for j in range(i + 1, items.size()):
+			var b_it: Dictionary = items[j]
+			var b: Control = b_it["node"]
+			if b == null or not b.visible:
+				continue
+			var rb := Rect2(b.position, b.size)
+			if ra.intersects(rb):
+				push_error("[UI OVERLAP] %s %s vs %s %s" % [a_it["name"], ra, b_it["name"], rb])
+	# Also guard: no widget may extend past the 720×LANE_H battle view.
+	for it2 in items:
+		var n2: Control = it2["node"]
+		if n2 == null or not n2.visible:
+			continue
+		if n2.position.x < 0 or n2.position.y < 0 or n2.position.x + n2.size.x > 720.0:
+			push_error("[UI OUT OF BOUNDS] %s pos=%s size=%s" % [it2["name"], n2.position, n2.size])
 
 # Fills the 4 summon buttons from the deck
 func _setup_slots() -> void:
@@ -2192,6 +2275,7 @@ func _apply_test_mode() -> void:
 			_test_panel.visible = false
 		if _bo_panel != null:
 			_bo_panel.visible = false
+		_apply_bo_view(false)
 		_apply_test_rotation(false)
 		return
 	if test_mode:
@@ -2205,6 +2289,7 @@ func _apply_test_mode() -> void:
 		_test_panel.visible = true
 		if _bo_panel != null:
 			_bo_panel.visible = false
+		_apply_bo_view(false)
 		_apply_test_rotation(test_rotated)
 	elif battle_only_mode:
 		# 자동 소환 off (덱 4명을 눌러서 소환하는 재미), 자동 wave는 _waves()가 그대로 돈다
@@ -2212,11 +2297,62 @@ func _apply_test_mode() -> void:
 		gold = BATTLE_ONLY_START_GOLD
 		if _test_panel != null:
 			_test_panel.visible = false
+		_apply_bo_view(true)
 		if _bo_panel == null:
 			_build_bo_panel()
 		_bo_panel.visible = true
 		_bo_refresh_slots()
 		_apply_test_rotation(false)
+
+# 2026-10-11 전투만 모드: 레인 _view를 세로로 680까지 늘려 전장을 넉넉하게 보여준다.
+# LANE_H(=470) 아래의 여백은 바닥(흙색) ColorRect로 채워 자연스럽게 이어보이게 한다.
+# 레인 안에 있던 상단 UI(pill·금화·리본·영웅박스·스킬 버튼 등)는 전부 숨긴다 — 하단 패널에 재배치했다.
+const BO_HIDE_FROM_VIEW: Array[String] = [
+	"MenuPill", "GoldPill", "StageRibbon", "StageSub", "HeroBox", "HeroSkillBtn",
+	"MarchBtn", "AutoBtn", "BossBadge",
+]
+
+func _apply_bo_view(on: bool) -> void:
+	if _view == null:
+		return
+	if on:
+		_view.size = Vector2(720, BO_VIEW_H)
+		if _bo_ground_fill == null:
+			# 지면 연장용 — lane bg 바닥 색과 비슷한 흙빛. _shake 안에 두어 shake에 함께 흔들린다.
+			_bo_ground_fill = ColorRect.new()
+			_bo_ground_fill.color = Color(0.26, 0.19, 0.14, 1.0)
+			_bo_ground_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_bo_ground_fill.position = Vector2(-40, LANE_H)
+			_bo_ground_fill.size = Vector2(800, BO_VIEW_H - LANE_H + 20)
+			_bo_ground_fill.z_index = -5
+			_shake.add_child(_bo_ground_fill)
+			# bg와 units 뒤로 보내기 위해 index 조정
+			_shake.move_child(_bo_ground_fill, 1)
+		_bo_ground_fill.visible = true
+		for nm in BO_HIDE_FROM_VIEW:
+			var n: Node = _view.get_node_or_null(nm)
+			if n != null and n is CanvasItem:
+				n.visible = false
+		# 스킬 이름 양피지도 숨김 (이름이 없어 조회)
+		if _hero_skill_name_bg != null:
+			_hero_skill_name_bg.visible = false
+		if _hero_skill_name_label != null:
+			_hero_skill_name_label.visible = false
+		# 사이드 하단 HP 바(성·요새)는 레인 UI지만 LANE_H-32에 걸려 있어 유지한다.
+		size = Vector2(720, 1280)
+	else:
+		_view.size = Vector2(720, LANE_H)
+		if _bo_ground_fill != null:
+			_bo_ground_fill.visible = false
+		for nm in BO_HIDE_FROM_VIEW:
+			var n: Node = _view.get_node_or_null(nm)
+			if n != null and n is CanvasItem:
+				n.visible = true
+		if _hero_skill_name_bg != null:
+			_hero_skill_name_bg.visible = true
+		if _hero_skill_name_label != null:
+			_hero_skill_name_label.visible = true
+		size = Vector2(720, LANE_H + BAR_H)
 
 # 2026-10-11: 세로 화면용 90° CCW 회전. 레인(_view)만 돌리고, 하단 소환 패널은 그대로 둔다.
 # 전투 로직(x축 이동, CASTLE_LEFT 등)은 변경 없음.
