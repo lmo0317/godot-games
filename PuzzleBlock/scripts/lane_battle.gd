@@ -54,8 +54,8 @@ const CASTLE_HP: int = 600
 const START_GOLD: int = 60
 # Wallet levels: limit, gold per second, cost of the next level
 const WALLET_MAX: Array[int] = [200, 320, 480, 700, 1000]
-const WALLET_INCOME: Array[float] = [3.0, 4.0, 5.0, 6.2, 7.5]
-const WALLET_COST: Array[int] = [80, 160, 260, 400]
+const WALLET_INCOME: Array[float] = [1.0, 1.4, 1.8, 2.3, 2.8]
+const WALLET_COST: Array[int] = [60, 130, 220, 340]
 const GOLD_PER_LINE: int = 18
 const GOLD_PER_POINT: float = 0.5
 const CANNON_PER_LINE: float = 12.0
