@@ -31,7 +31,8 @@ signal sound_pressed
 const LANE_H: float = 470.0
 const BAR_H: float = 0.0
 const UNIT_PX: float = 1.4            # soldiers and monsters, a little over their pixel size
-const BASE_PX: float = 1.0            # castle and fortress
+const BASE_PX: float = 1.0            # cannon, cannonball, flash, boom (keep original scale)
+const STRUCT_PX: float = 1.8          # castle and fortress structures (bigger so hero fits naturally at the gate)
 const FX_PX: float = 1.0              # effects
 const GROUND: float = 412.0           # feet line in the lane (on the dirt road)
 const FLY_H: float = 56.0             # bats hover this high
@@ -1641,9 +1642,9 @@ func _build() -> void:
 		var t: Texture2D = tex["castle" if side == 1 else "fortress"]
 		var b := Sprite2D.new()
 		b.texture = t
-		b.scale = Vector2.ONE * BASE_PX
+		b.scale = Vector2.ONE * STRUCT_PX
 		b.centered = false
-		b.position = Vector2(CASTLE_LEFT if side == 1 else FORT_RIGHT - t.get_width() * BASE_PX, GROUND + 4.0 - t.get_height() * BASE_PX)
+		b.position = Vector2(CASTLE_LEFT if side == 1 else FORT_RIGHT - t.get_width() * STRUCT_PX, GROUND + 4.0 - t.get_height() * STRUCT_PX)
 		_shake.add_child(b)
 		if side == 1:
 			_castle_sprite = b
@@ -1652,9 +1653,9 @@ func _build() -> void:
 	# The cannon stands on the castle's right tower (its top is 53 art pixels below the castle top)
 	_cannon_sprite = Sprite2D.new()
 	_cannon_sprite.texture = tex["cannon"]
-	_cannon_sprite.scale = Vector2.ONE * BASE_PX
+	_cannon_sprite.scale = Vector2.ONE * STRUCT_PX
 	_cannon_sprite.centered = false
-	_cannon_sprite.position = Vector2(_castle_sprite.position.x + (56.0 - tex["cannon"].get_width() * 0.35) * BASE_PX, _castle_sprite.position.y + (53.0 - tex["cannon"].get_height()) * BASE_PX)
+	_cannon_sprite.position = Vector2(_castle_sprite.position.x + (56.0 - tex["cannon"].get_width() * 0.35) * STRUCT_PX, _castle_sprite.position.y + (53.0 - tex["cannon"].get_height()) * STRUCT_PX)
 	_shake.add_child(_cannon_sprite)
 	_units_layer = Node2D.new()
 	_units_layer.y_sort_enabled = true
