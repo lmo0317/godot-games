@@ -101,10 +101,13 @@ func _ready() -> void:
 	note.size = Vector2(680, 24)
 	deck_board.add_child(note)
 
+	# 2026-10-10 UI fix: 보드를 그리드 바닥까지 늘려 카드가 보드 밖으로 삐져나오지 않게 하고,
+	# 아래 "본부로" 버튼과 24px+ 여백을 둔다 (SKILL 4b 겹침 금지).
+	# 그리드 바닥 전역 y = 418(y) + 90(grid.y) + 4*160 - 10 = 1138 → 보드 바닥 1148, 버튼 y=1172.
 	var unit_board := Panel.new()
 	LaneUI.dress(unit_board, "panel_wood")
 	unit_board.position = Vector2(20, 418)
-	unit_board.size = Vector2(680, 676)
+	unit_board.size = Vector2(680, 730)
 	add_child(unit_board)
 	# Row 1 inside unit_board: 보유 n/16  💎 n  🔷 m (shards)
 	count_label = LaneUI.label("", 20, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_LEFT)
@@ -141,10 +144,11 @@ func _ready() -> void:
 	grid.position = Vector2((680 - (CARD_SIZE.x * 4 + 30)) * 0.5, 90)
 	unit_board.add_child(grid)
 
+	# 2026-10-10 UI fix: 보드 바닥(1148)과 24px 여백 → y=1172. (이전: y=1104, 하단 궁수 카드와 겹침)
 	var back := Button.new()
 	back.text = "본부로"
 	LaneUI.button(back, "green", 22)
-	back.position = Vector2(220, 1104)
+	back.position = Vector2(220, 1172)
 	back.size = Vector2(280, 64)
 	back.pressed.connect(close)
 	add_child(back)

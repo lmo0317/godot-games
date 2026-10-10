@@ -1760,11 +1760,14 @@ func _build() -> void:
 	_hero_hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hpbg.add_child(_hero_hp_label)
 
-	# 영웅 스킬 버튼 (우측 중단, 큰 둥근 터치 영역 96×96).
-	# 요새 HP 바(y=LANE_H-32)보다 16+ 위 → y = LANE_H - 32 - 16 - 96 = LANE_H - 144
+	# 영웅 스킬 버튼 (우상단, 96×96).
+	# 2026-10-10 UI fix: 전장 가림 방지 — 상단 메뉴 pill(y=6-54) 아래 16px → y=70.
+	# 이전: Vector2(614, LANE_H - 144.0) = (614, 326), 전장(y≈430) 가림.
+	# 좌상단 영웅 HP 패널은 숨겨져 있어 그 반대편(우상단)이 비어있음. 금화·STAGE 리본은 x≈540~720 범위라
+	# y=70부터 시작하면 세로로 겹치지 않는다.
 	_hero_skill_btn = Button.new()
 	_hero_skill_btn.name = "HeroSkillBtn"
-	_hero_skill_btn.position = Vector2(614, LANE_H - 144.0)
+	_hero_skill_btn.position = Vector2(614, 70)
 	_hero_skill_btn.size = Vector2(96, 96)
 	_hero_skill_btn.focus_mode = Control.FOCUS_NONE
 	# 둥근 금테 패널 느낌의 스타일박스
@@ -1803,7 +1806,9 @@ func _build() -> void:
 	var skill_name_bg := Panel.new()
 	LaneUI.dress(skill_name_bg, "panel_paper")
 	skill_name_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	skill_name_bg.position = Vector2(602, LANE_H - 40.0 - 22.0 - 4.0 - 16.0)
+	# 2026-10-10 UI fix: 스킬 버튼 아래로 이동 (버튼 y=70, h=96 → 양피지 y=70+96+4=170).
+	# 이전: Vector2(602, LANE_H - 40 - 22 - 4 - 16) 하단.
+	skill_name_bg.position = Vector2(602, 170)
 	skill_name_bg.size = Vector2(120, 22)
 	_view.add_child(skill_name_bg)
 	_hero_skill_name_label = LaneUI.label("", 14, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
