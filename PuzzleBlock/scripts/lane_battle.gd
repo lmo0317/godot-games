@@ -988,10 +988,9 @@ func _spawn_hero() -> void:
 	# 영웅은 성 뒤에서 캐스팅만 하는 역할 — 보통 유닛보다 살짝 큰 1.3x
 	node.scale = Vector2.ONE * UNIT_PX * 1.3
 	node.offset = Vector2(0, -node.texture.get_height() * 0.5)
-	# 영웅은 성벽 중간 높이에서 캐스팅: x는 성 중앙(CASTLE_X), y는 지면보다 28px 위.
-	# z_index 음수로 성 그래픽(0) 뒤에 보여, 성이 가려지지 않도록 함.
-	node.position = Vector2(CASTLE_X, GROUND - 28.0)
-	node.z_index = -1
+	# 영웅은 성 바로 오른쪽 옆, 지면 위에 서서 캐스팅. 성과 겹치지 않고 성 위로 보이게 z=5.
+	node.position = Vector2(CASTLE_X + 60.0, GROUND - 10.0)
+	node.z_index = 5
 	_units_layer.add_child(node)
 	var hp: float = h["hp"]
 	var u := {"node": node, "side": 1, "kind": hero_id, "hp": hp, "max_hp": hp, "atk": 0.0,
@@ -1004,7 +1003,7 @@ func _spawn_hero() -> void:
 		"aura": 0.0, "aura_r": 0.0, "aura_t": HEAL_EVERY * 0.5,
 		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
 		"base_scale": Vector2.ONE * UNIT_PX * 1.3,
-		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X}
+		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X + 60.0}
 	u["bar"] = _unit_bar(node)
 	units.append(u)
 	hero_unit = u
@@ -1273,39 +1272,47 @@ func _show_boss_intro() -> void:
 	overlay.size = Vector2(720, LANE_H)
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	overlay.z_index = 50
+	# 반투명 블랙은 전체를 덮되 중앙 카드만 또렷하게 — 전투 UI(상단 HP·메뉴 pill)는 카드 바깥에 있어도 가려지지 않도록 어둡기만 50%.
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.0)
 	dim.size = overlay.size
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(dim)
+	# 중앙 카드 500×360 (화면 가득이 아니라 중앙 카드만 차지)
+	var card_size := Vector2(500, 360)
+	var card_pos := Vector2((720 - card_size.x) * 0.5, (LANE_H - card_size.y) * 0.5)
+	var card := Panel.new()
+	LaneUI.dress(card, "panel_paper")
+	card.position = card_pos
+	card.size = card_size
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.modulate.a = 0.0
+	overlay.add_child(card)
 	var shot := Sprite2D.new()
 	shot.texture = tex[btex]
 	shot.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	shot.scale = Vector2.ONE * 4.0
-	shot.position = Vector2(360, 160)
+	shot.scale = Vector2.ONE * 2.5
+	shot.position = card_pos + Vector2(card_size.x * 0.5, 150)
 	shot.modulate.a = 0.0
 	overlay.add_child(shot)
-	var ribbon := LaneUI.ribbon(bd["name"], 320, 36)
-	ribbon.position = Vector2(200, 270)
+	var ribbon := LaneUI.ribbon(bd["name"], 300, 34)
+	ribbon.position = card_pos + Vector2((card_size.x - 300) * 0.5, 240)
 	overlay.add_child(ribbon)
-	var paper := Panel.new()
-	LaneUI.dress(paper, "panel_paper")
-	paper.position = Vector2(80, 320)
-	paper.size = Vector2(560, 46)
-	paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay.add_child(paper)
+	var hint_pos := card_pos + Vector2(20, 290)
+	var hint_size := Vector2(card_size.x - 40, 46)
 	var hint := LaneUI.label(bd.get("hint", ""), 18, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
-	hint.position = paper.position
-	hint.size = paper.size
+	hint.position = hint_pos
+	hint.size = hint_size
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	overlay.add_child(hint)
 	_view.add_child(overlay)
 	# Intro overlay does NOT pause the battle so headless tests and the real-time flow keep ticking.
-	# It simply fades over the lane for a short beat; tap to dismiss early.
+	# 중앙 카드로만 보여줘 전투 화면 전체를 덮지 않는다.
 	var tw := overlay.create_tween()
-	tw.tween_property(dim, "color:a", 0.6, 0.3)
+	tw.tween_property(dim, "color:a", 0.5, 0.3)
+	tw.parallel().tween_property(card, "modulate:a", 1.0, 0.3)
 	tw.parallel().tween_property(shot, "modulate:a", 1.0, 0.35)
-	tw.parallel().tween_property(shot, "position:y", 180.0, 0.35).from(60.0).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(shot, "position:y", shot.position.y, 0.35).from(shot.position.y - 40.0).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	var close := func():
 		if not is_instance_valid(overlay):
 			return
@@ -2139,20 +2146,27 @@ func _number(pos: Vector2, value: float, col: Color, prefix: String = "") -> voi
 	tw.tween_callback(l.queue_free)
 
 func _banner(title: String, sub: String, col: Color = UIKit.TEXT) -> void:
+	# 상단 중앙 양피지 작은 배너 — 가로 전체를 덮지 않아 전투 UI(좌상단 영웅 HP) 가림 없음.
+	var banner_size := Vector2(360, 60) if sub != "" else Vector2(300, 40)
+	var paper := Panel.new()
+	LaneUI.dress(paper, "panel_paper")
+	paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	paper.size = banner_size
+	paper.position = Vector2((720 - banner_size.x) * 0.5, 96)
+	paper.z_index = 10
+	_view.add_child(paper)
 	var box := VBoxContainer.new()
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.position = Vector2(0, 90)
-	box.size = Vector2(720, 110)
+	box.size = banner_size
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.z_index = 10
-	_view.add_child(box)
-	box.add_child(_outlined(title, 40, col, HORIZONTAL_ALIGNMENT_CENTER))
+	paper.add_child(box)
+	box.add_child(_outlined(title, 20, col, HORIZONTAL_ALIGNMENT_CENTER))
 	if sub != "":
-		box.add_child(_outlined(sub, 22, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
-	box.scale = Vector2(1.0, 0.2)
-	box.pivot_offset = box.size * 0.5
-	var tw := box.create_tween()
-	tw.tween_property(box, "scale", Vector2.ONE, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_interval(1.1)
-	tw.tween_property(box, "modulate:a", 0.0, 0.3)
-	tw.tween_callback(box.queue_free)
+		box.add_child(_outlined(sub, 16, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+	paper.scale = Vector2(1.0, 0.2)
+	paper.pivot_offset = banner_size * 0.5
+	var tw := paper.create_tween()
+	tw.tween_property(paper, "scale", Vector2.ONE, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(1.0)
+	tw.tween_property(paper, "modulate:a", 0.0, 0.3)
+	tw.tween_callback(paper.queue_free)
