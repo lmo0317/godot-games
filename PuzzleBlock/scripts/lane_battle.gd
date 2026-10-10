@@ -1079,10 +1079,12 @@ func _refresh_hero_ui() -> void:
 	# 영웅 좌상단 HP 패널은 사용자 요청으로 영구 숨김 (2026-10-10)
 	_hero_portrait.visible = false
 	_hero_hp_fill.get_parent().get_parent().visible = false  # HeroBox 숨김
-	_hero_skill_btn.visible = active
+	# 2026-10-11 전투만 모드: 레인 안의 스킬 버튼·이름 양피지를 하단 패널로 옮겼으므로 모두 숨김.
+	var bo_hide: bool = battle_only_mode
+	_hero_skill_btn.visible = active and not bo_hide
 	if _hero_skill_name_bg != null:
-		_hero_skill_name_bg.visible = active
-		_hero_skill_name_label.visible = active
+		_hero_skill_name_bg.visible = active and not bo_hide
+		_hero_skill_name_label.visible = active and not bo_hide
 	if not active:
 		return
 	var info: Dictionary = LaneUnits.HEROES.get(hero_id, {})
@@ -2297,12 +2299,13 @@ func _apply_test_mode() -> void:
 		gold = BATTLE_ONLY_START_GOLD
 		if _test_panel != null:
 			_test_panel.visible = false
+		# rotation(false)는 _view 자식을 전부 visible=true로 되돌리므로, bo_view 숨김은 그 뒤에.
+		_apply_test_rotation(false)
 		_apply_bo_view(true)
 		if _bo_panel == null:
 			_build_bo_panel()
 		_bo_panel.visible = true
 		_bo_refresh_slots()
-		_apply_test_rotation(false)
 
 # 2026-10-11 전투만 모드: 레인 _view를 세로로 680까지 늘려 전장을 넉넉하게 보여준다.
 # LANE_H(=470) 아래의 여백은 바닥(흙색) ColorRect로 채워 자연스럽게 이어보이게 한다.
@@ -2318,21 +2321,22 @@ func _apply_bo_view(on: bool) -> void:
 	if on:
 		_view.size = Vector2(720, BO_VIEW_H)
 		if _bo_ground_fill == null:
-			# 지면 연장용 — lane bg 바닥 색과 비슷한 흙빛. _shake 안에 두어 shake에 함께 흔들린다.
+			# 지면 연장용 — lane bg 바닥 색과 비슷한 흙빛. _view 바로 아래 두고 바닥을 채운다.
+			# bg(ChildOf _shake)의 아래쪽 색이 어두운 흙이라 비슷한 톤으로.
 			_bo_ground_fill = ColorRect.new()
 			_bo_ground_fill.color = Color(0.26, 0.19, 0.14, 1.0)
 			_bo_ground_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_bo_ground_fill.position = Vector2(-40, LANE_H)
-			_bo_ground_fill.size = Vector2(800, BO_VIEW_H - LANE_H + 20)
-			_bo_ground_fill.z_index = -5
-			_shake.add_child(_bo_ground_fill)
-			# bg와 units 뒤로 보내기 위해 index 조정
-			_shake.move_child(_bo_ground_fill, 1)
+			_bo_ground_fill.position = Vector2(0, LANE_H)
+			_bo_ground_fill.size = Vector2(720, BO_VIEW_H - LANE_H)
+			_view.add_child(_bo_ground_fill)
+			_view.move_child(_bo_ground_fill, 0)  # 가장 뒤로 (shake 아래)
 		_bo_ground_fill.visible = true
 		for nm in BO_HIDE_FROM_VIEW:
 			var n: Node = _view.get_node_or_null(nm)
 			if n != null and n is CanvasItem:
 				n.visible = false
+			else:
+				push_warning("[BO] can't hide %s (null=%s)" % [nm, n == null])
 		# 스킬 이름 양피지도 숨김 (이름이 없어 조회)
 		if _hero_skill_name_bg != null:
 			_hero_skill_name_bg.visible = false
@@ -2671,11 +2675,14 @@ var _bo_gold_label: Label = null
 var _bo_home_btn: Button = null
 
 func _build_bo_panel() -> void:
+	# 2026-10-11 전투만 모드 하단 UI 전면 재구성 (720×1280, 패널 y=680..1280, 600px).
+	# 4 섹션: ① 상태 바(y=0..80) ② 덱 소환(y=90..260) ③ 전투 컨트롤(y=280..360) ④ 상태 요약(y=380..590).
+	# 좌표는 _bo_panel 로컬 (0..600). view=720 가로.
 	size = Vector2(720, 1280)
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_bo_panel = Control.new()
-	_bo_panel.position = Vector2(0, LANE_H + 8)
-	_bo_panel.size = Vector2(720, 1280 - LANE_H - 8)
+	_bo_panel.position = Vector2(0, BO_PANEL_TOP)
+	_bo_panel.size = Vector2(720, 1280 - BO_PANEL_TOP)
 	_bo_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_bo_panel)
 	var bg := Panel.new()
@@ -2684,67 +2691,146 @@ func _build_bo_panel() -> void:
 	bg.size = _bo_panel.size
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bo_panel.add_child(bg)
-	# 상단: 홈 + 금화 표시
-	_bo_home_btn = Button.new()
-	LaneUI.button(_bo_home_btn, "red", 18)
-	_bo_home_btn.text = "←"
-	_bo_home_btn.focus_mode = Control.FOCUS_NONE
-	_bo_home_btn.position = Vector2(12, 10)
-	_bo_home_btn.size = Vector2(72, 44)
-	_bo_home_btn.pressed.connect(func(): home_pressed.emit())
-	_bo_panel.add_child(_bo_home_btn)
-	var coin_icon := LaneUI.icon("icon_coin", Vector2(28, 28))
-	coin_icon.position = Vector2(100, 20)
-	_bo_panel.add_child(coin_icon)
-	_bo_gold_label = _outlined("0", 24, UIKit.GOLD, HORIZONTAL_ALIGNMENT_LEFT)
-	_bo_gold_label.position = Vector2(136, 14)
-	_bo_gold_label.size = Vector2(140, 36)
-	_bo_panel.add_child(_bo_gold_label)
-	var title := _outlined("전투만 (dev)", 18, Color(0.75, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-	title.position = Vector2(0, 20)
-	title.size = Vector2(720, 24)
-	_bo_panel.add_child(title)
-	# 덱 4개 버튼: 가로 4칸, 셀 170×112 (여유있는 터치 영역)
+
+	# =================== Section 1 — 상태 바 (y=0..80) ===================
+	# 뒤로(10,12,56×56) · 금화(80,12,180×56) · 영웅 스킬 버튼(312,-8,96×96) · 자동 토글(596,16,110×48)
+	_bo_back_btn = Button.new()
+	_bo_back_btn.name = "BoBack"
+	LaneUI.button(_bo_back_btn, "red", 22)
+	_bo_back_btn.text = "◀"
+	_bo_back_btn.focus_mode = Control.FOCUS_NONE
+	_bo_back_btn.position = Vector2(10, 12)
+	_bo_back_btn.size = Vector2(56, 56)
+	_bo_back_btn.pressed.connect(func(): home_pressed.emit())
+	_bo_panel.add_child(_bo_back_btn)
+	# 금화 pill
+	var gold_pill := Panel.new()
+	gold_pill.name = "BoGoldPill"
+	LaneUI.dress(gold_pill, "panel_wood")
+	gold_pill.position = Vector2(80, 12)
+	gold_pill.size = Vector2(180, 56)
+	gold_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_panel.add_child(gold_pill)
+	var coin_icon := LaneUI.icon("icon_coin", Vector2(32, 32))
+	coin_icon.position = Vector2(10, 12)
+	gold_pill.add_child(coin_icon)
+	_bo_gold_label = _outlined("0", 26, UIKit.GOLD, HORIZONTAL_ALIGNMENT_LEFT)
+	_bo_gold_label.position = Vector2(50, 10)
+	_bo_gold_label.size = Vector2(124, 36)
+	_bo_gold_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	gold_pill.add_child(_bo_gold_label)
+	# 영웅 스킬 버튼 — 가운데 (312,-8), 96×96. 상단으로 8px 돌출시켜 바에 걸치는 큰 원 느낌.
+	_bo_skill_btn = Button.new()
+	_bo_skill_btn.name = "BoSkillBtn"
+	_bo_skill_btn.position = Vector2(312, -8)
+	_bo_skill_btn.size = Vector2(96, 96)
+	_bo_skill_btn.focus_mode = Control.FOCUS_NONE
+	_bo_skill_btn.clip_contents = true
+	for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var fill := Color(0.14, 0.10, 0.22, 0.95) if st != "pressed" else Color(0.08, 0.06, 0.15, 0.95)
+		var border := Color(1.00, 0.82, 0.36, 1.0) if st != "disabled" else Color(0.55, 0.48, 0.32, 1.0)
+		_bo_skill_btn.add_theme_stylebox_override(st, UIKit.box(fill, border, 48, 3))
+	_bo_skill_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_bo_skill_btn.pressed.connect(activate_hero_skill)
+	_bo_panel.add_child(_bo_skill_btn)
+	_bo_skill_icon = TextureRect.new()
+	_bo_skill_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_bo_skill_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bo_skill_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_bo_skill_icon.position = Vector2(14, 14)
+	_bo_skill_icon.size = Vector2(68, 68)
+	_bo_skill_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_skill_btn.add_child(_bo_skill_icon)
+	_bo_skill_veil = ColorRect.new()
+	_bo_skill_veil.color = Color(0.02, 0.03, 0.08, 0.68)
+	_bo_skill_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_skill_veil.size = Vector2(96, 0)
+	_bo_skill_veil.position = Vector2(0, 96)
+	_bo_skill_btn.add_child(_bo_skill_veil)
+	_bo_skill_label = _outlined("", 28, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_bo_skill_label.size = Vector2(96, 96)
+	_bo_skill_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_bo_skill_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_skill_btn.add_child(_bo_skill_label)
+	# 스킬 이름 양피지 — 섹션 1 하단에 조그마하게.
+	var skname_bg := Panel.new()
+	skname_bg.name = "BoSkillName"
+	LaneUI.dress(skname_bg, "panel_paper")
+	skname_bg.position = Vector2(290, 56)
+	skname_bg.size = Vector2(140, 22)
+	skname_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_panel.add_child(skname_bg)
+	_bo_skill_name_label = LaneUI.label("", 13, LaneUI.INK, HORIZONTAL_ALIGNMENT_CENTER, false)
+	_bo_skill_name_label.position = Vector2(290, 56)
+	_bo_skill_name_label.size = Vector2(140, 22)
+	_bo_skill_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_bo_skill_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_panel.add_child(_bo_skill_name_label)
+	# 자동 토글
+	_bo_auto_btn = Button.new()
+	_bo_auto_btn.name = "BoAutoBtn"
+	LaneUI.button(_bo_auto_btn, "green" if auto_summon else "blue", 15)
+	_bo_auto_btn.focus_mode = Control.FOCUS_NONE
+	_bo_auto_btn.text = "자동 ON" if auto_summon else "자동 OFF"
+	_bo_auto_btn.position = Vector2(596, 16)
+	_bo_auto_btn.size = Vector2(110, 48)
+	_bo_auto_btn.pressed.connect(func(): toggle_auto(); _bo_refresh_controls())
+	_bo_panel.add_child(_bo_auto_btn)
+
+	# =================== Section 2 — 덱 소환 카드 (y=90..260) ===================
+	# 4 cards, 160×170, 간격 12, 총 가로 160*4+12*3=688, pad_x=16.
 	_bo_slots.clear()
-	var cell_w: float = 164.0
-	var cell_h: float = 118.0
-	var total: float = cell_w * 4 + 12 * 3
-	var pad_x: float = (720.0 - total) * 0.5
-	var y0: float = 70.0
+	var cell_w: float = 160.0
+	var cell_h: float = 170.0
+	var pad_x: float = 16.0
+	var y_card: float = 90.0
 	for i in range(LaneUnits.DECK_SIZE):
 		var btn := Button.new()
+		btn.name = "BoCard%d" % i
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		btn.position = Vector2(pad_x + i * (cell_w + 12), y0)
+		btn.position = Vector2(pad_x + i * (cell_w + 12), y_card)
 		btn.size = Vector2(cell_w, cell_h)
+		btn.clip_contents = true
 		for st in ["normal", "hover", "pressed", "hover_pressed"]:
 			var kk: float = 1.0
 			if st == "hover": kk = 1.12
 			elif st == "pressed" or st == "hover_pressed": kk = 0.82
-			btn.add_theme_stylebox_override(st, UIKit.box(Color(0.22 * kk, 0.42 * kk, 0.7 * kk, 1.0), Color(0.95, 0.85, 0.4), 10, 2))
+			btn.add_theme_stylebox_override(st, UIKit.box(Color(0.22 * kk, 0.42 * kk, 0.7 * kk, 1.0), Color(0.95, 0.85, 0.4), 12, 2))
 		btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		var slot_i := i
-		btn.pressed.connect(func(): summon(deck[slot_i] if slot_i < deck.size() else ""))
+		btn.pressed.connect(func():
+			var k: String = deck[slot_i] if slot_i < deck.size() else ""
+			if k == "":
+				return
+			var tw := btn.create_tween()
+			btn.pivot_offset = btn.size * 0.5
+			tw.tween_property(btn, "scale", Vector2(1.08, 1.08), 0.06)
+			tw.tween_property(btn, "scale", Vector2.ONE, 0.08)
+			summon(k))
 		_bo_panel.add_child(btn)
+		# 포트레이트 (큼지막): 상단 100×100 중앙
 		var icon := TextureRect.new()
 		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.position = Vector2(10, 6)
-		icon.size = Vector2(144, 70)
+		icon.position = Vector2((cell_w - 100.0) * 0.5, 10)
+		icon.size = Vector2(100, 100)
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(icon)
-		var name_lab := _outlined("", 14, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-		name_lab.position = Vector2(0, 76)
-		name_lab.size = Vector2(cell_w, 20)
+		# 이름
+		var name_lab := _outlined("", 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+		name_lab.position = Vector2(0, 112)
+		name_lab.size = Vector2(cell_w, 24)
 		name_lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(name_lab)
-		var cost_lab := _outlined("", 18, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-		cost_lab.position = Vector2(0, 94)
-		cost_lab.size = Vector2(cell_w, 22)
+		# 비용
+		var cost_lab := _outlined("", 20, UIKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		cost_lab.position = Vector2(0, 138)
+		cost_lab.size = Vector2(cell_w, 24)
 		cost_lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(cost_lab)
-		# 쿨다운 베일
+		# 쿨 베일
 		var veil := ColorRect.new()
 		veil.color = Color(0.02, 0.03, 0.08, 0.55)
 		veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2752,6 +2838,128 @@ func _build_bo_panel() -> void:
 		veil.position = Vector2(0, 0)
 		btn.add_child(veil)
 		_bo_slots.append({"btn": btn, "icon": icon, "name": name_lab, "cost": cost_lab, "veil": veil, "kind": ""})
+
+	# =================== Section 3 — 전투 컨트롤 (y=280..360) ===================
+	# 돌격/수비 (28,284,160×64) · 대포 (280,284,240×64, 내부 가로 충전 바) · 지갑 확장 (500,284,192×64).
+	_bo_march_btn = Button.new()
+	_bo_march_btn.name = "BoMarchBtn"
+	LaneUI.button(_bo_march_btn, "red" if charging else "blue", 20)
+	_bo_march_btn.focus_mode = Control.FOCUS_NONE
+	_bo_march_btn.text = "돌격" if charging else "수비"
+	_bo_march_btn.position = Vector2(28, 284)
+	_bo_march_btn.size = Vector2(160, 64)
+	_bo_march_btn.pressed.connect(func(): toggle_march(); _bo_refresh_controls())
+	_bo_panel.add_child(_bo_march_btn)
+	# 대포 — 버튼 안쪽에 가로 충전 바 fill 넣기.
+	_bo_cannon_btn = Button.new()
+	_bo_cannon_btn.name = "BoCannonBtn"
+	LaneUI.button(_bo_cannon_btn, "blue", 20)
+	_bo_cannon_btn.focus_mode = Control.FOCUS_NONE
+	_bo_cannon_btn.text = ""
+	_bo_cannon_btn.position = Vector2(280, 284)
+	_bo_cannon_btn.size = Vector2(240, 64)
+	_bo_cannon_btn.clip_contents = true
+	_bo_cannon_btn.pressed.connect(fire_cannon)
+	_bo_panel.add_child(_bo_cannon_btn)
+	# 충전 바 (가로)
+	_bo_cannon_fill = ColorRect.new()
+	_bo_cannon_fill.color = Color(1.0, 0.7, 0.25, 0.55)
+	_bo_cannon_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_cannon_fill.position = Vector2(2, 2)
+	_bo_cannon_fill.size = Vector2(0, 60)
+	_bo_cannon_btn.add_child(_bo_cannon_fill)
+	_bo_cannon_label = _outlined("", 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_bo_cannon_label.position = Vector2(0, 0)
+	_bo_cannon_label.size = Vector2(240, 64)
+	_bo_cannon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_bo_cannon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bo_cannon_btn.add_child(_bo_cannon_label)
+	# 지갑 확장
+	_bo_wallet_btn = Button.new()
+	_bo_wallet_btn.name = "BoWalletBtn"
+	LaneUI.button(_bo_wallet_btn, "green", 17)
+	_bo_wallet_btn.focus_mode = Control.FOCUS_NONE
+	_bo_wallet_btn.text = "지갑 확장"
+	_bo_wallet_btn.position = Vector2(532, 284)
+	_bo_wallet_btn.size = Vector2(176, 64)
+	_bo_wallet_btn.pressed.connect(func(): upgrade_wallet(); _bo_refresh_controls())
+	_bo_panel.add_child(_bo_wallet_btn)
+
+	# =================== Section 4 — 상태 요약 (y=380..590) ===================
+	var sum_title := _outlined("전장 상황", 20, Color(0.78, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	sum_title.name = "BoSumTitle"
+	sum_title.position = Vector2(0, 384)
+	sum_title.size = Vector2(720, 24)
+	_bo_panel.add_child(sum_title)
+	# 적 유닛 미니 리스트 (가로 스크롤 컨테이너)
+	var scroll := ScrollContainer.new()
+	scroll.name = "BoEnemyScroll"
+	scroll.position = Vector2(16, 412)
+	scroll.size = Vector2(688, 72)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_bo_panel.add_child(scroll)
+	_bo_enemy_list = HBoxContainer.new()
+	_bo_enemy_list.add_theme_constant_override("separation", 8)
+	scroll.add_child(_bo_enemy_list)
+	# 웨이브 정보 라벨
+	_bo_wave_label = _outlined("", 20, Color(1.0, 0.95, 0.75), HORIZONTAL_ALIGNMENT_CENTER)
+	_bo_wave_label.name = "BoWaveLabel"
+	_bo_wave_label.position = Vector2(0, 498)
+	_bo_wave_label.size = Vector2(720, 24)
+	_bo_panel.add_child(_bo_wave_label)
+
+	# ---------- UI 품질 게이트: 겹침 자동 검출 ----------
+	_bo_check_overlaps()
+
+func _bo_check_overlaps() -> void:
+	# 섹션 간 세로 영역을 분리해 가로 겹침만 검사 (영웅 스킬 버튼은 Section 1·2 경계에 걸침 → 제외하고 섹션 내부끼리만).
+	var sec1: Dictionary = {
+		"back": _bo_back_btn.get_rect(),
+		"gold": Rect2(Vector2(80, 12), Vector2(180, 56)),
+		"skill_btn": _bo_skill_btn.get_rect(),
+		"auto": _bo_auto_btn.get_rect(),
+	}
+	# gold vs skill_btn: skill_btn x=312 ≥ gold 끝 x=260 (여유 52). OK.
+	# skill_btn vs auto: skill_btn 끝 x=408, auto x=596. OK.
+	for a in sec1:
+		for b in sec1:
+			if a == b:
+				continue
+			if sec1[a].intersects(sec1[b]):
+				push_error("[UI OVERLAP] section1: %s vs %s" % [a, b])
+	var sec2: Dictionary = {}
+	for i in range(_bo_slots.size()):
+		sec2["card_%d" % i] = (_bo_slots[i]["btn"] as Button).get_rect()
+	for a in sec2:
+		for b in sec2:
+			if a == b:
+				continue
+			if sec2[a].intersects(sec2[b]):
+				push_error("[UI OVERLAP] section2: %s vs %s" % [a, b])
+	var sec3: Dictionary = {
+		"march": _bo_march_btn.get_rect(),
+		"cannon": _bo_cannon_btn.get_rect(),
+		"wallet": _bo_wallet_btn.get_rect(),
+	}
+	for a in sec3:
+		for b in sec3:
+			if a == b:
+				continue
+			if sec3[a].intersects(sec3[b]):
+				push_error("[UI OVERLAP] section3: %s vs %s" % [a, b])
+	# 세로 겹침 검사 (각 섹션 Y 밴드)
+	var bands: Array = [
+		["sec1", 0, 80],
+		["sec2", 90, 260],
+		["sec3", 280, 360],
+		["sec4", 380, 598],
+	]
+	for i in range(bands.size()):
+		for j in range(i + 1, bands.size()):
+			if bands[i][2] > bands[j][1] and bands[j][2] > bands[i][1]:
+				push_error("[UI OVERLAP] band %s vs %s" % [bands[i][0], bands[j][0]])
+	print("[UI OK] bo panel sections laid out")
 
 func _bo_refresh_slots() -> void:
 	if _bo_panel == null:
@@ -2769,11 +2977,13 @@ func _bo_refresh_slots() -> void:
 		var st: Dictionary = ALLIES[kind]
 		s["icon"].texture = tex.get(kind)
 		s["name"].text = str(st.get("name", kind))
-		s["cost"].text = "%d" % int(st["cost"])
+		s["cost"].text = "💰%d" % int(st["cost"])
+	_bo_refresh_controls()
 
 func _bo_tick(delta: float) -> void:
 	if _bo_panel == null or not _bo_panel.visible:
 		return
+	_bo_refresh_controls()
 	if _bo_gold_label != null:
 		_bo_gold_label.text = str(gold)
 	for i in range(_bo_slots.size()):
@@ -2796,4 +3006,116 @@ func _bo_tick(delta: float) -> void:
 			veil.visible = false
 		var ok: bool = gold >= int(st["cost"]) and cool_left <= 0.0 and _count(1) < MAX_ALLIES and not finished
 		s["btn"].modulate = Color.WHITE if ok else Color(0.6, 0.6, 0.66)
+	# 영웅 스킬 아이콘·쿨 베일·호흡
+	if _bo_skill_btn != null:
+		if _bo_skill_icon.texture == null and not hero_unit.is_empty():
+			var hero_kind: String = str(hero_unit.get("kind", ""))
+			if hero_kind != "":
+				_bo_skill_icon.texture = tex.get("hero_" + hero_kind, tex.get("knight"))
+		var cool: float = hero_cool
+		var max_cool: float = 1.0
+		if not hero_unit.is_empty() and hero_unit.has("kind"):
+			var hk: String = str(hero_unit["kind"])
+			if HEROES.has(hk):
+				max_cool = float(HEROES[hk].get("cool", 1.0))
+		if cool > 0.0:
+			var p2: float = clampf(cool / max_cool, 0.0, 1.0)
+			_bo_skill_veil.size = Vector2(96, 96.0 * p2)
+			_bo_skill_veil.position = Vector2(0, 96.0 - 96.0 * p2)
+			_bo_skill_veil.visible = true
+			_bo_skill_label.text = "%d" % int(ceil(cool))
+			_bo_skill_label.visible = true
+		else:
+			_bo_skill_veil.visible = false
+			_bo_skill_label.visible = false
+		var breathe: float = 1.0 + (0.08 * (0.5 + 0.5 * sin(_clock * 5.0)) if cool <= 0.0 else 0.0)
+		_bo_skill_btn.scale = Vector2(breathe, breathe)
+		_bo_skill_btn.pivot_offset = Vector2(48, 48)
+	# 대포 가로 충전 바
+	if _bo_cannon_btn != null and _bo_cannon_fill != null:
+		var cp: float = clampf(cannon / 100.0, 0.0, 1.0)
+		_bo_cannon_fill.size = Vector2(236.0 * cp, 60.0)
+		_bo_cannon_label.text = "🎯 발사!" if cannon >= 100.0 else "🎯 대포 %d%%" % int(cannon)
+		var pulse: float = 1.0 + (0.08 * (0.5 + 0.5 * sin(_clock * 8.0)) if cannon >= 100.0 else 0.0)
+		_bo_cannon_btn.self_modulate = Color(pulse, pulse, pulse)
+	# 웨이브 라벨 + 다음 웨이브 카운트다운
+	if _bo_wave_label != null:
+		var waves: Array = stage_data.get("waves", [])
+		var total_w: int = waves.size()
+		var cur_w: int = mini(wave_index + 1, maxi(1, total_w))
+		var next_in: float = maxf(0.0, next_wave_at - elapsed)
+		if wave_index >= total_w:
+			_bo_wave_label.text = "웨이브 %d / %d  ·  반복 전진" % [total_w, total_w]
+		else:
+			_bo_wave_label.text = "웨이브 %d / %d  ·  다음 %ds" % [cur_w, total_w, int(ceil(next_in))]
+	# 적 유닛 미니 리스트 — kind별 집계. 10 frames에 한번만 다시 그려 비용을 줄인다.
+	_bo_enemy_tick += delta
+	if _bo_enemy_tick >= 0.25:
+		_bo_enemy_tick = 0.0
+		_bo_refresh_enemy_list()
+
+func _bo_refresh_controls() -> void:
+	if _bo_march_btn != null:
+		LaneUI.button(_bo_march_btn, "red" if charging else "blue", 20)
+		_bo_march_btn.text = "돌격" if charging else "수비"
+	if _bo_auto_btn != null:
+		LaneUI.button(_bo_auto_btn, "green" if auto_summon else "blue", 15)
+		_bo_auto_btn.text = "자동 ON" if auto_summon else "자동 OFF"
+	if _bo_wallet_btn != null:
+		if wallet < WALLET_COST.size():
+			_bo_wallet_btn.text = "지갑 +%d" % WALLET_COST[wallet]
+			_bo_wallet_btn.modulate = Color.WHITE if gold >= WALLET_COST[wallet] else Color(0.6, 0.6, 0.66)
+		else:
+			_bo_wallet_btn.text = "지갑 MAX"
+			_bo_wallet_btn.modulate = Color(0.6, 0.6, 0.66)
+	if _bo_skill_name_label != null:
+		var nm: String = ""
+		if not hero_unit.is_empty() and hero_unit.has("kind"):
+			var hk: String = str(hero_unit["kind"])
+			if HEROES.has(hk):
+				nm = str(HEROES[hk].get("skill_name", ""))
+		_bo_skill_name_label.text = nm
+
+var _bo_enemy_tick: float = 0.0
+var _bo_enemy_items: Dictionary = {}  # kind -> {panel, count_label}
+
+func _bo_refresh_enemy_list() -> void:
+	if _bo_enemy_list == null:
+		return
+	# 현재 적 유닛 kind별 개수
+	var counts: Dictionary = {}
+	for u in units:
+		if u["side"] == -1 and not u.get("hero", false):
+			var k: String = str(u.get("kind", "?"))
+			counts[k] = int(counts.get(k, 0)) + 1
+	# 사라진 kind 제거
+	for k in _bo_enemy_items.keys():
+		if not counts.has(k):
+			var it: Dictionary = _bo_enemy_items[k]
+			if it["panel"] != null and is_instance_valid(it["panel"]):
+				it["panel"].queue_free()
+			_bo_enemy_items.erase(k)
+	# 추가·업데이트
+	for k in counts:
+		if not _bo_enemy_items.has(k):
+			var panel := Panel.new()
+			panel.custom_minimum_size = Vector2(72, 60)
+			panel.add_theme_stylebox_override("panel", UIKit.box(Color(0.1, 0.08, 0.14, 0.75), Color(0.55, 0.4, 0.2), 8, 2))
+			_bo_enemy_list.add_child(panel)
+			var ic := TextureRect.new()
+			ic.texture = tex.get(k)
+			ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			ic.position = Vector2(4, 4)
+			ic.size = Vector2(40, 40)
+			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			panel.add_child(ic)
+			var cnt := _outlined("", 16, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+			cnt.position = Vector2(44, 20)
+			cnt.size = Vector2(28, 20)
+			cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			panel.add_child(cnt)
+			_bo_enemy_items[k] = {"panel": panel, "count": cnt}
+		_bo_enemy_items[k]["count"].text = "×%d" % counts[k]
 
