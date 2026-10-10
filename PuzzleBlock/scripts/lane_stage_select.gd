@@ -7,8 +7,9 @@ extends Control
 #   row 3 (170~204)  내 덱 전투력 / 현재 쇼케이스 스테이지 권장
 #   row 4 (220~920)  풀 너비 쇼케이스 카드 (680x700): 스테이지 배경 + 보스 큰 아트 +
 #                    이름/특기/별/권장/시작버튼. 좌우 쓸기 or ◀/▶로 이전/다음 스테이지.
-#   row 5 (930~972)  "N / 24 · ★x/72" + 24개 점 인디케이터
-#   row 6 (980~1072) [병사 뽑기] [덱 편성]
+#   row 5 (936~968)  "스테이지 N / 24 · ★ x / 72" 큰 라벨 (28px, outline).
+#                    2026-10-10: 24개 점이 버튼과 겹친다는 피드백으로 제거 (SKILL 4b-6).
+#   row 6 (984~1076) [병사 뽑기] [덱 편성]
 #
 # test_lane.gd 호환:
 # - `rows`에 Stage1..Stage24 노드가 전부 있어야 함 (잠긴 건 disabled, 열린 건 Rec 자식 라벨 포함).
@@ -30,8 +31,6 @@ var power_label: Label
 
 var _showcase: Control                  # 현재 보이는 큰 쇼케이스 패널 (교체됨)
 var _showcase_slot: Control             # 쇼케이스가 들어가는 자리 (clip)
-var _dot_row: HBoxContainer
-var _dots: Array[Control] = []
 var _page_label: Label
 var _prev_btn: Button
 var _next_btn: Button
@@ -104,29 +103,14 @@ func _ready() -> void:
 	_showcase_slot.gui_input.connect(_on_showcase_input)
 	add_child(_showcase_slot)
 
-	# Row 5: 페이지 인디케이터 (텍스트 + 점)
-	_page_label = LaneUI.label("", 20, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	_page_label.position = Vector2(20, 930)
-	_page_label.size = Vector2(680, 24)
+	# Row 5: 페이지 라벨 "스테이지 N / 24 · ★ x / 72" — 24개 점은 폭이 24px 미만이라
+	# cramped + 하단 버튼과 겹침 피드백 (2026-10-10). SKILL 4b-6: dot row 대신 label.
+	# 쇼케이스 bottom=920, 라벨 top=936 → 16px 간격 (스택 룰).
+	# 라벨 bottom=968, 다음 버튼 top=984 → 16px 간격.
+	_page_label = LaneUI.label("", 28, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_page_label.position = Vector2(20, 936)
+	_page_label.size = Vector2(680, 32)
 	add_child(_page_label)
-	_dot_row = HBoxContainer.new()
-	_dot_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_dot_row.add_theme_constant_override("separation", 4)
-	_dot_row.position = Vector2(20, 956)
-	_dot_row.size = Vector2(680, 20)
-	add_child(_dot_row)
-	for i in range(LaneStages.count()):
-		var d := Button.new()
-		d.focus_mode = Control.FOCUS_NONE
-		d.custom_minimum_size = Vector2(16, 16)
-		d.add_theme_stylebox_override("normal", UIKit.box(Color(0.35, 0.3, 0.35), Color(0.55, 0.5, 0.55), 8, 2))
-		d.add_theme_stylebox_override("hover", UIKit.box(Color(0.55, 0.5, 0.55), Color(0.75, 0.7, 0.75), 8, 2))
-		d.add_theme_stylebox_override("pressed", UIKit.box(Color(0.65, 0.6, 0.65), Color(0.85, 0.8, 0.85), 8, 2))
-		d.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		var sid: int = i + 1
-		d.pressed.connect(func(): _go_to(sid, true))
-		_dot_row.add_child(d)
-		_dots.append(d)
 
 	# `rows`: 테스트가 Stage1..Stage24를 찾아보는 숨은 컨테이너.
 	# 화면에는 안 그려지지만 노드는 모두 존재한다.
@@ -139,7 +123,7 @@ func _ready() -> void:
 	var gacha := Button.new()
 	gacha.text = "병사 뽑기"
 	LaneUI.button(gacha, "red", 26)
-	gacha.position = Vector2(20, 980)
+	gacha.position = Vector2(20, 984)
 	gacha.size = Vector2(334, 92)
 	gacha.pressed.connect(func(): gacha_pressed.emit())
 	add_child(gacha)
@@ -149,7 +133,7 @@ func _ready() -> void:
 	var deck := Button.new()
 	deck.text = "덱 편성"
 	LaneUI.button(deck, "blue", 26)
-	deck.position = Vector2(366, 980)
+	deck.position = Vector2(366, 984)
 	deck.size = Vector2(334, 92)
 	deck.pressed.connect(func(): deck_pressed.emit())
 	add_child(deck)
@@ -228,24 +212,9 @@ func _render_showcase(stage_id: int, direction: int) -> void:
 	var rec: int = LaneStages.recommended_power(stage_id)
 	power_label.text = "내 덱 전투력 %d  ·  STAGE %d 권장 %d" % [power, stage_id, rec]
 	power_label.add_theme_color_override("font_color", POWER_OK if power >= rec else POWER_LOW)
-	_update_dots(stage_id)
+	_update_page_label(stage_id)
 
-func _update_dots(stage_id: int) -> void:
-	for i in range(_dots.size()):
-		var d: Control = _dots[i]
-		var sid := i + 1
-		var size := Vector2(26, 26) if sid == stage_id else Vector2(14, 14)
-		d.custom_minimum_size = size
-		var fill: Color
-		if sid == stage_id:
-			fill = Color(1.0, 0.84, 0.32)      # 현재: 금
-		elif sid > int(_progress["unlocked"]):
-			fill = Color(0.3, 0.28, 0.32)      # 잠김: 어두움
-		elif int(_progress["stars"].get(str(sid), 0)) >= 3:
-			fill = Color(0.55, 0.95, 0.55)     # 다 깬 것: 녹
-		else:
-			fill = Color(0.75, 0.72, 0.78)     # 열린 것: 밝은 회색
-		d.add_theme_stylebox_override("normal", UIKit.box(fill.darkened(0.3), fill, 8, 2))
+func _update_page_label(stage_id: int) -> void:
 	_page_label.text = "스테이지 %d / %d  ·  ★ %d / %d" % [
 		stage_id, LaneStages.count(), LaneStages.total_stars(), LaneStages.count() * 3]
 
