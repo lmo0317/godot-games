@@ -78,6 +78,23 @@ const ENEMIES: Dictionary = {
 	"golem": {"hp": 260.0, "atk": 20.0, "range": 46.0, "speed": 14.0, "every": 1.8, "kb": 1},
 	"orc": {"hp": 130.0, "atk": 18.0, "range": 50.0, "speed": 20.0, "every": 1.5, "kb": 2},
 	"demon": {"hp": 220.0, "atk": 26.0, "range": 60.0, "speed": 18.0, "every": 1.3, "kb": 3},
+	# 서유기 1장 쫄몹 (2026-10-10 docs/JOURNEY_WEST_PLAN.md)
+	"tiger_mob":   {"hp": 46.0, "atk": 10.0, "range": 44.0, "speed": 36.0, "every": 1.0, "kb": 2},
+	"bandit":      {"hp": 58.0, "atk": 11.0, "range": 44.0, "speed": 28.0, "every": 1.1, "kb": 2},
+	"water_ghoul": {"hp": 110.0, "atk": 9.0,  "range": 44.0, "speed": 16.0, "every": 1.5, "kb": 2},
+}
+
+# 영웅 수치 (docs/HERO_SYSTEM_PLAN.md 표). cool: 스킬 쿨, skill: 액티브 스킬 이름.
+# 전투 시작 시 자동 소환 (금화 비용 없음, 성 바로 앞). 사망 시 영구.
+const HEROES: Dictionary = {
+	"sanzang":  {"hp": 300.0, "atk": 6.0,  "range": 80.0, "speed": 24.0, "every": 1.5, "kb": 3, "cool": 25.0,
+		"skill": "aura_buff",  "skill_name": "염불 결계",  "shot": ""},
+	"wukong":   {"hp": 450.0, "atk": 32.0, "range": 50.0, "speed": 36.0, "every": 0.9, "kb": 4, "cool": 30.0,
+		"skill": "line_sweep", "skill_name": "여의봉 광풍", "shot": ""},
+	"bajie":    {"hp": 600.0, "atk": 20.0, "range": 44.0, "speed": 24.0, "every": 1.3, "kb": 5, "cool": 28.0,
+		"skill": "cone_dash",  "skill_name": "쇄기 돌진",   "shot": ""},
+	"wujing":   {"hp": 400.0, "atk": 24.0, "range": 70.0, "speed": 28.0, "every": 1.1, "kb": 4, "cool": 32.0,
+		"skill": "heal_wave",  "skill_name": "수룡 재생",   "shot": ""},
 }
 # Projectile sprite per shot kind
 const SHOT_TEX: Dictionary = {"arrow": "arrow", "bolt": "bolt", "orb": "fireball", "light": "holy", "ball": "cannonball", "dark": "fireball", "ice": "holy", "note": "holy", "fireball": "fireball"}
@@ -137,6 +154,21 @@ var _bg: TextureRect
 var _sky: ColorRect
 var _boss_timer: float = 0.0           # night_eye swoop clock
 var _splits_pending: Array = []        # [[kind, pos], ...] mini-mobs that spawn after a boss dies
+# 영웅 시스템 (2026-10-10 docs/HERO_SYSTEM_PLAN.md)
+var hero_id: String = ""               # 이번 전투의 영웅 ID ("sanzang" 등)
+var hero_unit: Dictionary = {}         # 전장 위 영웅 유닛 (units 안에 들어감). hp 0이면 사망
+var hero_dead: bool = false            # 영구 사망 플래그 (스테이지 끝까지)
+var hero_cool: float = 0.0             # 스킬 쿨 남은 초
+var _hero_portrait: TextureRect
+var _hero_hp_fill: Panel
+var _hero_hp_label: Label
+var _hero_dead_x: Label                # 사망 시 보이는 X 표시
+var _hero_name_label: Label
+var _hero_skill_btn: Button
+var _hero_skill_fill: ColorRect
+var _hero_skill_label: Label
+var _wave_push_t: float = 0.0          # 사오정 보스의 wave_push 타이머
+var _stun_roar_t: float = 0.0          # 호선봉 보스의 stun_roar 타이머
 var _castle_fill: Panel
 var _castle_label: Label
 var _fort_fill: Panel
@@ -164,6 +196,11 @@ func _ready() -> void:
 	names.append_array(["spark", "slash", "arrow", "bolt", "fireball", "holy", "heal", "dust", "ring"])
 	# 2026-10-09: per-stage backgrounds and boss sprites
 	names.append_array(["bg_grassland", "bg_goblin_camp", "bg_bat_cave", "boss_king_slime", "boss_goblin_chief", "boss_night_eye"])
+	# 2026-10-10 서유기 1장: heroes, 1장 보스·쫄몹, 1장 배경 (docs/JOURNEY_WEST_PLAN.md + HERO_SYSTEM_PLAN.md)
+	names.append_array(["hero_sanzang", "hero_wukong", "hero_bajie", "hero_wujing",
+		"boss_tiger_vanguard", "boss_white_bone", "boss_black_bear", "boss_sand_monk",
+		"tiger_mob", "bandit", "water_ghoul",
+		"bg_mt_wuzhi", "bg_white_bone", "bg_black_wind", "bg_flowing_sand"])
 	for k in names:
 		var path := "res://assets/art/lane/%s.png" % k
 		if ResourceLoader.exists(path):
@@ -212,8 +249,17 @@ func begin(stage_id: int = 1) -> void:
 		u["node"].queue_free()
 	units.clear()
 	_pending.clear()
+	# 영웅 선택 (저장된 선택값, 없으면 삼장). 전투 시작 시 자동 소환.
+	hero_id = LaneUnits.selected_hero()
+	hero_dead = false
+	hero_unit = {}
+	hero_cool = 0.0
+	_wave_push_t = 0.0
+	_stun_roar_t = 0.0
 	visible = true
 	_start_stage()
+	_spawn_hero()
+	_refresh_hero_ui()
 
 func stop() -> void:
 	finished = true
@@ -373,7 +419,8 @@ func _first_in_deck(kinds: Array) -> String:
 func auto_pick() -> String:
 	var mine: Dictionary = {}
 	for u in units:
-		if u["side"] == 1:
+		# 영웅은 자동 소환 집계에서 제외 (ALLIES/LaneUnits.UNITS에 없음)
+		if u["side"] == 1 and not u.get("hero", false):
 			mine[u["kind"]] = mine.get(u["kind"], 0) + 1
 	var foes: Array = units.filter(func(u): return u["side"] == -1)
 	var bats: int = foes.filter(func(u): return u["flying"]).size()
@@ -448,6 +495,13 @@ func _tick(delta: float) -> void:
 	_clock += delta
 	for k in cooldown:
 		cooldown[k] = maxf(0.0, cooldown[k] - delta)
+	# 영웅 스킬 쿨 감소 + UI 리프레시 (매 틱 호출해도 가벼움)
+	if hero_cool > 0.0:
+		hero_cool = maxf(0.0, hero_cool - delta)
+		_refresh_hero_ui()
+	else:
+		# 영웅 HP 변화 반영을 위해 매 틱 리프레시 (매우 가벼움)
+		_refresh_hero_ui()
 	if gold < wallet_max():
 		_gold_acc += WALLET_INCOME[wallet] * delta
 		if _gold_acc >= 1.0:
@@ -603,6 +657,19 @@ func _boss_entry() -> void:
 	boss["berserked"] = false
 	boss["swoop"] = bd.get("swoop", false)
 	boss["swoop_t"] = 10.0 if boss["swoop"] else 0.0
+	# 서유기 1장 메카닉 (2026-10-10): 호선봉(stun_roar), 백골정(multi_form), 흑웅정(charge→bear_charge), 사오정(wave_push)
+	boss["stun_roar"] = bd.get("stun_roar", false)
+	if boss["stun_roar"]:
+		_stun_roar_t = 10.0
+	boss["multi_form"] = bd.get("multi_form", false)
+	if boss["multi_form"]:
+		boss["form_stage"] = 0
+	boss["bear_charge"] = bd.get("charge", false)
+	if boss["bear_charge"]:
+		boss["charge_t"] = 10.0
+	boss["wave_push"] = bd.get("wave_push", false)
+	if boss["wave_push"]:
+		_wave_push_t = 5.0
 	if boss["swoop"]:
 		# 밤의 눈: hover above the ground (flying). The base atk range is small, so a swoop acts as its reach
 		boss["flying"] = true
@@ -744,6 +811,9 @@ func _land_hit(attacker: Dictionary, target, dmg: float) -> void:
 				_hurt(o, _damage(attacker, o) * 0.6, attacker["side"] == 1)
 
 func _hurt(u: Dictionary, dmg: float, by_ally: bool) -> void:
+	# 삼장 "염불 결계" buff_guard: 아군이 받는 피해 ½ (버프 지속 중만)
+	if u["side"] == 1 and u.get("buff_t", 0.0) > 0.0 and u.get("buff_guard", 0.0) > 0.0:
+		dmg *= (1.0 - u["buff_guard"])
 	u["hp"] -= dmg
 	_flash(u["node"])
 	_squash(u)
@@ -789,6 +859,266 @@ func _tick_boss(u: Dictionary, delta: float) -> void:
 		if u["swoop_t"] <= 0.0:
 			u["swoop_t"] = 10.0
 			_boss_swoop(u)
+	# 서유기 1장 신규 메카닉 (2026-10-10)
+	if u.get("stun_roar", false):
+		_stun_roar_t -= delta
+		if _stun_roar_t <= 0.0:
+			_stun_roar_t = 10.0
+			_boss_stun_roar(u)
+	if u.get("multi_form", false):
+		_boss_multi_form(u, delta)
+	if u.get("bear_charge", false):
+		_boss_charge_tick(u, delta)
+	if u.get("wave_push", false):
+		_boss_wave_push_tick(u, delta)
+
+# =========================================================
+# 서유기 1장 신규 보스 메카닉 (docs/JOURNEY_WEST_PLAN.md + HERO_SYSTEM_PLAN.md)
+# =========================================================
+
+# 호선봉 — 포효 2초 전체 아군 스턴 (쿨 10초)
+func _boss_stun_roar(u: Dictionary) -> void:
+	_sfx("b_roar", -4.0)
+	_banner("호선봉이 포효한다!", "", Color(1.0, 0.8, 0.3))
+	_shake_lane(6.0, 0.3)
+	_fx_once("ring", _mid(u), 0.5, 3.0)
+	for o in units:
+		if o["side"] == 1:
+			o["stun"] = maxf(o["stun"], 2.0)
+			o["node"].self_modulate = Color(1.4, 1.4, 0.6)
+			# 시각적 스턴: 노란 번쩍 → 복원은 _tick_effects 처리
+	_hitstop = maxf(_hitstop, 0.08)
+
+# 백골정 — HP 70%/40% 변신. 1→2단: 근접→원거리 (shot=orb, 사거리↑). 2→3단: 공속↑, 공격력↑ (분신 효과).
+func _boss_multi_form(u: Dictionary, delta: float) -> void:
+	var stage_now: int = int(u.get("form_stage", 0))
+	var r: float = u["hp"] / u["max_hp"]
+	if stage_now == 0 and r <= 0.7:
+		u["form_stage"] = 1
+		u["shot"] = "orb"
+		u["range"] = 120.0
+		u["splash"] = 40.0
+		u["atk"] *= 1.1
+		u["node"].self_modulate = Color(0.9, 0.7, 1.1)
+		_fx_once("ring", _mid(u), 0.5, 2.5)
+		_banner("백골정 변신!", "원거리로 바뀌었어요", Color(1.0, 0.85, 1.0))
+	elif stage_now == 1 and r <= 0.4:
+		u["form_stage"] = 2
+		u["every"] = maxf(0.4, u["every"] * 0.6)
+		u["atk"] *= 1.3
+		u["speed"] *= 1.4
+		u["node"].self_modulate = Color(1.3, 0.6, 0.9)
+		_fx_once("ring", _mid(u), 0.5, 2.5)
+		_banner("백골정 분신!", "더 빠르고 강해졌어요", Color(1.0, 0.5, 0.85))
+
+# 흑웅정 — HP 50% 이하일 때 10초마다 전장 돌파, 통과한 아군에 100 피해 + 넉백 60px, 끝에 원위치.
+func _boss_charge_tick(u: Dictionary, delta: float) -> void:
+	if u["hp"] > u["max_hp"] * 0.5:
+		return
+	u["charge_t"] = u.get("charge_t", 10.0) - delta
+	if u["charge_t"] <= 0.0:
+		u["charge_t"] = 10.0
+		_boss_charge_run(u)
+
+func _boss_charge_run(u: Dictionary) -> void:
+	var node: Sprite2D = u["node"]
+	var start_pos: Vector2 = node.position
+	_sfx("b_roar", -6.0)
+	_banner("흑웅정 돌진!", "", Color(1.0, 0.6, 0.4))
+	var tw := node.create_tween()
+	tw.tween_property(node, "position:x", ALLY_BASE_X - 10.0, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func(): _charge_impact(u))
+	tw.tween_property(node, "position", start_pos, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _charge_impact(u: Dictionary) -> void:
+	_shake_lane(8.0, 0.3)
+	for o in units.duplicate():
+		if o["side"] != 1 or o["hp"] <= 0.0:
+			continue
+		_hurt(o, 100.0, false)
+		_knock(o, 60.0)
+
+# 사오정 (보스) — 5초마다 전장 전체 아군 30px 뒤로 밀기, 파란 파도 FX
+func _boss_wave_push_tick(u: Dictionary, delta: float) -> void:
+	_wave_push_t -= delta
+	if _wave_push_t > 0.0:
+		return
+	_wave_push_t = 5.0
+	_sfx("b_summon", -8.0)
+	_banner("사오정 물결!", "", Color(0.5, 0.85, 1.0))
+	_fx_once("ring", Vector2(360, GROUND - 30), 0.6, 4.0)
+	for o in units:
+		if o["side"] == 1:
+			_knock(o, 30.0)
+
+# =========================================================
+# 영웅 (삼장·손오공·저팔계·사오정) — 자동 소환, 전용 HP 바, 액티브 스킬, 영구 사망
+# =========================================================
+
+func _spawn_hero() -> void:
+	if hero_id == "" or not HEROES.has(hero_id):
+		return
+	var h: Dictionary = HEROES[hero_id]
+	var hero_info: Dictionary = LaneUnits.HEROES.get(hero_id, {})
+	var tex_name: String = hero_info.get("tex", "hero_sanzang")
+	var node := Sprite2D.new()
+	node.texture = tex.get(tex_name, tex["knight"])
+	# 보통 유닛 1.4x → 영웅은 그 2배 ≒ 2.8x
+	node.scale = Vector2.ONE * UNIT_PX * 2.0
+	node.offset = Vector2(0, -node.texture.get_height() * 0.5)
+	node.position = Vector2(ALLY_START + 20.0, GROUND)
+	_units_layer.add_child(node)
+	var hp: float = h["hp"]
+	var u := {"node": node, "side": 1, "kind": hero_id, "hp": hp, "max_hp": hp, "atk": h["atk"],
+		"range": h["range"], "shot": h.get("shot", ""), "splash": 0.0,
+		"speed": h["speed"] * SPEED_K, "every": h["every"], "cd": 0.5, "phase": rng.randf() * TAU,
+		"kb": h["kb"], "kb_mark": hp * (h["kb"] - 1) / h["kb"], "stun": 0.0,
+		"stand": maxf(16.0, h["range"] * 0.8),
+		"flying": false, "armor": false, "guard": 0.3,  # 영웅은 받는 피해 30% 감소
+		"heal": 0.0, "heal_r": 0.0, "heal_t": HEAL_EVERY,
+		"aura": 0.0, "aura_r": 0.0, "aura_t": HEAL_EVERY * 0.5,
+		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
+		"base_scale": Vector2.ONE * UNIT_PX * 2.0,
+		"hero": true, "hero_id": hero_id}
+	u["bar"] = _unit_bar(node)
+	units.append(u)
+	hero_unit = u
+	node.modulate.a = 0.0
+	node.create_tween().tween_property(node, "modulate:a", 1.0, 0.25)
+	hero_cool = 0.0
+
+# 영웅 HP 바 + 스킬 버튼 갱신 (화면 좌상단 · 우하단)
+func _refresh_hero_ui() -> void:
+	if _hero_portrait == null:
+		return
+	var active: bool = hero_id != "" and HEROES.has(hero_id)
+	_hero_portrait.visible = active
+	_hero_hp_fill.get_parent().visible = active
+	_hero_name_label.visible = active
+	_hero_skill_btn.visible = active
+	if not active:
+		return
+	var info: Dictionary = LaneUnits.HEROES.get(hero_id, {})
+	_hero_name_label.text = info.get("name", "")
+	var tex_name: String = info.get("tex", "")
+	if tex.has(tex_name):
+		_hero_portrait.texture = tex[tex_name]
+	# HP 바
+	var alive: bool = not hero_dead and hero_unit.has("hp") and hero_unit["hp"] > 0.0
+	if alive:
+		var r: float = clampf(hero_unit["hp"] / hero_unit["max_hp"], 0.0, 1.0)
+		_hero_hp_fill.size.x = 120.0 * r
+		_hero_hp_fill.add_theme_stylebox_override("panel", UIKit.box(_hp_color(r), Color.TRANSPARENT, 6))
+		_hero_hp_label.text = "%d / %d" % [maxi(0, roundi(hero_unit["hp"])), roundi(hero_unit["max_hp"])]
+		_hero_dead_x.visible = false
+		_hero_portrait.modulate = Color.WHITE
+	else:
+		_hero_hp_fill.size.x = 0.0
+		_hero_hp_label.text = "쓰러짐"
+		_hero_dead_x.visible = true
+		_hero_portrait.modulate = Color(0.4, 0.4, 0.4, 1)
+	# 스킬 버튼
+	var ready: bool = alive and hero_cool <= 0.0
+	_hero_skill_btn.disabled = not ready
+	_hero_skill_btn.modulate = Color.WHITE if ready else Color(0.55, 0.55, 0.6)
+	if ready:
+		_hero_skill_label.text = HEROES[hero_id].get("skill_name", "스킬")
+		_hero_skill_fill.size.y = 0.0
+	else:
+		var left: float = hero_cool
+		_hero_skill_label.text = "%ds" % ceili(left)
+		var cool_total: float = HEROES[hero_id]["cool"]
+		var veil_h: float = 96.0 * clampf(left / cool_total, 0.0, 1.0)
+		_hero_skill_fill.size = Vector2(96, veil_h)
+		_hero_skill_fill.position = Vector2(0, 96.0 - veil_h)
+
+func activate_hero_skill() -> bool:
+	if hero_dead or hero_cool > 0.0 or hero_id == "" or not HEROES.has(hero_id):
+		return false
+	if not hero_unit.has("hp") or hero_unit["hp"] <= 0.0:
+		return false
+	var skill: String = HEROES[hero_id]["skill"]
+	hero_cool = HEROES[hero_id]["cool"]
+	_sfx("b_summon", -2.0)
+	match skill:
+		"aura_buff":  _skill_aura_buff()
+		"line_sweep": _skill_line_sweep()
+		"cone_dash":  _skill_cone_dash()
+		"heal_wave":  _skill_heal_wave()
+	_refresh_hero_ui()
+	return true
+
+# 삼장 "염불 결계" — 아군 전원 4초간 받는 피해 ×0.5 (buff_guard), 공격력 ×1.3
+func _skill_aura_buff() -> void:
+	_banner("염불 결계", "4초간 아군 보호", Color(1.0, 0.85, 0.4))
+	_fx_once("ring", _mid(hero_unit), 0.6, 3.5)
+	for o in units:
+		if o["side"] != 1:
+			continue
+		o["buff_t"] = 4.0
+		o["buff"] = 0.3
+		o["buff_guard"] = 0.5  # 받는 피해 × (1 - 0.5) = ½
+		o["node"].self_modulate = Color(1.3, 1.2, 0.7)
+
+# 손오공 "여의봉 광풍" — 전장 가로 전체 적에게 100 피해 + 큰 넉백 (80px)
+func _skill_line_sweep() -> void:
+	_banner("여의봉 광풍!", "", Color(1.0, 0.7, 0.3))
+	_shake_lane(10.0, 0.4)
+	_hitstop = maxf(_hitstop, 0.1)
+	for o in units.duplicate():
+		if o["side"] != -1 or o["hp"] <= 0.0:
+			continue
+		var x: float = o["node"].position.x
+		if x >= 180.0 and x <= ENEMY_BASE_X:
+			_hurt(o, 100.0, true)
+			if o["hp"] > 0.0:
+				_knock(o, 80.0)
+			_fx_once("slash", _mid(o), 0.25, 1.5)
+
+# 저팔계 "쇄기 돌진" — 영웅 전방 180px 범위 150 피해 + 넉백 + 2초 스턴
+func _skill_cone_dash() -> void:
+	_banner("쇄기 돌진!", "", Color(1.0, 0.6, 0.3))
+	if not hero_unit.has("node"):
+		return
+	var hx: float = hero_unit["node"].position.x
+	_fx_once("boom_l", Vector2(hx + 90.0, GROUND - 30), 0.3, 1.6)
+	_shake_lane(7.0, 0.25)
+	for o in units.duplicate():
+		if o["side"] != -1 or o["hp"] <= 0.0:
+			continue
+		var d: float = o["node"].position.x - hx
+		if d >= 0.0 and d <= 180.0:
+			_hurt(o, 150.0, true)
+			if o["hp"] > 0.0:
+				o["stun"] = maxf(o["stun"], 2.0)
+				_knock(o, 50.0)
+
+# 사오정 "수룡 재생" — 자신 70% 회복 + 아군 전원 30% 회복
+func _skill_heal_wave() -> void:
+	_banner("수룡 재생!", "아군을 치유", Color(0.5, 1.0, 0.6))
+	_fx_once("ring", _mid(hero_unit) if hero_unit.has("node") else Vector2(100, GROUND - 40), 0.6, 3.0)
+	if hero_unit.has("hp") and hero_unit["hp"] > 0.0:
+		var gain: float = hero_unit["max_hp"] * 0.7
+		hero_unit["hp"] = minf(hero_unit["max_hp"], hero_unit["hp"] + gain)
+		_number(_head(hero_unit), gain, Color(0.5, 1.0, 0.55), "+")
+	for o in units:
+		if o["side"] != 1 or o == hero_unit or o["hp"] <= 0.0:
+			continue
+		var g: float = o["max_hp"] * 0.3
+		o["hp"] = minf(o["max_hp"], o["hp"] + g)
+		_fx_once("heal", _head(o) + Vector2(0, 4), 0.5, 1.0, Vector2(0, -16))
+
+# 영웅이 사망했을 때 처리: 배너 + 포털 X + hero_dead = true. _kill에서 호출.
+func _on_hero_death() -> void:
+	if hero_dead:
+		return
+	hero_dead = true
+	var info: Dictionary = LaneUnits.HEROES.get(hero_id, {})
+	var nm: String = info.get("name", "영웅")
+	_banner("%s이 쓰러졌다!" % nm, "", Color(1.0, 0.3, 0.3))
+	_shake_lane(10.0, 0.5)
+	_hitstop = maxf(_hitstop, 0.15)
+	_refresh_hero_ui()
 
 # 밤의 눈 급강하: dive at the nearest soldier (or the castle), big damage + knockback, then climb back
 func _boss_swoop(u: Dictionary) -> void:
@@ -1006,7 +1336,7 @@ func _spawn(kind: String, side: int, k: float) -> Dictionary:
 		"flying": st.get("flying", false), "armor": st.get("armor", false), "guard": st.get("guard", 0.0),
 		"heal": st.get("heal", 0.0), "heal_r": st.get("heal_r", 0.0), "heal_t": HEAL_EVERY,
 		"aura": st.get("aura", 0.0), "aura_r": st.get("aura_r", 0.0), "aura_t": HEAL_EVERY * 0.5,
-		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
+		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0, "buff_guard": 0.0,
 		"base_scale": Vector2.ONE * UNIT_PX}
 	for key in ["air", "armor_break", "siege", "crit", "charge", "slow"]:
 		if st.has(key):
@@ -1047,6 +1377,9 @@ func _spawn_splits() -> void:
 
 # Fallen units fly back with a spin, a dust puff and a burst of pixels
 func _kill(u: Dictionary) -> void:
+	# 영웅 사망: 영구 (스테이지 끝까지 재소환 안 됨). 보통 유닛 사망 애니는 그대로 돌림.
+	if u.get("hero", false):
+		_on_hero_death()
 	# Boss death triggers (2026-10-09): the king slime splits into mini-slimes with 60% HP each
 	if u.get("boss", false) and (u.get("splits_into") as Array).size() > 0:
 		var spawn_pos: Vector2 = u["node"].position
@@ -1298,6 +1631,76 @@ func _build() -> void:
 	bl.size = boss_badge.size
 	bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	boss_badge.add_child(bl)
+	# 영웅 패널 (좌상단): 초상 + 이름 + HP 바. 상단 메뉴 pill 아래 배치 — 재화/메뉴와 겹치지 않도록.
+	# 메뉴 pill y=6~54, 쇼케이스 라벨 y=2~46 → 영웅 패널은 y=58 (16px 간격)에 두고 높이 70.
+	var hero_box := Panel.new()
+	LaneUI.dress(hero_box, "panel_wood")
+	hero_box.name = "HeroBox"
+	hero_box.position = Vector2(6, 70)
+	hero_box.size = Vector2(176, 54)
+	hero_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_view.add_child(hero_box)
+	_hero_portrait = TextureRect.new()
+	_hero_portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_hero_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_hero_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_hero_portrait.position = Vector2(6, 4)
+	_hero_portrait.size = Vector2(46, 46)
+	_hero_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hero_box.add_child(_hero_portrait)
+	_hero_dead_x = _outlined("✕", 36, Color(1.0, 0.3, 0.3), HORIZONTAL_ALIGNMENT_CENTER)
+	_hero_dead_x.position = Vector2(6, 4)
+	_hero_dead_x.size = Vector2(46, 46)
+	_hero_dead_x.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hero_dead_x.visible = false
+	hero_box.add_child(_hero_dead_x)
+	_hero_name_label = _outlined("", 14, Color(1.0, 0.95, 0.75))
+	_hero_name_label.position = Vector2(58, 2)
+	_hero_name_label.size = Vector2(114, 18)
+	hero_box.add_child(_hero_name_label)
+	# HP 바 (좁은 트로프)
+	var hpbg := Panel.new()
+	hpbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hpbg.position = Vector2(58, 22)
+	hpbg.size = Vector2(124, 14)
+	hpbg.add_theme_stylebox_override("panel", UIKit.box(Color(0.05, 0.04, 0.08, 0.82), Color(0.75, 0.65, 0.4, 0.9), 7, 2))
+	hero_box.add_child(hpbg)
+	_hero_hp_fill = Panel.new()
+	_hero_hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hero_hp_fill.position = Vector2(2, 2)
+	_hero_hp_fill.size = Vector2(120, 10)
+	_hero_hp_fill.add_theme_stylebox_override("panel", UIKit.box(Color(0.35, 0.86, 0.43), Color.TRANSPARENT, 5))
+	hpbg.add_child(_hero_hp_fill)
+	_hero_hp_label = _outlined("", 12, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_hero_hp_label.position = Vector2(58, 36)
+	_hero_hp_label.size = Vector2(124, 16)
+	_hero_hp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hero_box.add_child(_hero_hp_label)
+
+	# 영웅 스킬 버튼 (우하단, 큰 둥근 터치 영역). HP 바와 fortress HP 라벨은 LANE_H-32에 있음 → 겹침 피하려 y=LANE_H-130
+	_hero_skill_btn = Button.new()
+	_hero_skill_btn.name = "HeroSkillBtn"
+	_hero_skill_btn.position = Vector2(610, LANE_H - 180.0)
+	_hero_skill_btn.size = Vector2(96, 96)
+	_hero_skill_btn.focus_mode = Control.FOCUS_NONE
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		_hero_skill_btn.add_theme_stylebox_override(st, LaneUI.box("card_frame", 6, Color(0.6, 0.95, 1.0) if st != "pressed" else Color(0.5, 0.85, 1.0)))
+	_hero_skill_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_hero_skill_btn.pressed.connect(activate_hero_skill)
+	_view.add_child(_hero_skill_btn)
+	# 쿨 어둡게 깔림 (버튼 안)
+	_hero_skill_btn.clip_contents = true
+	_hero_skill_fill = ColorRect.new()
+	_hero_skill_fill.color = Color(0.02, 0.03, 0.08, 0.72)
+	_hero_skill_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hero_skill_fill.size = Vector2(96, 0)
+	_hero_skill_fill.position = Vector2(0, 96)
+	_hero_skill_btn.add_child(_hero_skill_fill)
+	_hero_skill_label = _outlined("", 22, Color(1.0, 0.95, 0.75), HORIZONTAL_ALIGNMENT_CENTER)
+	_hero_skill_label.size = Vector2(96, 96)
+	_hero_skill_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hero_skill_btn.add_child(_hero_skill_label)
+
 	# Top-left of the lane: home / settings / sound on a dark pill, then charge/hold and auto
 	var pill := Panel.new()
 	LaneUI.dress(pill, "panel_wood")

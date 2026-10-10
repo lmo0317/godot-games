@@ -6,20 +6,20 @@ extends RefCounted
 
 const PROGRESS_PATH: String = "user://lane_progress.json"
 
-# Sky tint per chapter (the lane picture stays the same)
+# 서유기 4장 재편 (2026-10-10 docs/JOURNEY_WEST_PLAN.md): 1장만 리소스 제작, 5~16은 "준비 중"
 const CHAPTERS: Array[Dictionary] = [
-	{"name": "1장 초원", "tint": Color(1, 1, 1)},
-	{"name": "2장 숲", "tint": Color(1.0, 0.66, 0.5)},
-	{"name": "3장 묘지", "tint": Color(0.42, 0.48, 0.82)},
-	{"name": "4장 마왕성", "tint": Color(0.95, 0.42, 0.42)},
+	{"name": "1장 동녘 길 떠남", "tint": Color(1, 1, 1)},
+	{"name": "2장 서역 길목",   "tint": Color(1.0, 0.72, 0.58)},
+	{"name": "3장 거친 땅",     "tint": Color(0.52, 0.56, 0.86)},
+	{"name": "4장 영산을 향해", "tint": Color(1.0, 0.5, 0.46)},
 ]
-const PER_CHAPTER: int = 6
+const PER_CHAPTER: int = 4
 
-# Difficulty assumes the army grows: the tiers a deck is expected to have gained by each stage when
-# the player only spends first-clear gems (docs/LANE_STAGES.md "밸런스"). Monster power includes it,
-# so an army that never pulls or merges gets stuck and has to replay, pull and merge to go on
-const EXPECTED: Array[float] = [0.0, 0.0, 0.5, 0.6, 0.8, 0.9, 1.2, 1.3, 1.4, 1.5, 1.6, 1.75,
-	1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.85, 2.9]
+# 서유기 16스테이지: 4챕터 × 4 (더 가파름). 5~16은 준비 중이지만 EXPECTED는 채워둠.
+const EXPECTED: Array[float] = [0.0, 0.4, 0.7, 1.0,
+	1.2, 1.3, 1.5, 1.7,
+	1.9, 2.0, 2.1, 2.3,
+	2.5, 2.6, 2.75, 2.9]
 
 static func expected_tier(stage_id: int) -> float:
 	return EXPECTED[clampi(stage_id - 1, 0, EXPECTED.size() - 1)]
@@ -46,74 +46,53 @@ static func start_gold(stage_id: int) -> int:
 	return 60 + 15 * (stage_id - 1)
 
 const BOSSES: Dictionary = {
-	# 2026-10-09 1-3 재설계: 각 보스에 고유 특기(trait)와 전용 아트(tex). 전용 tex가 없으면 kind의 그림을 씀.
-	# traits: splits_into (죽으면 작은 몹 N마리), berserk (HP 50% 이하 공속*1.5·붉어짐), swoop (10초마다 급강하 + 큰 피해·넉백)
-	"slime_king": {"name": "왕슬라임", "kind": "slime", "tex": "boss_king_slime", "hint": "쓰러지면 작은 슬라임 둘로 쪼개져요",
-		"hp": 8.0, "atk": 2.5, "scale": 1.8, "kb": 3, "splits_into": ["slime", "slime"]},
-	"goblin_chief": {"name": "고블린 두목", "kind": "goblin", "tex": "boss_goblin_chief", "hint": "체력 절반 이하가 되면 광폭화해요",
-		"hp": 5.0, "atk": 1.8, "scale": 1.5, "kb": 4, "berserk": true},
-	"night_eye": {"name": "밤의 눈", "kind": "bat", "tex": "boss_night_eye", "hint": "하늘을 날며 급강하 공격을 해요 — 원거리 병사 필수",
-		"hp": 6.0, "atk": 2.0, "scale": 2.2, "kb": 4, "swoop": true},
-	# 4~24 스테이지에서 쓰던 보스 유지
-	"iron_captain": {"name": "철갑 대장", "kind": "armored", "hp": 4.5, "atk": 1.6, "scale": 1.5, "kb": 4},
-	"demon_lord": {"name": "마왕", "kind": "demon", "hp": 4.5, "atk": 1.25, "scale": 1.6, "kb": 5},
+	# 서유기 1장 (2026-10-10 docs/JOURNEY_WEST_PLAN.md). 신규 trait:
+	# stun_roar (주기마다 전체 아군 2초 스턴), multi_form (HP 70%/40% 변신, 3단), charge (HP 50% 이하 돌진),
+	# wave_push (5초마다 전장 전체 아군 뒤로 밀기)
+	"tiger_vanguard": {"name": "호선봉", "kind": "tiger_mob", "tex": "boss_tiger_vanguard", "hint": "포효로 아군을 2초간 얼려요",
+		"hp": 6.0, "atk": 2.2, "scale": 2.0, "kb": 4, "stun_roar": true},
+	"white_bone": {"name": "백골정", "kind": "skeleton", "tex": "boss_white_bone", "hint": "체력 70%·40%에 모습이 바뀌어요",
+		"hp": 7.0, "atk": 2.0, "scale": 1.9, "kb": 4, "multi_form": true},
+	"black_bear": {"name": "흑웅정", "kind": "bandit", "tex": "boss_black_bear", "hint": "체력 절반 이하가 되면 전장을 돌파해요",
+		"hp": 8.0, "atk": 2.4, "scale": 2.2, "kb": 5, "charge": true},
+	"sand_monk": {"name": "사오정 (요괴)", "kind": "water_ghoul", "tex": "boss_sand_monk", "hint": "물결을 일으켜 아군을 뒤로 밀어요",
+		"hp": 9.0, "atk": 2.3, "scale": 2.0, "kb": 5, "wave_push": true},
 }
 
+# 2026-10-10 서유기 재편 (docs/JOURNEY_WEST_PLAN.md + HERO_SYSTEM_PLAN.md).
+# 1~4는 상세, 5~16은 "준비 중" 플레이스홀더 (locked=true). reward_hero는 스테이지 첫 클리어 보상.
 # waves: [seconds after the start, [monster kinds]]; after the last one it repeats every 40 s.
-# swarm: false keeps slimes single
 const STAGES: Array[Dictionary] = [
-	# 2026-10-09 1-3 재설계 (docs/STAGE_1_3_PLAN.md): 매 스테이지 보스 + 고유 배경 + 쫄몹 조합.
-	{"id": 1, "name": "슬라임 들판", "role": "boss", "fortress": 1200, "power": 0.95, "every": 11.0, "pool": ["slime"], "swarm": false,
-		"waves": [[25.0, ["slime", "slime", "slime", "slime"]], [50.0, ["slime", "slime", "slime", "slime", "slime"]]],
-		"boss": "slime_king", "bg": "bg_grassland", "clear_gem": 200, "new": "기사로 막고 줄을 지워 금화를 모아요"},
-	{"id": 2, "name": "고블린 캠프", "role": "boss", "fortress": 1500, "power": 1.05, "every": 10.0, "pool": ["slime", "goblin"],
-		"waves": [[20.0, ["goblin", "goblin", "slime"]], [45.0, ["goblin", "goblin", "goblin", "goblin"]]],
-		"boss": "goblin_chief", "bg": "bg_goblin_camp", "clear_gem": 220, "new": "궁수가 뒤에서 쏘게 하세요"},
-	{"id": 3, "name": "박쥐 동굴", "role": "boss", "fortress": 1800, "power": 1.15, "every": 10.0, "pool": ["bat", "goblin"],
-		"waves": [[20.0, ["bat", "bat", "bat"]], [45.0, ["bat", "bat", "goblin", "goblin"]]],
-		"boss": "night_eye", "bg": "bg_bat_cave", "clear_gem": 280, "new": "박쥐는 원거리 병사만 맞혀요"},
-	{"id": 4, "name": "박쥐 동굴", "role": "teach", "fortress": 1450, "power": 1.22, "every": 10.0, "pool": ["goblin", "bat"],
-		"waves": [[30.0, ["bat", "bat", "bat"]], [60.0, ["bat", "bat", "goblin", "goblin"]]], "boss": "", "new": "박쥐는 원거리 병사만 맞혀요"},
-	{"id": 5, "name": "슬라임 늪", "role": "twist", "fortress": 1750, "power": 1.48, "every": 10.0, "pool": ["slime"],
-		"waves": [[30.0, ["slime", "slime", "slime", "slime"]], [60.0, ["slime", "slime", "slime", "slime", "bat", "goblin"]]], "boss": "", "new": "떼는 마법사 광역으로"},
-	{"id": 6, "name": "왕슬라임", "role": "boss", "fortress": 1900, "power": 1.53, "every": 10.0, "pool": ["slime", "goblin", "bat"],
-		"waves": [[30.0, ["slime", "slime", "slime", "slime"]], [60.0, ["goblin", "goblin", "bat", "bat"]]], "boss": "slime_king", "new": "보스 등장"},
-	{"id": 7, "name": "늑대 습격", "role": "teach", "fortress": 2000, "power": 1.42, "every": 10.0, "pool": ["wolf", "goblin"],
-		"waves": [[25.0, ["wolf", "wolf", "wolf"]], [55.0, ["wolf", "wolf", "wolf", "goblin"]]], "boss": "", "new": "늑대는 아주 빨라요"},
-	{"id": 8, "name": "고블린 궁수대", "role": "teach", "fortress": 2100, "power": 1.45, "every": 10.0, "pool": ["goblin", "gob_archer"],
-		"waves": [[30.0, ["gob_archer", "gob_archer", "goblin", "goblin"]], [60.0, ["gob_archer", "gob_archer", "gob_archer"]]], "boss": "", "new": "원거리 적은 방패로 받아요"},
-	{"id": 9, "name": "숲의 혼전", "role": "twist", "fortress": 2500, "power": 1.72, "every": 9.0, "pool": ["goblin", "gob_archer", "wolf", "bat"],
-		"waves": [[25.0, ["wolf", "wolf", "bat", "bat"]], [50.0, ["gob_archer", "gob_archer", "goblin", "goblin"]], [75.0, ["wolf", "wolf", "wolf", "bat"]]], "boss": "", "new": ""},
-	{"id": 10, "name": "철갑 부대", "role": "teach", "fortress": 2600, "power": 1.51, "every": 11.0, "pool": ["armored", "goblin"],
-		"waves": [[30.0, ["armored", "armored", "goblin", "goblin"]], [60.0, ["armored", "armored", "goblin"]]], "boss": "", "new": "갑옷은 창병이 2배"},
-	{"id": 11, "name": "숲길 매복", "role": "twist", "fortress": 2750, "power": 1.79, "every": 10.0, "pool": ["wolf", "gob_archer", "armored"],
-		"waves": [[25.0, ["wolf", "wolf", "armored"]], [55.0, ["gob_archer", "gob_archer", "armored", "wolf"]]], "boss": "", "new": ""},
-	{"id": 12, "name": "고블린 대장", "role": "boss", "fortress": 2900, "power": 1.85, "every": 9.0, "pool": ["goblin", "gob_archer", "wolf"],
-		"waves": [[30.0, ["goblin", "goblin", "goblin", "goblin"]], [60.0, ["gob_archer", "gob_archer", "wolf", "wolf"]]], "boss": "goblin_chief", "new": "보스 등장"},
-	{"id": 13, "name": "해골 묘지 입구", "role": "teach", "fortress": 3300, "power": 1.41, "every": 10.0, "pool": ["skeleton", "wolf"],
-		"waves": [[30.0, ["skeleton", "skeleton", "skeleton"]], [60.0, ["skeleton", "skeleton", "wolf", "wolf"]]], "boss": "", "new": "해골 전사 등장"},
-	{"id": 14, "name": "어둠의 사제", "role": "teach", "fortress": 3450, "power": 1.44, "every": 9.0, "pool": ["skeleton", "priest"],
-		"waves": [[30.0, ["skeleton", "skeleton", "priest"]], [60.0, ["skeleton", "skeleton", "skeleton", "priest"]]], "boss": "", "new": "회복하는 사제를 먼저 잡아요"},
-	{"id": 15, "name": "뼈의 행진", "role": "test", "fortress": 3600, "power": 1.62, "every": 9.0, "pool": ["skeleton", "armored"],
-		"waves": [[25.0, ["armored", "armored", "skeleton", "skeleton"]], [55.0, ["armored", "armored", "armored"]]], "boss": "", "new": ""},
-	{"id": 16, "name": "골렘", "role": "teach", "fortress": 3750, "power": 1.10, "every": 9.0, "pool": ["golem", "skeleton"],
-		"waves": [[35.0, ["golem", "skeleton", "skeleton"]], [70.0, ["golem", "golem"]]], "boss": "", "new": "거대한 골렘은 대포로"},
-	{"id": 17, "name": "밤박쥐 떼", "role": "twist", "fortress": 4200, "power": 1.76, "every": 8.0, "pool": ["bat", "bat", "skeleton"],
-		"waves": [[25.0, ["bat", "bat", "bat", "bat"]], [50.0, ["bat", "bat", "bat", "armored"]]], "boss": "", "new": "하늘을 막을 원거리 병사를"},
-	{"id": 18, "name": "철갑 대장", "role": "boss", "fortress": 4400, "power": 1.80, "every": 8.0, "pool": ["armored", "priest", "skeleton"],
-		"waves": [[30.0, ["armored", "armored", "priest"]], [60.0, ["skeleton", "skeleton", "skeleton", "armored"]]], "boss": "iron_captain", "new": "보스 등장"},
-	{"id": 19, "name": "오크 전사", "role": "teach", "fortress": 4550, "power": 1.36, "every": 8.0, "pool": ["orc", "goblin", "gob_archer"],
-		"waves": [[30.0, ["orc", "goblin", "goblin", "goblin"]], [60.0, ["orc", "orc", "gob_archer"]]], "boss": "", "new": "오크 등장"},
-	{"id": 20, "name": "마왕성 정문", "role": "twist", "fortress": 4700, "power": 1.61, "every": 8.0, "pool": ["orc", "wolf", "armored"],
-		"waves": [[25.0, ["wolf", "wolf", "wolf", "orc"]], [55.0, ["armored", "armored", "orc"]]], "boss": "", "new": ""},
-	{"id": 21, "name": "골렘과 사제", "role": "twist", "fortress": 5250, "power": 1.28, "every": 8.0, "pool": ["golem", "priest"],
-		"waves": [[30.0, ["golem", "priest", "priest"]], [65.0, ["golem", "golem", "priest"]]], "boss": "", "new": ""},
-	{"id": 22, "name": "하늘을 덮는 날개", "role": "test", "fortress": 5400, "power": 1.58, "every": 7.0, "pool": ["bat", "bat", "gob_archer"],
-		"waves": [[20.0, ["bat", "bat", "bat", "bat"]], [45.0, ["bat", "bat", "bat", "bat", "gob_archer"]], [70.0, ["bat", "bat", "bat", "wolf", "wolf"]]], "boss": "", "new": ""},
-	{"id": 23, "name": "총공세", "role": "twist", "fortress": 5600, "power": 1.67, "every": 7.0, "pool": ["slime", "goblin", "wolf", "gob_archer", "skeleton", "bat", "armored", "priest", "golem", "orc"],
-		"waves": [[20.0, ["wolf", "wolf", "bat", "bat"]], [45.0, ["armored", "armored", "golem", "priest"]], [70.0, ["orc", "orc", "gob_archer", "gob_archer"]]], "boss": "", "new": ""},
-	{"id": 24, "name": "마왕", "role": "boss", "fortress": 6100, "power": 1.46, "every": 7.0, "pool": ["orc", "golem", "armored", "bat", "priest"],
-		"waves": [[30.0, ["orc", "orc", "bat", "bat"]], [60.0, ["golem", "armored", "armored"]]], "boss": "demon_lord", "new": "최종 보스"},
+	# 1장 — 동녘 길 떠남 (서유기 1장)
+	{"id": 1, "name": "오지산", "role": "boss", "fortress": 1200, "power": 0.95, "every": 11.0, "pool": ["tiger_mob"], "swarm": false,
+		"waves": [[25.0, ["tiger_mob", "tiger_mob", "tiger_mob"]], [50.0, ["tiger_mob", "tiger_mob", "tiger_mob", "tiger_mob"]]],
+		"boss": "tiger_vanguard", "bg": "bg_mt_wuzhi", "clear_gem": 220, "reward_hero": "wukong",
+		"new": "손오공이 봉인에서 풀려나려 해요. 호랑이 요괴를 몰아내요"},
+	{"id": 2, "name": "백골산", "role": "boss", "fortress": 1500, "power": 1.08, "every": 10.0, "pool": ["skeleton", "tiger_mob"],
+		"waves": [[20.0, ["skeleton", "skeleton", "skeleton"]], [45.0, ["skeleton", "skeleton", "skeleton", "skeleton"]]],
+		"boss": "white_bone", "bg": "bg_white_bone", "clear_gem": 260, "reward_hero": "bajie",
+		"new": "백골정이 세 번 모습을 바꿔요"},
+	{"id": 3, "name": "흑풍산", "role": "boss", "fortress": 1800, "power": 1.22, "every": 10.0, "pool": ["bandit", "tiger_mob"],
+		"waves": [[20.0, ["bandit", "bandit", "bandit"]], [45.0, ["bandit", "bandit", "bandit", "bandit"]]],
+		"boss": "black_bear", "bg": "bg_black_wind", "clear_gem": 300,
+		"new": "흑웅정이 절반 체력부터 돌진해요"},
+	{"id": 4, "name": "유사하", "role": "boss", "fortress": 2200, "power": 1.38, "every": 10.0, "pool": ["water_ghoul", "bandit"],
+		"waves": [[20.0, ["water_ghoul", "water_ghoul"]], [45.0, ["water_ghoul", "water_ghoul", "water_ghoul", "bandit"]]],
+		"boss": "sand_monk", "bg": "bg_flowing_sand", "clear_gem": 360, "reward_hero": "wujing",
+		"new": "사오정의 물결에 밀리지 마세요"},
+	# 5~16 플레이스홀더 (리소스 다음 세션). locked=true, 쇼케이스에서 "준비 중"으로 표시.
+	{"id": 5,  "name": "오계국",       "role": "boss", "fortress": 2800, "power": 1.5, "every": 10.0, "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 6,  "name": "평정산",       "role": "boss", "fortress": 3200, "power": 1.6, "every": 10.0, "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 7,  "name": "반사동",       "role": "boss", "fortress": 3700, "power": 1.7, "every": 10.0, "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 8,  "name": "비파정",       "role": "boss", "fortress": 4300, "power": 1.8, "every": 10.0, "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 9,  "name": "호산",         "role": "boss", "fortress": 5000, "power": 1.9, "every": 9.0,  "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 10, "name": "흑수하",       "role": "boss", "fortress": 5500, "power": 2.0, "every": 9.0,  "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 11, "name": "통천하",       "role": "boss", "fortress": 6200, "power": 2.1, "every": 9.0,  "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 12, "name": "거지국",       "role": "boss", "fortress": 7000, "power": 2.2, "every": 9.0,  "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 13, "name": "소뇌음사",     "role": "boss", "fortress": 7800, "power": 2.3, "every": 8.0,  "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 14, "name": "금두동",       "role": "boss", "fortress": 8600, "power": 2.4, "every": 8.0,  "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 15, "name": "화염산",       "role": "boss", "fortress": 9500, "power": 2.5, "every": 8.0,  "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
+	{"id": 16, "name": "서천 영산",    "role": "boss", "fortress": 11000, "power": 2.7, "every": 8.0, "pool": ["bandit"], "waves": [], "boss": "", "locked": true, "new": "준비 중"},
 ]
 
 # What to tell a player who lost: the counters the stage asks for that the deck is missing, then

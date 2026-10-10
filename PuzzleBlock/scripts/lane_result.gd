@@ -82,8 +82,8 @@ func _ready() -> void:
 		back_pressed.emit())
 	board.add_child(back)
 
-# Shows the result of a stage
-func show_result(stage_id: int, won: bool, stars: int, gems: int, castle_ratio: float, reason: String, advice: Array = []) -> void:
+# Shows the result of a stage. new_hero는 신규 획득 영웅 ID (있으면 큰 배너 + 초상).
+func show_result(stage_id: int, won: bool, stars: int, gems: int, castle_ratio: float, reason: String, advice: Array = [], new_hero: String = "") -> void:
 	title.get_child(0).text = ("STAGE %d 클리어!" if won else "STAGE %d 실패") % stage_id
 	for c in stars_box.get_children():
 		c.queue_free()
@@ -101,7 +101,11 @@ func show_result(stage_id: int, won: bool, stars: int, gems: int, castle_ratio: 
 	gems_label.text = "+%d" % gems
 	if won:
 		info.text = "남은 성 체력 %d%%" % roundi(castle_ratio * 100.0)
-		tip.text = "본부에서 보석으로 병사를 뽑고\n덱을 정비한 뒤 다음 스테이지로!"
+		if new_hero != "" and LaneUnits.HEROES.has(new_hero):
+			var hname: String = LaneUnits.HEROES[new_hero]["name"]
+			tip.text = "★ %s 획득! ★\n다음 전투 전 영웅 선택 화면에서 바꿀 수 있어요" % hname
+		else:
+			tip.text = "본부에서 보석으로 병사를 뽑고\n덱을 정비한 뒤 다음 스테이지로!"
 	else:
 		info.text = ("놓을 수 있는 블록이 없어요" if reason == "stuck" else "성이 무너졌어요") + " · 요새를 깎은 만큼 보석"
 		tip.text = "\n".join(advice) if not advice.is_empty() else "병사를 뽑고 합성해서 다시 도전!"

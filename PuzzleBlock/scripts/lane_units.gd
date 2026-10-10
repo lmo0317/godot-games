@@ -87,6 +87,54 @@ const GEMS_PER_STAR: int = 30
 const GEMS_REPLAY: int = 50
 const GEMS_FAIL_MAX: int = 60          # a lost stage still pays, by how much of the fortress fell
 
+# 영웅 시스템 (2026-10-10 docs/HERO_SYSTEM_PLAN.md): 서유기 4인방, 전투당 1명 선택, 영구 사망.
+# 수치는 lane_battle.gd HEROES 상수에 있음 — 여기서는 ID·이름·역할·설명만.
+const HEROES: Dictionary = {
+	"sanzang":  {"name": "삼장",   "role": "서포터",   "tex": "hero_sanzang",
+		"skill": "염불 결계",   "desc": "4초간 아군이 받는 피해 ½ · 공격력 +30%"},
+	"wukong":   {"name": "손오공", "role": "광역 공격", "tex": "hero_wukong",
+		"skill": "여의봉 광풍", "desc": "전장의 모든 적에게 100 피해 + 큰 넉백"},
+	"bajie":    {"name": "저팔계", "role": "탱커",     "tex": "hero_bajie",
+		"skill": "쇄기 돌진",   "desc": "전방 150 피해 + 넉백 + 2초 스턴"},
+	"wujing":   {"name": "사오정", "role": "균형",     "tex": "hero_wujing",
+		"skill": "수룡 재생",   "desc": "자신 70% 회복 + 아군 전원 30% 회복"},
+}
+const HERO_IDS: Array[String] = ["sanzang", "wukong", "bajie", "wujing"]
+
+static func heroes_unlocked() -> Array:
+	return load_army().get("heroes_unlocked", ["sanzang"])
+
+static func is_hero_unlocked(id: String) -> bool:
+	return heroes_unlocked().has(id)
+
+static func selected_hero() -> String:
+	var a := load_army()
+	var sel: String = str(a.get("selected_hero", "sanzang"))
+	var list: Array = a.get("heroes_unlocked", ["sanzang"])
+	return sel if list.has(sel) else "sanzang"
+
+static func select_hero(id: String) -> void:
+	if not HEROES.has(id):
+		return
+	var a := load_army()
+	if not (a["heroes_unlocked"] as Array).has(id):
+		return
+	a["selected_hero"] = id
+	save_army(a)
+
+# 영웅 보상: army를 받아 수정만 함 (저장은 호출측). 이미 가진 영웅이면 아무 것도 안 함; 반환 true면 새로 획득.
+static func unlock_hero(army: Dictionary, id: String) -> bool:
+	if not HEROES.has(id):
+		return false
+	var list: Array = army.get("heroes_unlocked", ["sanzang"])
+	if list.has(id):
+		return false
+	list.append(id)
+	army["heroes_unlocked"] = list
+	# 새로 얻은 영웅으로 자동 선택
+	army["selected_hero"] = id
+	return true
+
 static func melee(kind: String) -> bool:
 	return not UNITS[kind].has("shot")
 
@@ -114,7 +162,9 @@ static func _fresh(kind: String) -> Dictionary:
 
 static func default_army() -> Dictionary:
 	return {"gems": START_GEMS, "owned": {"knight": _fresh("knight"), "archer": _fresh("archer")}, "deck": ["knight", "archer", "", ""],
-		"pulls_since_unique": 0, "pulls_since_legendary": 0, "universal_shards": 0, "auto_flip": false}
+		"pulls_since_unique": 0, "pulls_since_legendary": 0, "universal_shards": 0, "auto_flip": false,
+		# 영웅 시스템 (2026-10-10 docs/HERO_SYSTEM_PLAN.md): 삼장은 처음부터, 손오공·저팔계·사오정은 스토리 보상
+		"heroes_unlocked": ["sanzang"], "selected_hero": "sanzang"}
 
 static func load_army() -> Dictionary:
 	var army := default_army()
@@ -148,6 +198,17 @@ static func load_army() -> Dictionary:
 	army["pulls_since_legendary"] = maxi(0, int(data.get("pulls_since_legendary", 0)))
 	army["universal_shards"] = maxi(0, int(data.get("universal_shards", 0)))
 	army["auto_flip"] = bool(data.get("auto_flip", false))
+	# 영웅: 저장이 없거나 손상되면 삼장만 가짐
+	var heroes_raw = data.get("heroes_unlocked", ["sanzang"])
+	var heroes: Array = ["sanzang"]
+	if heroes_raw is Array:
+		for h in heroes_raw:
+			var hs: String = str(h)
+			if HERO_IDS.has(hs) and not heroes.has(hs):
+				heroes.append(hs)
+	army["heroes_unlocked"] = heroes
+	var sel: String = str(data.get("selected_hero", "sanzang"))
+	army["selected_hero"] = sel if heroes.has(sel) else "sanzang"
 	# Older saves started with the knight only: hand them the starters too
 	for k in STARTERS:
 		if not army["owned"].has(k):

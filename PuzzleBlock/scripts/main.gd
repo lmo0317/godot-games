@@ -45,6 +45,7 @@ var stage: Dictionary = {}
 var stage_progress: int = 0
 var adventure_select: AdventureSelect
 var lane_select: LaneStageSelect
+var lane_hero_select: LaneHeroSelect
 var lane_gacha: LaneGacha
 var lane_deck: LaneDeck
 var lane_result: LaneResult
@@ -235,8 +236,14 @@ func _ready() -> void:
 	lane_select = LaneStageSelect.new()
 	$UI.add_child(lane_select)
 	$UI.move_child(lane_select, settings_modal.get_index())
-	lane_select.stage_selected.connect(_start_lane_stage)
+	# [시작] → 영웅 선택 화면 → [출전!] → 전투 (2026-10-10 docs/HERO_SYSTEM_PLAN.md)
+	lane_select.stage_selected.connect(_open_hero_select)
 	lane_select.closed.connect(_open_home_screen)
+	lane_hero_select = LaneHeroSelect.new()
+	$UI.add_child(lane_hero_select)
+	$UI.move_child(lane_hero_select, settings_modal.get_index())
+	lane_hero_select.hero_chosen.connect(func(sid, _hid): _start_lane_stage(sid))
+	lane_hero_select.closed.connect(_open_lane_select)
 	# The gacha and deck screens open over the base and go back to it
 	lane_gacha = LaneGacha.new()
 	$UI.add_child(lane_gacha)
@@ -585,7 +592,7 @@ func _spawn_new_tray() -> void:
 			_show_tutorial_hint_later(0.45)
 
 func _input(event: InputEvent) -> void:
-	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible or lane_select.visible or lane_gacha.visible or lane_deck.visible:
+	if is_game_over or start_screen.visible or leaderboard_modal.visible or settings_modal.visible or profile_setup_modal.visible or adventure_select.visible or lane_select.visible or (lane_hero_select != null and lane_hero_select.visible) or lane_gacha.visible or lane_deck.visible:
 		return
 		
 	if event is InputEventMouseButton:
@@ -1394,7 +1401,16 @@ func _open_lane_select() -> void:
 	lane_result.visible = false
 	start_screen.visible = false
 	game_over_panel.visible = false
+	if lane_hero_select != null:
+		lane_hero_select.visible = false
 	lane_select.open()
+
+# [시작] → 영웅 선택 화면 (잠긴 스테이지는 쇼케이스가 걸러 보내지 않음)
+func _open_hero_select(stage_id: int) -> void:
+	if LaneStages.get_stage(stage_id).get("locked", false):
+		return
+	lane_select.visible = false
+	lane_hero_select.open(stage_id)
 
 func _after_lane_screen() -> void:
 	if lane_select.visible:
@@ -1408,11 +1424,13 @@ func _leave_battle() -> void:
 	_open_lane_select()
 
 func _start_lane_stage(stage_id: int) -> void:
-	if LaneStages.get_stage(stage_id).is_empty():
+	if LaneStages.get_stage(stage_id).is_empty() or LaneStages.get_stage(stage_id).get("locked", false):
 		_open_lane_select()
 		return
 	battle_stage = stage_id
 	lane_select.visible = false
+	if lane_hero_select != null:
+		lane_hero_select.visible = false
 	start_screen.visible = false
 	game_over_panel.visible = false
 	start_new_game(false, "battle")
@@ -1484,7 +1502,16 @@ func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	await get_tree().create_timer(0.5).timeout
 	# A loss says what to change: the missing counter, or the deck power under the recommended one
 	var advice: Array = [] if won else LaneStages.fail_advice(battle_stage, battle.deck, LaneUnits.deck_power())
-	lane_result.show_result(battle_stage, won, stars, int(reward.get("gems", 0)), float(battle.castle_hp) / LaneBattle.CASTLE_HP, reason, advice)
+	# 영웅 보상 (스테이지 1=손오공, 2=저팔계, 4=사오정). 첫 클리어에만 지급.
+	var new_hero: String = ""
+	if won and stars_before == 0:
+		var rh: String = str(LaneStages.get_stage(battle_stage).get("reward_hero", ""))
+		if rh != "":
+			var army := LaneUnits.load_army()
+			if LaneUnits.unlock_hero(army, rh):
+				LaneUnits.save_army(army)
+				new_hero = rh
+	lane_result.show_result(battle_stage, won, stars, int(reward.get("gems", 0)), float(battle.castle_hp) / LaneBattle.CASTLE_HP, reason, advice, new_hero)
 
 # =========================================================
 # Adventure mode

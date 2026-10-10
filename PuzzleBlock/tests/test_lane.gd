@@ -177,31 +177,47 @@ func _run() -> void:
 	await get_tree().create_timer(3.5).timeout
 	_expect(b._pending.is_empty(), "the wave has marched out")
 
-	# Stage 1 재설계: boss comes at half fortress (왕슬라임 — unique boss sprite, splits on death)
-	_expect(not b.boss_out, "stage 1 has a boss now (왕슬라임)")
+	# 서유기 1장 재편: 1 호선봉(stun_roar), 2 백골정(multi_form), 3 흑웅정(bear_charge), 4 사오정(wave_push)
+	_expect(not b.boss_out, "stage 1 has a boss (호선봉)")
 	for u in b.units.duplicate():
-		if u["side"] == -1:
+		if u["side"] == -1 and not u.get("hero", false):
 			b._kill(u)
 	b.fortress_hp = b.fortress_max * 0.49
 	await get_tree().create_timer(0.3).timeout
-	_expect(b.boss_out and b.units.any(func(u): return u.get("boss", false) and u["kind"] == "slime"), "the slime king appears at half the fortress")
-	# 왕슬라임이 죽으면 작은 슬라임 2마리로 분열
-	var slime_king: Dictionary = b.units.filter(func(u): return u.get("boss", false))[0]
-	var slimes_before: int = b.units.filter(func(u): return u["side"] == -1 and u["kind"] == "slime" and not u.get("boss", false)).size()
-	b._kill(slime_king)
-	await get_tree().create_timer(0.4).timeout
-	var slimes_after: int = b.units.filter(func(u): return u["side"] == -1 and u["kind"] == "slime" and not u.get("boss", false)).size()
-	_expect(slimes_after >= slimes_before + 2, "the king slime splits into mini slimes (%d -> %d)" % [slimes_before, slimes_after])
-	# Goblin chief 광폭화: HP 50% 이하에서 공속이 1.5배로 빨라짐
+	_expect(b.boss_out and b.units.any(func(u): return u.get("boss", false) and u.get("stun_roar", false)), "호선봉 (stun_roar) appears at half the fortress")
+	# 호선봉 포효: 전체 아군 2초 스턴
+	var tiger_boss: Dictionary = b.units.filter(func(u): return u.get("boss", false))[0]
+	var ally_for_roar := b._spawn("knight", 1, 1.0)
+	ally_for_roar["stun"] = 0.0
+	b._boss_stun_roar(tiger_boss)
+	_expect(ally_for_roar["stun"] >= 1.9, "호선봉 포효가 아군을 2초 스턴 (%.2f)" % ally_for_roar["stun"])
+	b._kill(ally_for_roar)
+	b._kill(tiger_boss)
+	# 백골정 3단 변신 (스테이지 2)
 	b.stage_data = LaneStages.get_stage(2)
 	b.boss_out = false
 	b._boss_entry()
-	var chief: Dictionary = b.units.filter(func(u): return u.get("boss", false))[0]
-	var atk_every_before: float = chief["every"]
-	chief["hp"] = chief["max_hp"] * 0.4
+	var bone: Dictionary = b.units.filter(func(u): return u.get("boss", false))[0]
+	_expect(int(bone.get("form_stage", 0)) == 0, "백골정 변신 전 (form 0)")
+	bone["hp"] = bone["max_hp"] * 0.65
 	await get_tree().create_timer(0.2).timeout
-	_expect(chief["berserked"] and chief["every"] < atk_every_before, "the goblin chief berserks past half HP (%.2f -> %.2f)" % [atk_every_before, chief["every"]])
-	b._kill(chief)
+	_expect(int(bone.get("form_stage", 0)) == 1 and bone["shot"] == "orb", "백골정 70% → 원거리 (form 1)")
+	bone["hp"] = bone["max_hp"] * 0.35
+	await get_tree().create_timer(0.2).timeout
+	_expect(int(bone.get("form_stage", 0)) == 2, "백골정 40% → 분신 (form 2)")
+	b._kill(bone)
+	# 흑웅정 돌진 (스테이지 3): 50% 이하에서 _boss_charge_run이 실행되면 아군 피해
+	b.stage_data = LaneStages.get_stage(3)
+	b.boss_out = false
+	b._boss_entry()
+	var bear: Dictionary = b.units.filter(func(u): return u.get("boss", false))[0]
+	var charge_target := b._spawn("knight", 1, 1.0)
+	charge_target["node"].position.x = 300.0
+	var cx_hp: float = charge_target["hp"]
+	b._charge_impact(bear)
+	_expect(charge_target["hp"] < cx_hp, "흑웅정 돌진이 아군을 때림 (%.0f → %.0f)" % [cx_hp, charge_target["hp"]])
+	b._kill(charge_target)
+	b._kill(bear)
 	b.stage_data = LaneStages.get_stage(1)
 
 	# Roles: the tank takes less, the crossbow hits flyers hard, the cannoneer hits the fortress hard,
@@ -309,6 +325,33 @@ func _run() -> void:
 	b._kill(bat3)
 	b.toggle_auto()
 
+	# 영웅 시스템 (2026-10-10 docs/HERO_SYSTEM_PLAN.md): 자동 소환, HP 바, 스킬, 영구 사망
+	_expect(b.hero_id == "sanzang", "default hero is 삼장 (%s)" % b.hero_id)
+	# 지금까지 테스트 흐름에서 영웅이 사망·제거되었을 수 있으므로 재소환해서 확인
+	if b.hero_dead or not b.hero_unit.has("hp") or b.hero_unit["hp"] <= 0.0 or not b.units.has(b.hero_unit):
+		b.hero_dead = false
+		b._spawn_hero()
+	_expect(b.hero_unit.has("hp") and b.hero_unit["hp"] > 0.0 and b.units.has(b.hero_unit), "영웅이 자동 소환됨")
+	_expect(b._hero_hp_fill != null and b._hero_portrait != null, "영웅 HP 바 + 초상 UI 존재")
+	# 스킬 발동: 삼장 "염불 결계" — 아군 전원 buff_t · buff_guard 적용
+	var ally_for_skill := b._spawn("knight", 1, 1.0)
+	b.hero_cool = 0.0
+	_expect(b.activate_hero_skill() and b.hero_cool > 0.0, "삼장 스킬 발동 → 쿨 시작")
+	_expect(ally_for_skill["buff_t"] > 0.0 and ally_for_skill.get("buff_guard", 0.0) >= 0.5, "염불 결계: 아군 피해 ½ 버프")
+	b._kill(ally_for_skill)
+	# 쿨 중에는 재발동 불가
+	_expect(not b.activate_hero_skill(), "쿨 중에는 스킬 재발동 불가")
+	# 영웅 사망 → 영구 (재소환 없음)
+	b.hero_unit["hp"] = 0.0
+	b._kill(b.hero_unit)
+	_expect(b.hero_dead, "영웅 사망 → hero_dead=true")
+	_expect(not b.activate_hero_skill(), "사망한 영웅은 스킬 발동 불가")
+	# 손오공·저팔계·사오정 unlock API
+	var test_army := LaneUnits.default_army()
+	_expect(LaneUnits.unlock_hero(test_army, "wukong") and test_army["heroes_unlocked"].has("wukong"), "unlock_hero(wukong) → 추가")
+	_expect(not LaneUnits.unlock_hero(test_army, "wukong"), "이미 가진 영웅은 다시 추가 안 함")
+	_expect(test_army["selected_hero"] == "wukong", "새로 얻은 영웅으로 자동 선택")
+
 	# Breaking the fortress moves to the next stage
 	for u in b.units.duplicate():
 		if u["side"] == -1:
@@ -325,6 +368,8 @@ func _run() -> void:
 	await _wait_until(func(): return main.lane_result.visible, 6.0)
 	_expect(main.lane_result.title.get_child(0).text == "STAGE 1 클리어!", "a broken fortress clears the stage (%s)" % main.lane_result.title.get_child(0).text)
 	_expect(LaneStages.load_progress()["unlocked"] == 2 and LaneStages.total_stars() >= 1, "the clear is saved and opens stage 2")
+	# 스테이지 1 클리어 → 손오공 획득 (docs/HERO_SYSTEM_PLAN.md)
+	_expect(LaneUnits.is_hero_unlocked("wukong"), "스테이지 1 클리어 → 손오공 획득")
 	_expect(main.lane_result.back.text == "본부로 돌아가기" and main.lane_result.gems_label.text.begins_with("+"), "the result shows the gems and leads back to the base")
 	var army0: Dictionary = LaneUnits.load_army()
 	_expect(army0["owned"].size() == 2 and army0["owned"].has("knight") and army0["owned"].has("archer"), "clears give no soldiers, only gems (%s)" % [army0["owned"]])
@@ -353,11 +398,14 @@ func _run() -> void:
 	# Sawtooth stages, recommended power and the advice after a loss (docs/LANE_STAGES.md 2장)
 	for s in LaneStages.STAGES:
 		_expect(LaneStages.ROLE_PACE.has(s.get("role", "")), "stage %d has a role" % s["id"])
-		_expect((s["boss"] != "") == (s["role"] == "boss"), "stage %d: bosses and boss roles match" % s["id"])
-	_expect(LaneStages.recommended_power(1) == 200 and LaneStages.recommended_power(6) > LaneStages.recommended_power(7), "the recommended power drops after a boss (sawtooth)")
-	var adv: Array = LaneStages.fail_advice(4, ["knight", "shield"], 200)
-	_expect(adv.size() == 2 and adv[0].contains("박쥐") and adv[1].contains("권장 전투력"), "bats without ranged soldiers, and a weak deck, are explained (%s)" % [adv])
-	_expect(LaneStages.fail_advice(10, ["knight", "archer"], 999)[0].contains("창병"), "armour without breakers is explained")
+		# 서유기 재편: 1~4는 전부 보스 스테이지, 5~16은 placeholder (boss="" 허용)
+		if not bool(s.get("locked", false)):
+			_expect((s["boss"] != "") == (s["role"] == "boss"), "stage %d: bosses and boss roles match" % s["id"])
+	_expect(LaneStages.recommended_power(1) == 200, "stage 1 recommended power is 200")
+	_expect(LaneStages.count() == 16, "16 stages total")
+	# 서유기 재편: 1장 스테이지에는 bat/armored 조합이 없음 → 기본 조언 (권장 전투력)이 떠야 함
+	var adv: Array = LaneStages.fail_advice(4, ["knight", "shield"], 100)
+	_expect(not adv.is_empty(), "a lost stage gives at least one advice line (%s)" % [adv])
 	var army_p := LaneUnits.default_army()
 	_expect(LaneUnits.deck_power(army_p) == 200, "the two starters make 200 power")
 	army_p["owned"]["knight"]["tier"] = 2

@@ -50,6 +50,11 @@ BOSSES = ["boss_king_slime", "boss_goblin_chief", "boss_night_eye"]
 MOBS_V2 = ["slime", "goblin", "bat"]
 # backgrounds: opaque, saved at their art-pixel size (the game picks them per stage, nearest x3)
 BACKGROUNDS = ["bg_grassland", "bg_goblin_camp", "bg_bat_cave"]
+# 2026-10-10 서유기 1장 재편 (docs/JOURNEY_WEST_PLAN.md + HERO_SYSTEM_PLAN.md)
+HEROES_JW = ["hero_sanzang", "hero_wukong", "hero_bajie", "hero_wujing"]
+BOSSES_JW1 = ["boss_tiger_vanguard", "boss_white_bone", "boss_black_bear", "boss_sand_monk"]
+MOBS_JW1 = ["tiger_mob", "bandit", "water_ghoul"]
+BACKGROUNDS_JW1 = ["bg_mt_wuzhi", "bg_white_bone", "bg_black_wind", "bg_flowing_sand"]
 
 
 def block_size(img):
@@ -262,6 +267,22 @@ def main():
         for name, sp in zip(MOBS_V2, pieces):
             save(sp, name)
     for name in BACKGROUNDS:
+        p = os.path.join(src, name + ".png")
+        if os.path.exists(p):
+            save(to_grid(Image.open(p), opaque=True), name)
+    # 2026-10-10 서유기 1장: heroes.png (4 heroes face right), bosses_jw1.png (4 bosses face left),
+    # mobs_jw1.png (3 small mobs face left), and 4 background files saved by their own names.
+    jw_sheets = [("heroes.png", HEROES_JW), ("bosses_jw1.png", BOSSES_JW1), ("mobs_jw1.png", MOBS_JW1)]
+    for file, names in jw_sheets:
+        path = os.path.join(src, file)
+        if not os.path.exists(path):
+            continue
+        pieces = split(to_grid(Image.open(path)))
+        if len(pieces) != len(names):
+            sys.exit(f"expected {len(names)} sprites in {file}, found {len(pieces)}")
+        for name, sp in zip(names, pieces):
+            save(sp, name)
+    for name in BACKGROUNDS_JW1:
         p = os.path.join(src, name + ".png")
         if os.path.exists(p):
             save(to_grid(Image.open(p), opaque=True), name)

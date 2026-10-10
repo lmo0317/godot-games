@@ -50,14 +50,14 @@ const CHAPTER_TINTS: Array[Color] = [
 	Color(0.42, 0.36, 0.56),
 	Color(0.55, 0.22, 0.24),
 ]
-# 1~3장은 전용 배경 있음; 나머지는 챕터별로 재활용 (3·4장은 틴트로 분위기 바꿈)
-const CHAPTER_ICON: Array[String] = ["slime", "goblin", "skeleton", "orc"]
-const CHAPTER_BG: Array[String] = ["bg_grassland", "bg_goblin_camp", "bg_bat_cave", "bg_bat_cave"]
+# 서유기 재편: 1장만 전용 아트, 2~4장은 1장 배경 재활용 + 틴트 (리소스 다음 세션)
+const CHAPTER_ICON: Array[String] = ["tiger_mob", "bandit", "water_ghoul", "water_ghoul"]
+const CHAPTER_BG: Array[String] = ["bg_mt_wuzhi", "bg_white_bone", "bg_black_wind", "bg_flowing_sand"]
 const CHAPTER_BG_TINT: Array[Color] = [
 	Color(1.0, 1.0, 1.0, 1.0),
-	Color(1.0, 1.0, 1.0, 1.0),
-	Color(0.72, 0.74, 1.05, 1.0),   # 3장 묘지: 푸른빛
-	Color(1.1, 0.72, 0.72, 1.0),    # 4장 마왕성: 붉은빛
+	Color(1.0, 0.9, 0.85, 1.0),
+	Color(0.75, 0.78, 1.05, 1.0),
+	Color(1.1, 0.75, 0.75, 1.0),
 ]
 # 배경 창 (쇼케이스 안 상단) 과 보스 배치
 const BG_RECT: Rect2 = Rect2(14, 100, 652, 340)
@@ -170,7 +170,7 @@ func _hidden_stage_stub(s: Dictionary) -> Control:
 	# 테스트가 요구하는 최소 구조: TextureButton "Stage{id}" + locked면 disabled,
 	# 열렸으면 "Rec" 라벨 자식 포함.
 	var sid: int = s["id"]
-	var locked: bool = sid > int(_progress["unlocked"])
+	var locked: bool = sid > int(_progress["unlocked"]) or bool(s.get("locked", false))
 	var btn := TextureButton.new()
 	btn.name = "Stage%d" % sid
 	btn.disabled = locked
@@ -220,7 +220,9 @@ func _update_page_label(stage_id: int) -> void:
 
 func _build_showcase_card(stage_id: int) -> Control:
 	var s: Dictionary = LaneStages.get_stage(stage_id)
-	var locked: bool = stage_id > int(_progress["unlocked"])
+	# "준비 중" (placeholder) 플래그도 잠금으로 취급 — 이번 세션은 1~4만 플레이 가능
+	var placeholder: bool = bool(s.get("locked", false))
+	var locked: bool = stage_id > int(_progress["unlocked"]) or placeholder
 	var stars: int = int(_progress["stars"].get(str(stage_id), 0))
 	var power: int = LaneUnits.deck_power()
 	var rec: int = LaneStages.recommended_power(stage_id)
@@ -390,7 +392,7 @@ func _build_showcase_card(stage_id: int) -> Control:
 	_start_btn.position = Vector2(140, btn_y)
 	_start_btn.size = Vector2(400, 72)
 	if locked:
-		_start_btn.text = "🔒 잠김"
+		_start_btn.text = "준비 중" if placeholder else "🔒 잠김"
 		LaneUI.button(_start_btn, "grey", 28)
 		_start_btn.disabled = true
 	else:
