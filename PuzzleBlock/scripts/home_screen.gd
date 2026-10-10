@@ -236,7 +236,7 @@ func _build_reset() -> void:
 	t1.text = "세로\n전투"
 	LaneUI.button(t1, "blue", 14)
 	_place(t1, 16, 408, 96, 56)
-	t1.tooltip_text = "1. 세로 전투 (풀스크린 + 하단 소환)"
+	t1.tooltip_text = "1. 세로 전투 (성 ↔ 요새, 하단 소환)"
 	t1.pressed.connect(func():
 		SoundManager.play_click()
 		battle_test_pressed.emit())

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cvbt1test0001"]
+
+[ext_resource type="Script" path="res://tests/test_vertical.gd" id="1"]
+
+[node name="TestVertical" type="Node"]
+script = ExtResource("1")
