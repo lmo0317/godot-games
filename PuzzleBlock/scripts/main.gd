@@ -262,8 +262,15 @@ func _ready() -> void:
 		LaneUnits.reset_army()
 		LaneStages.reset_progress()
 		_update_home_profile_ui())
-	# 전투 테스트 (dev, 2026-10-10): 퍼즐 숨기고 1장 전투만 풀스크린으로 시작
+	# 테스트 모드 선택 (dev, 2026-10-10):
+	#   1) 세로 전투: 퍼즐 숨기고 풀스크린 전투 + 하단 소환 패널 (_start_battle_test)
+	#   2) 블록 퍼즐만: classic 모드로 바로
+	#   3) 블록 + 가로 전투: stage 1 정규 흐름 (영웅 선택 생략, 저장된 선택)
 	start_screen.battle_test_pressed.connect(_start_battle_test)
+	start_screen.puzzle_test_pressed.connect(_on_start_play_pressed)
+	start_screen.lane_test_pressed.connect(func():
+		start_screen.visible = false
+		_start_lane_stage(1))
 	# "합성하러 가기" after a pull opens the soldiers screen
 	lane_gacha.deck_requested.connect(func(): lane_deck.open())
 	lane_gacha.deck_requested_kind.connect(func(k): lane_deck.open_with(k))

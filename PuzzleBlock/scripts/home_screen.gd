@@ -16,7 +16,9 @@ signal settings_pressed
 signal profile_pressed
 signal sound_pressed
 signal lane_reset_pressed
-signal battle_test_pressed
+signal battle_test_pressed       # 모드 1: 세로 전투 (풀스크린 lane_battle + 하단 소환 panel)
+signal puzzle_test_pressed       # 모드 2: 블록 퍼즐만 (classic)
+signal lane_test_pressed         # 모드 3: 블록 + 가로 전투 (stage 1 바로)
 
 const W: float = 720.0
 const GROUND: float = 820.0
@@ -223,17 +225,40 @@ func _build_reset() -> void:
 	var cap := LaneUI.label("테스트", 15, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	_place(cap, 16, 358, 96, 22)
 	add_child(cap)
-	# 전투 테스트 (dev 전용, 2026-10-10): 바로 1장 전투를 테스트 모드로 시작.
-	# 퍼즐 보드/트레이는 숨기고 하단에 쫄몹·아군 소환 버튼이 뜬다.
-	var tb := Button.new()
-	tb.text = "전투\n테스트"
-	LaneUI.button(tb, "red", 15)
-	_place(tb, 16, 390, 96, 72)
-	tb.tooltip_text = "퍼즐 없이 전투만 (dev 전용)"
-	tb.pressed.connect(func():
+	# 테스트 모드 선택 (dev 전용, 2026-10-10): 3가지 플레이 방식을 바로 띄워 시험.
+	#   1) 세로 전투 - 퍼즐 숨기고 풀스크린 전투 + 하단 소환 버튼
+	#   2) 블록 퍼즐만 - classic 모드
+	#   3) 블록 + 가로 전투 - stage 1 정규 흐름 (영웅 선택 생략, 저장된 선택 사용)
+	var tcap := LaneUI.label("모드 테스트", 13, LaneUI.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_place(tcap, 16, 386, 96, 20)
+	add_child(tcap)
+	var t1 := Button.new()
+	t1.text = "세로\n전투"
+	LaneUI.button(t1, "blue", 14)
+	_place(t1, 16, 408, 96, 56)
+	t1.tooltip_text = "1. 세로 전투 (풀스크린 + 하단 소환)"
+	t1.pressed.connect(func():
 		SoundManager.play_click()
 		battle_test_pressed.emit())
-	add_child(tb)
+	add_child(t1)
+	var t2 := Button.new()
+	t2.text = "블록\n퍼즐"
+	LaneUI.button(t2, "green", 14)
+	_place(t2, 16, 468, 96, 56)
+	t2.tooltip_text = "2. 블록 퍼즐만 (classic)"
+	t2.pressed.connect(func():
+		SoundManager.play_click()
+		puzzle_test_pressed.emit())
+	add_child(t2)
+	var t3 := Button.new()
+	t3.text = "블록+\n가로전투"
+	LaneUI.button(t3, "red", 13)
+	_place(t3, 16, 528, 96, 56)
+	t3.tooltip_text = "3. 블록 + 가로 전투 (stage 1)"
+	t3.pressed.connect(func():
+		SoundManager.play_click()
+		lane_test_pressed.emit())
+	add_child(t3)
 
 func _on_reset() -> void:
 	SoundManager.play_click()
