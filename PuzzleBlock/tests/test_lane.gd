@@ -341,8 +341,9 @@ func _run() -> void:
 	var hero_x0: float = b.hero_unit["node"].position.x
 	await get_tree().create_timer(0.3).timeout
 	_expect(absf(b.hero_unit["node"].position.x - hero_x0) < 1.0, "영웅이 전진하지 않음 (%.1f → %.1f)" % [hero_x0, b.hero_unit["node"].position.x])
-	# 영웅 스케일: 보통 유닛(1.0 * UNIT_PX)보다 크지만 과거 2.0배보다 작음
-	_expect(b.hero_unit["node"].scale.x > LaneBattle.UNIT_PX and b.hero_unit["node"].scale.x < LaneBattle.UNIT_PX * 1.6, "영웅 스케일 1.3x (%.2f)" % b.hero_unit["node"].scale.x)
+	# 영웅 렌더 높이: 쫄몹의 2배 근처 (104px 목표, 90~130 허용)
+	var hero_rendered_h: float = b.hero_unit["node"].texture.get_height() * b.hero_unit["node"].scale.y
+	_expect(hero_rendered_h >= 90.0 and hero_rendered_h <= 130.0, "영웅 렌더 높이 ≈ 쫄몹의 2배 (%.1fpx)" % hero_rendered_h)
 	# 스킬 발동: 삼장 "염불 결계" — 아군 전원 buff_t · buff_guard 적용
 	var ally_for_skill := b._spawn("knight", 1, 1.0)
 	b.hero_cool = 0.0

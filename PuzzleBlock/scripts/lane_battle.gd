@@ -167,7 +167,7 @@ var _hero_name_label: Label
 var _hero_skill_btn: Button
 var _hero_skill_fill: ColorRect
 var _hero_skill_label: Label
-var _hero_skill_icon: Control
+var _hero_skill_icon: TextureRect
 var _hero_skill_name_label: Label
 var _hero_skill_name_bg: Panel
 var _hero_skill_ready_pulse: float = 0.0  # 쿨 끝났을 때 "준비!" 깜빡임 타이머
@@ -985,8 +985,11 @@ func _spawn_hero() -> void:
 	var tex_name: String = hero_info.get("tex", "hero_sanzang")
 	var node := Sprite2D.new()
 	node.texture = tex.get(tex_name, tex["knight"])
-	# 영웅은 성 뒤에서 캐스팅만 하는 역할 — 보통 유닛보다 살짝 큰 1.3x
-	node.scale = Vector2.ONE * UNIT_PX * 1.3
+	# 영웅 크기 = 쫄몹 렌더 높이 × 2.0 (스프라이트 원본이 영웅마다 달라 동적 계산)
+	# 쫄몹 평균 원본 h ≈ 37px, UNIT_PX=1.4 → 쫄몹 렌더 h ≈ 52px, 영웅 목표 ≈ 104px
+	var tex_h: float = maxf(1.0, float(node.texture.get_height()))
+	var hero_scale: float = 104.0 / tex_h
+	node.scale = Vector2.ONE * hero_scale
 	node.offset = Vector2(0, -node.texture.get_height() * 0.5)
 	# 영웅은 성 바로 오른쪽 옆, 지면 위에 서서 캐스팅. 성과 겹치지 않고 성 위로 보이게 z=5.
 	node.position = Vector2(CASTLE_X + 60.0, GROUND - 10.0)
@@ -1002,7 +1005,7 @@ func _spawn_hero() -> void:
 		"heal": 0.0, "heal_r": 0.0, "heal_t": HEAL_EVERY,
 		"aura": 0.0, "aura_r": 0.0, "aura_t": HEAL_EVERY * 0.5,
 		"slow_t": 0.0, "buff_t": 0.0, "buff": 0.0,
-		"base_scale": Vector2.ONE * UNIT_PX * 1.3,
+		"base_scale": Vector2.ONE * hero_scale,
 		"hero": true, "hero_id": hero_id, "role": "caster", "anchor_x": CASTLE_X + 60.0}
 	u["bar"] = _unit_bar(node)
 	units.append(u)
@@ -1016,8 +1019,9 @@ func _refresh_hero_ui() -> void:
 	if _hero_portrait == null:
 		return
 	var active: bool = hero_id != "" and HEROES.has(hero_id)
-	_hero_portrait.visible = active
-	_hero_hp_fill.get_parent().get_parent().visible = active  # hero_box
+	# 영웅 좌상단 HP 패널은 사용자 요청으로 영구 숨김 (2026-10-10)
+	_hero_portrait.visible = false
+	_hero_hp_fill.get_parent().get_parent().visible = false  # HeroBox 숨김
 	_hero_skill_btn.visible = active
 	if _hero_skill_name_bg != null:
 		_hero_skill_name_bg.visible = active
@@ -1029,10 +1033,11 @@ func _refresh_hero_ui() -> void:
 	var tex_name: String = info.get("tex", "")
 	if tex.has(tex_name):
 		_hero_portrait.texture = tex[tex_name]
+		# 스킬 버튼 안에 영웅 얼굴 미니 아이콘
+		if _hero_skill_icon != null:
+			_hero_skill_icon.texture = tex[tex_name]
 	# 스킬 이름 양피지 라벨
 	_hero_skill_name_label.text = HEROES[hero_id].get("skill_name", "스킬")
-	# 아이콘 다시 그리기 (영웅이 바뀌었거나 상태가 바뀌면)
-	_hero_skill_icon.queue_redraw()
 	# HP 바
 	var alive: bool = not hero_dead and hero_unit.has("hp") and hero_unit["hp"] > 0.0
 	var hp_bar_w: float = 106.0
@@ -1069,50 +1074,6 @@ func _refresh_hero_ui() -> void:
 		var veil_h: float = 96.0 * clampf(left / cool_total, 0.0, 1.0)
 		_hero_skill_fill.size = Vector2(96, veil_h)
 		_hero_skill_fill.position = Vector2(0, 96.0 - veil_h)
-
-# 영웅별 스킬 아이콘을 코드로 그림 (쿨 아님 상태에서 보임)
-func _draw_skill_icon() -> void:
-	if hero_id == "" or _hero_skill_icon == null:
-		return
-	var c: Vector2 = Vector2(48, 48)
-	var canvas: CanvasItem = _hero_skill_icon
-	match hero_id:
-		"sanzang":
-			# 염불 결계: 금색 광륜 + 중앙 염주 세 알
-			canvas.draw_arc(c, 28.0, 0.0, TAU, 48, Color(1.00, 0.85, 0.35), 5.0, true)
-			canvas.draw_arc(c, 28.0, 0.0, TAU, 48, Color(1.00, 0.98, 0.70), 2.0, true)
-			for i in 3:
-				var ang: float = -PI * 0.5 + i * TAU / 3.0
-				var p: Vector2 = c + Vector2(cos(ang), sin(ang)) * 14.0
-				canvas.draw_circle(p, 6.0, Color(1.00, 0.72, 0.28))
-				canvas.draw_circle(p, 6.0, Color(0.55, 0.30, 0.10), false, 1.5)
-		"wukong":
-			# 여의봉 광풍: 가로 긴 금봉 + 양 끝 캡 + 바람 선 2개
-			canvas.draw_line(c + Vector2(-32, 0), c + Vector2(32, 0), Color(0.60, 0.42, 0.18), 10.0)
-			canvas.draw_line(c + Vector2(-32, 0), c + Vector2(32, 0), Color(1.00, 0.85, 0.35), 6.0)
-			canvas.draw_circle(c + Vector2(-32, 0), 7.0, Color(0.95, 0.78, 0.28))
-			canvas.draw_circle(c + Vector2(32, 0), 7.0, Color(0.95, 0.78, 0.28))
-			canvas.draw_line(c + Vector2(-28, -14), c + Vector2(-8, -14), Color(0.90, 0.95, 1.00, 0.75), 3.0)
-			canvas.draw_line(c + Vector2(8, 14), c + Vector2(28, 14), Color(0.90, 0.95, 1.00, 0.75), 3.0)
-		"bajie":
-			# 쇄기 돌진: 삼지창(갈퀴) 모양
-			canvas.draw_line(c + Vector2(0, 26), c + Vector2(0, -8), Color(0.55, 0.35, 0.18), 7.0)
-			for dx in [-14, 0, 14]:
-				canvas.draw_line(c + Vector2(dx, -8), c + Vector2(dx, -26), Color(0.80, 0.85, 0.95), 5.0)
-				var tip: Vector2 = c + Vector2(dx, -26)
-				var pts: PackedVector2Array = [tip + Vector2(-5, 4), tip + Vector2(0, -6), tip + Vector2(5, 4)]
-				canvas.draw_colored_polygon(pts, Color(0.95, 0.98, 1.00))
-			# 가로 지지대
-			canvas.draw_line(c + Vector2(-18, -8), c + Vector2(18, -8), Color(0.55, 0.35, 0.18), 5.0)
-		"wujing":
-			# 수룡 재생: 녹색 ⊕ 십자 + 물방울
-			canvas.draw_circle(c, 26.0, Color(0.20, 0.60, 0.40, 0.35))
-			canvas.draw_rect(Rect2(c + Vector2(-6, -20), Vector2(12, 40)), Color(0.40, 0.95, 0.55))
-			canvas.draw_rect(Rect2(c + Vector2(-20, -6), Vector2(40, 12)), Color(0.40, 0.95, 0.55))
-			canvas.draw_rect(Rect2(c + Vector2(-6, -20), Vector2(12, 40)), Color(0.12, 0.45, 0.22), false, 2.0)
-			canvas.draw_rect(Rect2(c + Vector2(-20, -6), Vector2(40, 12)), Color(0.12, 0.45, 0.22), false, 2.0)
-		_:
-			canvas.draw_circle(c, 28.0, Color(1.0, 0.85, 0.35))
 
 func activate_hero_skill() -> bool:
 	if hero_dead or hero_cool > 0.0 or hero_id == "" or not HEROES.has(hero_id):
@@ -1815,13 +1776,15 @@ func _build() -> void:
 	_hero_skill_btn.pressed.connect(activate_hero_skill)
 	_view.add_child(_hero_skill_btn)
 	_hero_skill_btn.clip_contents = true
-	# 스킬 아이콘 (코드로 그린 심볼). _refresh_hero_ui에서 영웅별로 다시 그림.
-	_hero_skill_icon = Control.new()
+	# 스킬 아이콘 — 영웅 초상 미니 (2026-10-10). nearest filter + aspect centered.
+	_hero_skill_icon = TextureRect.new()
 	_hero_skill_icon.name = "SkillIcon"
 	_hero_skill_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hero_skill_icon.position = Vector2(0, 0)
-	_hero_skill_icon.size = Vector2(96, 96)
-	_hero_skill_icon.draw.connect(_draw_skill_icon)
+	_hero_skill_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_hero_skill_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_hero_skill_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_hero_skill_icon.position = Vector2(14, 14)
+	_hero_skill_icon.size = Vector2(68, 68)
 	_hero_skill_btn.add_child(_hero_skill_icon)
 	# 쿨 베일 (반투명, 아래→위로 줄어듦)
 	_hero_skill_fill = ColorRect.new()

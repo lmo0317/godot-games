@@ -53,7 +53,9 @@ func _run() -> void:
 	b.activate_hero_skill()
 	await _wait(0.4)
 	await _shot("lane_02_buff_banner")
-	await _wait(1.3)
+	# 쫄몹이 전진해 영웅 근처까지 올 때까지 더 기다렸다 비교 캡처
+	await _wait(5.0)
+	await _shot("lane_04_hero_vs_mobs")
 	_finish()
 
 func _wait(sec: float) -> void:
