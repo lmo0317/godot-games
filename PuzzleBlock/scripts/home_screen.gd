@@ -16,6 +16,7 @@ signal settings_pressed
 signal profile_pressed
 signal sound_pressed
 signal lane_reset_pressed
+signal battle_test_pressed
 
 const W: float = 720.0
 const GROUND: float = 820.0
@@ -222,6 +223,17 @@ func _build_reset() -> void:
 	var cap := LaneUI.label("테스트", 15, LaneUI.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	_place(cap, 16, 358, 96, 22)
 	add_child(cap)
+	# 전투 테스트 (dev 전용, 2026-10-10): 바로 1장 전투를 테스트 모드로 시작.
+	# 퍼즐 보드/트레이는 숨기고 하단에 쫄몹·아군 소환 버튼이 뜬다.
+	var tb := Button.new()
+	tb.text = "전투\n테스트"
+	LaneUI.button(tb, "red", 15)
+	_place(tb, 16, 390, 96, 72)
+	tb.tooltip_text = "퍼즐 없이 전투만 (dev 전용)"
+	tb.pressed.connect(func():
+		SoundManager.play_click()
+		battle_test_pressed.emit())
+	add_child(tb)
 
 func _on_reset() -> void:
 	SoundManager.play_click()

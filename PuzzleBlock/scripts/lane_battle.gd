@@ -105,6 +105,12 @@ const SLOW_K: float = 0.5             # speed while slowed (얼음 마법사)
 const SLOWED_TINT: Color = Color(0.6, 0.85, 1.0)
 const CHEERED_TINT: Color = Color(1.15, 1.05, 0.75)
 
+# 전투 테스트 모드 (dev 전용, 2026-10-10): 홈의 "전투 테스트" 버튼으로 켜짐. 퍼즐 보드/트레이는
+# 완전히 숨기고, 전장 아래 빈 영역에 쫄몹·아군 소환 버튼을 배치해 전투만 손으로 시험한다.
+# 소환은 금화·쿨다운·덱 체크 없이 자유. master로 머지 전 자동 비활성(홈의 DEV_TOOLS로 가림).
+var test_mode: bool = false
+var _test_panel: Control = null
+
 var stage: int = 1
 var stage_data: Dictionary = {}       # one entry of LaneStages.STAGES
 var power: float = 1.0                # monster HP/attack multiplier of this stage
@@ -266,6 +272,7 @@ func begin(stage_id: int = 1) -> void:
 	_start_stage()
 	_spawn_hero()
 	_refresh_hero_ui()
+	_apply_test_mode()
 
 func stop() -> void:
 	finished = true
@@ -295,7 +302,20 @@ func on_clear(lines: int, points: int) -> void:
 	_refresh()
 
 func summon(kind: String) -> bool:
-	if finished or not deck.has(kind) or kind == "":
+	if finished or kind == "":
+		return false
+	# 전투 테스트: 덱/금화/쿨 무시, 유닛 상한만 지킴
+	if test_mode:
+		if not ALLIES.has(kind) or _count(1) >= MAX_ALLIES:
+			return false
+		var u := _spawn(kind, 1, 1.0)
+		var node: Sprite2D = u["node"]
+		node.position.y -= 16.0
+		node.create_tween().tween_property(node, "position:y", node.position.y + 16.0, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		get_tree().create_timer(0.18).timeout.connect(func(): _fx_once("dust", node.position + Vector2(0, -4), 0.35))
+		_sfx("b_summon", -10.0)
+		return true
+	if not deck.has(kind):
 		return false
 	var st: Dictionary = ALLIES[kind]
 	if gold < st["cost"] or cooldown.get(kind, 0.0) > 0.0 or _count(1) >= MAX_ALLIES:
@@ -501,6 +521,11 @@ func _tick(delta: float) -> void:
 	_clock += delta
 	for k in cooldown:
 		cooldown[k] = maxf(0.0, cooldown[k] - delta)
+	if test_mode:
+		for k in cooldown:
+			cooldown[k] = 0.0
+		hero_cool = 0.0
+		gold = wallet_max()
 	# 영웅 스킬 쿨 감소 + UI 리프레시 (매 틱 호출해도 가벼움)
 	var was_cooling: bool = hero_cool > 0.0
 	if hero_cool > 0.0:
@@ -2139,3 +2164,142 @@ func _banner(title: String, sub: String, col: Color = UIKit.TEXT) -> void:
 	tw.tween_interval(1.0)
 	tw.tween_property(paper, "modulate:a", 0.0, 0.3)
 	tw.tween_callback(paper.queue_free)
+
+# =========================================================
+# 전투 테스트 모드 (dev 전용, 2026-10-10)
+# =========================================================
+
+# 테스트 모드일 때만 하단 빈 영역(y=LANE_H ~ 1280)에 소환 버튼 패널을 켠다. 자동 소환 off.
+func _apply_test_mode() -> void:
+	if not test_mode:
+		if _test_panel != null:
+			_test_panel.visible = false
+		return
+	auto_summon = false
+	gold = wallet_max()
+	for k in cooldown:
+		cooldown[k] = 0.0
+	hero_cool = 0.0
+	if _test_panel == null:
+		_build_test_panel()
+	_test_panel.visible = true
+
+func _build_test_panel() -> void:
+	# Control의 size를 늘려서 터치가 들어오게 한다 (버튼은 자식이라 Control size 밖이어도 그려짐)
+	size = Vector2(720, 1280)
+	mouse_filter = Control.MOUSE_FILTER_PASS
+	_test_panel = Control.new()
+	_test_panel.position = Vector2(0, LANE_H + 8)
+	_test_panel.size = Vector2(720, 1280 - LANE_H - 8)
+	_test_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(_test_panel)
+	var bg := Panel.new()
+	LaneUI.dress(bg, "panel_wood")
+	bg.position = Vector2.ZERO
+	bg.size = _test_panel.size
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_test_panel.add_child(bg)
+	var title := _outlined("전투 테스트 (dev)", 20, Color(1.0, 0.85, 0.4), HORIZONTAL_ALIGNMENT_CENTER)
+	title.position = Vector2(0, 6)
+	title.size = Vector2(720, 26)
+	_test_panel.add_child(title)
+	var al := _outlined("아군 소환 (무료)", 16, Color(0.7, 0.95, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	al.position = Vector2(14, 36)
+	al.size = Vector2(300, 22)
+	_test_panel.add_child(al)
+	# 아군 그리드 (16종, 8열 × 2줄, 셀 84×84)
+	var cols: int = 8
+	var cell: float = 84.0
+	var pad_x: float = 10.0
+	var pad_y: float = 60.0
+	for i in range(ALLY_ORDER.size()):
+		var kind: String = ALLY_ORDER[i]
+		var r: int = i / cols
+		var c: int = i % cols
+		var b := _test_kind_button(kind, true)
+		b.position = Vector2(pad_x + c * cell, pad_y + r * (cell + 8))
+		b.size = Vector2(cell - 4, cell)
+		_test_panel.add_child(b)
+	var ally_rows: int = int(ceil(float(ALLY_ORDER.size()) / cols))
+	var el_y: float = pad_y + ally_rows * (cell + 8) + 10
+	var el := _outlined("적 소환 (전체 종류)", 16, Color(1.0, 0.75, 0.75), HORIZONTAL_ALIGNMENT_LEFT)
+	el.position = Vector2(14, el_y)
+	el.size = Vector2(400, 22)
+	_test_panel.add_child(el)
+	var enemy_kinds: Array = ENEMIES.keys()
+	var ey: float = el_y + 24
+	for i in range(enemy_kinds.size()):
+		var kind2: String = enemy_kinds[i]
+		var r2: int = i / cols
+		var c2: int = i % cols
+		var b2 := _test_kind_button(kind2, false)
+		b2.position = Vector2(pad_x + c2 * cell, ey + r2 * (cell + 8))
+		b2.size = Vector2(cell - 4, cell)
+		_test_panel.add_child(b2)
+	var enemy_rows: int = int(ceil(float(enemy_kinds.size()) / cols))
+	var ub_y: float = ey + enemy_rows * (cell + 8) + 12
+	# 유틸: 아군/적 전원 제거, 체력 회복, 대포 충전
+	var u1 := _test_util_button("아군 제거", func(): _test_clear_side(1))
+	u1.position = Vector2(14, ub_y); _test_panel.add_child(u1)
+	var u2 := _test_util_button("적 제거", func(): _test_clear_side(-1))
+	u2.position = Vector2(188, ub_y); _test_panel.add_child(u2)
+	var u3 := _test_util_button("체력 회복", func(): _test_full_heal())
+	u3.position = Vector2(362, ub_y); _test_panel.add_child(u3)
+	var u4 := _test_util_button("대포 충전", func(): cannon = 100.0; _refresh())
+	u4.position = Vector2(536, ub_y); _test_panel.add_child(u4)
+
+func _test_kind_button(kind: String, ally: bool) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var tint: Color = Color(0.25, 0.5, 0.75) if ally else Color(0.65, 0.25, 0.3)
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		var kk: float = 1.0
+		if st == "hover": kk = 1.15
+		elif st == "pressed" or st == "hover_pressed": kk = 0.8
+		b.add_theme_stylebox_override(st, UIKit.box(Color(tint.r * kk, tint.g * kk, tint.b * kk, 1.0), Color(0.95, 0.85, 0.4), 8, 2))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var icon := TextureRect.new()
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.position = Vector2(4, 4)
+	icon.size = Vector2(72, 56)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.texture = tex.get(kind)
+	b.add_child(icon)
+	var nm: String = kind
+	if ally and ALLIES.has(kind):
+		nm = ALLIES[kind].get("name", kind)
+	var lab := _outlined(nm, 12, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	lab.position = Vector2(0, 60)
+	lab.size = Vector2(80, 20)
+	lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(lab)
+	if ally:
+		b.pressed.connect(func(): summon(kind))
+	else:
+		b.pressed.connect(func(): _spawn_enemy(kind, 1.0))
+	return b
+
+func _test_util_button(text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	LaneUI.button(b, "red", 15)
+	b.focus_mode = Control.FOCUS_NONE
+	b.size = Vector2(160, 44)
+	b.text = text
+	b.pressed.connect(cb)
+	return b
+
+func _test_clear_side(side: int) -> void:
+	for u in units.duplicate():
+		if u["side"] == side and not u.get("hero", false):
+			_kill(u)
+
+func _test_full_heal() -> void:
+	castle_hp = CASTLE_HP
+	fortress_hp = fortress_max
+	if not hero_unit.is_empty() and hero_unit.has("hp") and hero_unit.has("hp_max"):
+		hero_unit["hp"] = hero_unit["hp_max"]
+	_refresh()
+

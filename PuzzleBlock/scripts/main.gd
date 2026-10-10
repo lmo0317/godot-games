@@ -262,6 +262,8 @@ func _ready() -> void:
 		LaneUnits.reset_army()
 		LaneStages.reset_progress()
 		_update_home_profile_ui())
+	# 전투 테스트 (dev, 2026-10-10): 퍼즐 숨기고 1장 전투만 풀스크린으로 시작
+	start_screen.battle_test_pressed.connect(_start_battle_test)
 	# "합성하러 가기" after a pull opens the soldiers screen
 	lane_gacha.deck_requested.connect(func(): lane_deck.open())
 	lane_gacha.deck_requested_kind.connect(func(k): lane_deck.open_with(k))
@@ -454,6 +456,16 @@ func start_new_game(from_retry: bool = false, mode: String = "") -> void:
 		n.visible = not battle_mode
 	btn_leaderboard.visible = not battle_mode and _has_ranking()
 	_apply_layout(battle_mode)
+	# 전투 테스트: 퍼즐 보드/트레이/점수를 전부 숨기고 전투만 보여준다 (2026-10-10)
+	if battle_mode and battle.test_mode:
+		board.visible = false
+		board_background.visible = false
+		combo_aura.visible = false
+		$TrayPlates.visible = false
+	else:
+		board.visible = true
+		board_background.visible = true
+		$TrayPlates.visible = true
 	_dismiss_tutorial_hint()
 	tutorial_trays = 0
 	tutorial_active = game_mode == "classic" and (SettingsManager.tutorial_state == "pending" 		or (SettingsManager.tutorial_state == "" and Achievements.get_stat("games_played") == 0))
@@ -1420,6 +1432,13 @@ func _after_lane_screen() -> void:
 
 # Leaving a stage (house button in the lane, or the back button) goes to the stage select
 func _leave_battle() -> void:
+	# 전투 테스트에서 나오면 퍼즐 UI 다시 보이도록 복원
+	if battle.test_mode:
+		battle.test_mode = false
+		board.visible = true
+		board_background.visible = true
+		$TrayPlates.visible = true
+		battle.size = Vector2(720, LaneBattle.LANE_H + LaneBattle.BAR_H)
 	_open_home_screen() # logs the quit and closes any popup
 	_open_lane_select()
 
@@ -1432,6 +1451,18 @@ func _start_lane_stage(stage_id: int) -> void:
 	if lane_hero_select != null:
 		lane_hero_select.visible = false
 	start_screen.visible = false
+	game_over_panel.visible = false
+	start_new_game(false, "battle")
+
+# 전투 테스트 모드 (dev 2026-10-10): 퍼즐 보드/트레이는 완전히 숨기고 1장 전투만 띄운다.
+# battle.test_mode = true 로 LaneBattle이 하단에 소환 버튼 패널을 깐다.
+func _start_battle_test() -> void:
+	battle_stage = 1
+	battle.test_mode = true
+	start_screen.visible = false
+	lane_select.visible = false
+	if lane_hero_select != null:
+		lane_hero_select.visible = false
 	game_over_panel.visible = false
 	start_new_game(false, "battle")
 
@@ -1466,6 +1497,12 @@ func _apply_layout(compact: bool) -> void:
 # A stage ends: cleared (fortress down, 1-3 stars) or failed (castle down / board stuck)
 func _finish_battle(won: bool, reason: String, stars: int = 0) -> void:
 	if is_game_over:
+		return
+	# 전투 테스트: 결과창·보상·업적 생략, 바로 로비로 돌아감 (2026-10-10)
+	if battle.test_mode:
+		is_game_over = true
+		battle.stop()
+		_leave_battle()
 		return
 	is_game_over = true
 	battle.stop()
