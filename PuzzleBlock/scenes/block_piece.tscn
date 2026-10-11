@@ -1,9 +1,0 @@
-[gd_scene format=3 uid="uid://bpiecescene01"]
-
-[ext_resource type="Script" path="res://scripts/block_piece.gd" id="1_bp"]
-
-[node name="BlockPiece" type="Node2D"]
-z_index = 10
-script = ExtResource("1_bp")
-
-[node name="Cells" type="Node2D" parent="."]
